@@ -253,13 +253,44 @@ const imgUpload = multer({
   fileFilter: (_, f, cb) => cb(null, /^image\/(jpeg|png)$/.test(f.mimetype)),
 });
 
+/**
+ * Product intake. Three valid shapes:
+ *   A) link + images
+ *   B) link + images + description
+ *   C) link + description            ← no images at all
+ *
+ * The only universally required field is the affiliate URL. Beyond that the rule is simple:
+ * the system needs SOMETHING concrete to write from. Images supply it visually (via the vision
+ * pass); a description supplies it in words. With neither, every post would be invented, and
+ * invented copy is exactly the generic slop this whole project exists to avoid.
+ */
 app.post('/api/products', requireAuth, imgUpload.array('images', 4), async (req, res) => {
-  const { affiliate_url, name, price_idr, notes } = req.body ?? {};
+  const { affiliate_url, name, price_idr, notes, description } = req.body ?? {};
+  const files = req.files ?? [];
+  const desc = (description ?? '').trim();
+
   if (!affiliate_url || !/^https?:\/\//.test(affiliate_url)) {
-    return res.status(400).json({ error: 'affiliate_url required' });
+    return res.status(400).json({ error: 'A product link is required.' });
   }
-  if (!req.files?.length || req.files.length < 2) {
-    return res.status(400).json({ error: 'at least 2 JPG/PNG images required' });
+
+  // Exactly one image is fine (posts as a single IMAGE). Two or more may become a carousel.
+  const mediaMode = files.length > 0 ? 'images' : 'text';
+
+  // Text-only posts have no photo to carry specificity, so the description has to. 80 chars is
+  // roughly one real sentence with a number in it — below that the writer has nothing to anchor
+  // to and will pad with adjectives.
+  const MIN_DESC_TEXT_ONLY = 80;
+  const MIN_DESC_WITH_IMAGES = 0;
+  const minDesc = mediaMode === 'text' ? MIN_DESC_TEXT_ONLY : MIN_DESC_WITH_IMAGES;
+
+  if (desc.length < minDesc) {
+    return res.status(400).json({
+      error: files.length === 0
+        ? `No images supplied, so a description of at least ${MIN_DESC_TEXT_ONLY} characters is ` +
+          `required (you gave ${desc.length}). Include concrete facts: measurements, price, ` +
+          `material, how long you have used it, who it is for.`
+        : `Description too short.`,
+    });
   }
 
   const client = await pool.connect();
@@ -267,11 +298,12 @@ app.post('/api/products', requireAuth, imgUpload.array('images', 4), async (req,
     await client.query('BEGIN');
     const uid = shortId(6);
     const { rows: [p] } = await client.query(
-      `INSERT INTO products (uid, name, affiliate_url, notes) VALUES ($1,$2,$3,$4) RETURNING id, uid`,
-      [uid, name || null, affiliate_url, notes || null]);
+      `INSERT INTO products (uid, name, affiliate_url, description, notes, media_mode)
+       VALUES ($1,$2,$3,$4,$5,$6) RETURNING id, uid`,
+      [uid, name || null, affiliate_url, desc || null, notes || null, mediaMode]);
 
-    for (let i = 0; i < req.files.length; i++) {
-      const f = req.files[i];
+    for (let i = 0; i < files.length; i++) {
+      const f = files[i];
       const ext = f.mimetype === 'image/png' ? 'png' : 'jpg';
       const key = `${uid}/${i}-${sha256(f.buffer).slice(0, 8)}.${ext}`;
       const url = await putImage(f.buffer, key, f.mimetype);
@@ -285,7 +317,8 @@ app.post('/api/products', requireAuth, imgUpload.array('images', 4), async (req,
     // already exists and is postable. Never let an external call block the user.
     (async () => {
       try {
-        const e = await enrich({ affiliateUrl: affiliate_url, name, priceIdr: price_idr, notes });
+        const e = await enrich({ affiliateUrl: affiliate_url, name, priceIdr: price_idr,
+                                 notes, description: desc, mediaMode });
         await pool.query(`UPDATE products SET name=COALESCE($2,name), enrichment=$3 WHERE id=$1`,
           [p.id, e.name ?? null, JSON.stringify(e)]);
         const { rows: imgs } = await pool.query(
@@ -301,7 +334,8 @@ app.post('/api/products', requireAuth, imgUpload.array('images', 4), async (req,
       }
     })();
 
-    res.json({ ok: true, product_uid: p.uid, product_id: p.id, images: req.files.length });
+    res.json({ ok: true, product_uid: p.uid, product_id: p.id,
+               images: files.length, media_mode: mediaMode });
   } catch (e) {
     await client.query('ROLLBACK').catch(() => {});
     res.status(500).json({ error: e.message });
@@ -315,6 +349,7 @@ app.get('/api/products', requireAuth, async (_, res) => {
     SELECT p.id, p.uid, p.name, p.status, p.affiliate_url, p.created_at,
            p.enrichment->>'price_idr' AS price_idr,
            jsonb_array_length(COALESCE(p.enrichment->'concrete_details','[]'::jsonb)) AS facts,
+           p.media_mode,
            (SELECT count(*) FROM product_images pi WHERE pi.product_id=p.id) AS images,
            (SELECT count(*) FROM posts po WHERE po.product_id=p.id AND po.status='published') AS posted
       FROM products p ORDER BY p.created_at DESC LIMIT 200`);

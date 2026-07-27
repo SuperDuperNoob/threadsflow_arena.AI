@@ -54,7 +54,9 @@ function qa(input) {
   // 1. hard length
   if (text.length > 500) reasons.push('over Threads 500 char limit');
   const bands = { micro: [1, 120], mid: [110, 270], long: [250, 480] };
-  const [lo, hi] = bands[input.length_band] ?? [1, 480];
+  let [lo, hi] = bands[input.length_band] ?? [1, 480];
+  // no image => the text has to carry the whole post, so raise the floor
+  if (input.media_type === 'TEXT') lo = Math.max(lo, 90);
   if (text.length < lo || text.length > hi) {
     reasons.push(`length ${text.length} outside band ${input.length_band} (${lo}-${hi})`);
   }
@@ -88,6 +90,27 @@ function qa(input) {
   });
   if (!hasNumber && !hasDetail && input.sell_intensity !== '0') {
     reasons.push('no concrete product detail — will read generic');
+  }
+
+  // 5b. TEXT-ONLY posts are held to a higher bar. With no photo, a post carrying no concrete
+  // detail is pure assertion, and assertion is what makes affiliate copy invisible.
+  // This applies even at sell_intensity 0, unlike the rule above.
+  if (input.media_type === 'TEXT') {
+    if (!hasNumber && !hasDetail) {
+      reasons.push('text-only post with no concrete detail — nothing anchors it');
+    }
+    // Referring to a picture that does not exist is the classic text-post failure.
+    if (/\b(gambar|foto|fotonya|gambarnya|di atas|liat nih|lihat gambar|swipe|geser)\b/i.test(text)) {
+      reasons.push('text-only post references an image that does not exist');
+    }
+    if (text.length < 90) {
+      reasons.push('text-only post too short to hold attention without a visual');
+    }
+  }
+
+  // 5c. Posts WITH an image should not narrate the image — the reader can already see it.
+  if (input.media_type !== 'TEXT' && /\b(di (gambar|foto) (ini|itu)|seperti (yang )?(terlihat|di gambar))\b/i.test(text)) {
+    reasons.push('narrates the attached image instead of adding to it');
   }
 
   // 6. must not open with the product name
@@ -129,6 +152,7 @@ function qa(input) {
     reasons,
     cleaned: text,
     stats: {
+      media_type: input.media_type ?? 'IMAGE',
       chars: text.length,
       emoji: emojis.length,
       hashtag: (text.match(/#\w+/g) ?? []).length > 0,

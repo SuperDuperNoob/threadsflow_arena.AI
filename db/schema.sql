@@ -21,7 +21,11 @@ CREATE TABLE products (
   uid            TEXT UNIQUE NOT NULL DEFAULT tf_short_uid(),
   name           TEXT,
   affiliate_url  TEXT NOT NULL,
+  description    TEXT,                     -- product description; the ONLY raw material when
+                                           -- no images are supplied, so intake demands more of it
   notes          TEXT,                     -- your free-text hints ("buat ibu-ibu, 89rb")
+  media_mode     TEXT NOT NULL DEFAULT 'text'
+                 CHECK (media_mode IN ('images','text')),
   enrichment     JSONB DEFAULT '{}',       -- {price, rating, sold, reviews:[...], category}
   status         TEXT NOT NULL DEFAULT 'active'
                  CHECK (status IN ('active','resting','archived')),
@@ -44,7 +48,8 @@ CREATE TABLE product_images (
 
 CREATE TABLE levers (
   id       BIGSERIAL PRIMARY KEY,
-  kind     TEXT NOT NULL CHECK (kind IN ('format','angle','tone','sell_intensity','length_band')),
+  kind     TEXT NOT NULL CHECK (kind IN
+             ('format','angle','tone','sell_intensity','length_band','media_type')),
   code     TEXT NOT NULL,
   label    TEXT NOT NULL,
   brief    TEXT NOT NULL,        -- the instruction fragment injected into the prompt
@@ -73,7 +78,9 @@ CREATE TABLE posts (
   id                BIGSERIAL PRIMARY KEY,
   uid               TEXT UNIQUE NOT NULL,   -- short base36, used as Shopee SubId + redirect slug
   product_id        BIGINT REFERENCES products(id),
-  image_ids         BIGINT[],
+  image_ids         BIGINT[] DEFAULT '{}',
+  media_type        TEXT NOT NULL DEFAULT 'IMAGE'
+                    CHECK (media_type IN ('TEXT','IMAGE','CAROUSEL')),
   -- levers
   format            TEXT NOT NULL,
   angle             TEXT NOT NULL,
@@ -101,7 +108,13 @@ CREATE TABLE posts (
   parent_post_id    BIGINT REFERENCES posts(id),  -- set when this is a "bred" variation of a winner
   generation        INT DEFAULT 0,
   cycle_id          BIGINT,
-  created_at        TIMESTAMPTZ DEFAULT now()
+  created_at        TIMESTAMPTZ DEFAULT now(),
+  -- A post claiming images must actually have them. Without this, wf3 calls the Threads API
+  -- with media_type=IMAGE and a null image_url and fails opaquely 30 seconds later.
+  CONSTRAINT posts_media_consistency_chk CHECK (
+       (media_type = 'TEXT'     AND cardinality(COALESCE(image_ids,'{}')) = 0)
+    OR (media_type = 'IMAGE'    AND cardinality(COALESCE(image_ids,'{}')) = 1)
+    OR (media_type = 'CAROUSEL' AND cardinality(COALESCE(image_ids,'{}')) BETWEEN 2 AND 20))
 );
 CREATE INDEX ON posts (status, scheduled_at);
 CREATE INDEX ON posts (published_at DESC);
@@ -217,7 +230,8 @@ CREATE VIEW v_post_performance AS
 SELECT
   p.id, p.uid, p.product_id, pr.name AS product_name,
   p.format, p.angle, p.tone, p.sell_intensity, p.length_band,
-  p.published_at, p.char_count, p.is_carousel,
+  p.media_type, p.is_carousel,
+  p.published_at, p.char_count,
   EXTRACT(HOUR FROM p.published_at) AS hour_of_day,
   m.views, m.likes, m.replies, m.reposts, m.quotes,
   COALESCE(c.clicks,0)      AS clicks,

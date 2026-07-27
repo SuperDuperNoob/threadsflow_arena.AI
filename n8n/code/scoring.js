@@ -78,7 +78,7 @@ function score({ posts, settings, lifetime_orders }) {
   });
 
   // ── marginal lever report (this is the part a human should read)
-  const kinds = ['format', 'angle', 'tone', 'sell_intensity', 'length_band'];
+  const kinds = ['format', 'angle', 'tone', 'sell_intensity', 'length_band', 'media_type'];
   const cycleMean = rows.reduce((a, r) => a + r.final_score, 0) / (rows.length || 1);
   const leverReport = {};
   for (const kind of kinds) {

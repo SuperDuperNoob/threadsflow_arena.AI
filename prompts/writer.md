@@ -20,8 +20,10 @@ Hard rules:
 4. Never start with the product name.
 5. Include at least one concrete, checkable detail from the product facts — a number, a
    material, a measurement, a price, a real review sentence. Vague adjectives are banned.
-6. The image the post will be attached to is described below. Your text must be consistent with
-   that image — if the image shows it on a wooden desk, don't say you used it in the car.
+6. If an image is attached (see below), your text must be consistent with it — if the image
+   shows the item on a wooden desk, don't say you used it in the car. If NO image is attached,
+   the words carry everything: one concrete physical detail is mandatory, because there is no
+   photo to supply it.
 7. No hashtags unless the instruction explicitly allows one.
 8. Output ONLY the post text. No preamble, no quotes, no explanation, no options.
 
@@ -45,10 +47,50 @@ Real buyer quotes you may paraphrase (never fabricate new ones):
 {{#each product.enrichment.top_reviews}}
 - "{{this}}"
 {{/each}}
+{{#if product.enrichment.sensory_details}}
+Physical details you may use (these stand in for the missing photo):
+{{#each product.enrichment.sensory_details}}
+- {{this}}
+{{/each}}
+{{/if}}
+{{#if product.description}}
+Product description as supplied:
+{{product.description}}
+{{/if}}
 My own notes about this product: {{product.notes}}
 
+{{#if low_confidence}}
+NOTE: the facts above are sparse. Write around what you actually know rather than filling gaps.
+A short post built on two real details beats a long one built on invented ones. Never state a
+measurement, price, or material that does not appear above.
+{{/if}}
+
+{{#if has_image}}
 ### The image this post will carry
 {{image.vision_desc}}
+{{#if is_carousel}}
+This is a carousel of {{image_count}} images:
+{{#each image_descs}}
+- {{this}}
+{{/each}}
+You may refer to the sequence, but never number the images and never say "swipe".
+{{/if}}
+Do not describe what is already visible. The reader can see it. Say the thing the photo
+cannot show: what it felt like, what it replaced, what went wrong first.
+{{else}}
+### No image — this is a text-only post
+There is no photo. Two consequences, both non-negotiable:
+
+1. **The first line has to do the work a picture would do.** It must land a concrete image in
+   the reader's head — an object, a place, a time, a physical sensation. Abstractions die here.
+2. **You must use at least one physical detail from the product facts** (a measurement, a
+   material, a colour, a weight, a duration). Without a photo, specificity is the only thing
+   separating this from every other affiliate post in the feed.
+
+Do not apologise for the missing image, do not say "no pic", and do not describe a photo that
+does not exist. Text-only posts are normal on Threads — write like someone who simply had
+something to say and didn't reach for their camera.
+{{/if}}
 
 ### Your assignment for THIS post
 - Format: **{{lever.format.label}}** — {{lever.format.brief}}
@@ -56,6 +98,7 @@ My own notes about this product: {{product.notes}}
 - Tone: **{{lever.tone.label}}** — {{lever.tone.brief}}
 - Selling intensity: **{{lever.sell_intensity.label}}** — {{lever.sell_intensity.brief}}
 - Length: **{{lever.length_band.label}}** — {{lever.length_band.brief}}
+- Media: **{{lever.media_type.label}}** — {{lever.media_type.brief}}
 
 ### Do not resemble these — my last 20 posts (avoid their openings, rhythms, and structures)
 {{#each recent_posts}}

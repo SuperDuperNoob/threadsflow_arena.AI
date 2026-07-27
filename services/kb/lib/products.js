@@ -87,7 +87,7 @@ export const putImage = (buf, key, ct) =>
  * no API key, no cost. If the page blocks us (Shopee often does), we fall back to whatever the
  * user typed. The system must never be blocked by an external site.
  */
-export async function enrich({ affiliateUrl, name, priceIdr, notes }) {
+export async function enrich({ affiliateUrl, name, priceIdr, notes, description = '', mediaMode = 'images' }) {
   let og = {};
   try {
     const res = await fetch(affiliateUrl, {
@@ -104,7 +104,13 @@ export async function enrich({ affiliateUrl, name, priceIdr, notes }) {
     name: name || og.title || null,
     price_idr: priceIdr ? Number(priceIdr) : null,
     og_description: og.description ?? null,
+    media_mode: mediaMode,
   };
+
+  // With no images there is no vision pass, so concrete_details is the ONLY specificity the
+  // writer will ever see. Demand more of it and make the model say so when it falls short,
+  // rather than quietly padding the list with adjectives.
+  const textOnly = mediaMode === 'text';
 
   // Turn whatever we have — mostly the user's notes — into the 5 concrete details the
   // writer prompt requires. This is the step that stops copy from sounding generic.
@@ -112,23 +118,37 @@ export async function enrich({ affiliateUrl, name, priceIdr, notes }) {
     const out = await complete(
       `You prepare product facts for a copywriter. Output JSON only:
 {"name":"","category":"","target_persona":"","price_idr":null,
- "concrete_details":["5 concrete checkable facts: measurements, materials, durations, prices, quantities"],
- "top_reviews":["up to 3 short realistic buyer phrases, ONLY if present in the input; otherwise empty array"]}
+ "concrete_details":["concrete checkable facts: measurements, materials, durations, prices, quantities"],
+ "sensory_details":["${textOnly ? '3-5 physical details someone could see or feel: colour, texture, size relative to a hand, weight, sound' : 'leave empty'}"],
+ "top_reviews":["up to 3 short realistic buyer phrases, ONLY if present in the input; otherwise empty array"],
+ "detail_confidence":"high|low"}
 
 Rules:
 - NEVER invent a review. Empty array is correct if none were supplied.
-- concrete_details must be checkable facts, not adjectives. "11cm handle" yes. "ergonomic" no.
-- If you have fewer than 5 real facts, return fewer. Do not pad.
+- concrete_details must be checkable facts, not adjectives. "gagang 11cm" yes. "ergonomis" no.
+- Extract ONLY from the supplied text. Do not add facts from general knowledge about the
+  product category. A wrong specific is worse than a missing one.
+- If you have fewer than 5 real facts, return fewer and set detail_confidence="low". Do not pad.
+${textOnly
+  ? '- THERE ARE NO PHOTOS. sensory_details is what the writer uses in place of an image, so it ' +
+    'matters more than usual. Derive it ONLY from the description; if the description does not ' +
+    'support it, return an empty array and set detail_confidence="low".'
+  : '- Photos exist and are described separately. Leave sensory_details empty.'}
 - Write in Indonesian.`,
-      JSON.stringify({ url: affiliateUrl, og, user_name: name, user_price: priceIdr, user_notes: notes }),
+      JSON.stringify({ url: affiliateUrl, og, user_name: name, user_price: priceIdr,
+                       user_notes: notes, user_description: description }),
       { temperature: 0.2 });
     return { ...base, ...out, enriched: true };
   } catch {
-    // total fallback: split the user's notes into details. Still works.
+    // Total fallback: split whatever free text we have into details. Still works — the
+    // description is usually already written in sentences, which is exactly the right shape.
     return {
       ...base,
-      concrete_details: (notes || '').split(/[.\n;]+/).map(s => s.trim()).filter(s => s.length > 8).slice(0, 5),
+      concrete_details: `${description}\n${notes || ''}`
+        .split(/[.\n;]+/).map(x => x.trim()).filter(x => x.length > 8).slice(0, 6),
+      sensory_details: [],
       top_reviews: [],
+      detail_confidence: 'low',
       enriched: false,
     };
   }

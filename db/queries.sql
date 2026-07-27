@@ -130,3 +130,39 @@ SELECT code, name, type, n, round(reward_sum/NULLIF(n,0),3) mean_reward, cooldow
             WHEN reward_sum/n < 0.4 THEN 'underperforming — consider disabling'
             ELSE 'ok' END AS action
 FROM techniques WHERE enabled ORDER BY n ASC, mean_reward ASC;
+
+-- ═══════════════════════════════════════════════════════════════
+-- MEDIA TYPE (images are optional — is TEXT actually worse?)
+-- ═══════════════════════════════════════════════════════════════
+
+-- ── 16. TEXT vs IMAGE vs CAROUSEL. Check this at cycle 6+, not before.
+SELECT * FROM v_media_performance;
+
+-- ── 17. Same comparison but only for products that HAVE images, so you are comparing
+-- like with like. The headline number above is confounded: text-only products may simply
+-- be different products. This query removes that bias.
+SELECT vp.media_type, count(*) posts, round(avg(vp.views)) avg_views,
+       round(avg(vp.ctr_pct)::numeric,3) ctr_pct, sum(vp.orders) orders
+FROM v_post_performance vp
+JOIN products p ON p.id = vp.product_id
+WHERE p.media_mode = 'images'
+GROUP BY 1 ORDER BY ctr_pct DESC NULLS LAST;
+
+-- ── 18. Does having a description help? Compares products with and without one.
+SELECT (p.description IS NOT NULL) AS has_description,
+       p.media_mode, count(DISTINCT p.id) products, count(vp.id) posts,
+       round(avg(vp.ctr_pct)::numeric,3) ctr_pct,
+       round(avg(vp.views)) avg_views
+FROM products p LEFT JOIN v_post_performance vp ON vp.product_id = p.id
+GROUP BY 1,2 ORDER BY ctr_pct DESC NULLS LAST;
+
+-- ── 19. Products with weak inputs — these will produce weak copy no matter what
+SELECT uid, name, media_mode,
+       (SELECT count(*) FROM product_images i WHERE i.product_id=p.id) images,
+       COALESCE(length(description),0) desc_len,
+       jsonb_array_length(COALESCE(enrichment->'concrete_details','[]'::jsonb)) facts,
+       enrichment->>'detail_confidence' confidence,
+       CASE WHEN jsonb_array_length(COALESCE(enrichment->'concrete_details','[]'::jsonb)) < 3
+            THEN 'ADD MORE DETAIL — copy will be generic' ELSE 'ok' END AS action
+FROM products p WHERE status='active'
+ORDER BY facts ASC;

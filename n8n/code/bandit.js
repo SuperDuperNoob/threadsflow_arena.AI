@@ -53,7 +53,11 @@ function pickArm({ levers, armStats, productUid, settings, plan }) {
   const statKey = (scope, kind, code) => `${scope}|${kind}|${code}`;
   const stats = new Map(armStats.map(s => [statKey(s.scope, s.lever_kind, s.lever_code), s]));
 
-  const kinds = ['format', 'angle', 'tone', 'sell_intensity', 'length_band'];
+  // media_type is a real lever, but it is CONSTRAINED by what the product actually has.
+  // A text-only product can never draw IMAGE; a product with images can still draw TEXT,
+  // because a text post about a product you own is perfectly legitimate and often out-reaches
+  // an image post on Threads. That asymmetry is deliberate.
+  const kinds = ['format', 'angle', 'tone', 'sell_intensity', 'length_band', 'media_type'];
   const chosen = {};
 
   for (const kind of kinds) {
@@ -64,6 +68,18 @@ function pickArm({ levers, armStats, productUid, settings, plan }) {
     }
 
     let options = levers.filter(l => l.kind === kind && l.enabled);
+
+    // Restrict media_type to what this product can physically produce.
+    if (kind === 'media_type') {
+      const n = plan?.imageCount ?? 0;
+      const allowed = n === 0 ? ['TEXT'] : (n === 1 ? ['TEXT', 'IMAGE'] : ['TEXT', 'IMAGE', 'CAROUSEL']);
+      options = options.filter(o => allowed.includes(o.code));
+      // Products WITH images should still mostly use them — they were uploaded for a reason.
+      // Cap pure-text at ~30% for image products so the bandit explores without overriding intent.
+      if (n > 0 && options.length > 1 && Math.random() > 0.30) {
+        options = options.filter(o => o.code !== 'TEXT');
+      }
+    }
 
     // drop arms in cooldown, unless that would leave nothing
     const live = options.filter(o => {
@@ -107,9 +123,14 @@ function pickArm({ levers, armStats, productUid, settings, plan }) {
   if (['minimal', 'deadpan'].includes(chosen.tone) && chosen.sell_intensity === '2') {
     chosen.sell_intensity = '1';
   }
+  // 4. A text-only post has no image to hold the scroll, so micro length is a bad bet:
+  //    two lines with no visual is the easiest thing in a feed to skip past.
+  if (chosen.media_type === 'TEXT' && chosen.length_band === 'micro') {
+    chosen.length_band = 'mid';
+  }
 
   chosen.combo_key = [chosen.format, chosen.angle, chosen.tone,
-                      chosen.sell_intensity, chosen.length_band].join('|');
+                      chosen.sell_intensity, chosen.length_band, chosen.media_type].join('|');
   return chosen;
 }
 
@@ -157,11 +178,12 @@ function updateArms({ scores, prevStats, settings }) {
   const min = Math.min(...vals), max = Math.max(...vals);
   const norm = v => (max === min ? 0.5 : (v - min) / (max - min));
 
-  const kinds = ['format', 'angle', 'tone', 'sell_intensity', 'length_band'];
+  const kinds = ['format', 'angle', 'tone', 'sell_intensity', 'length_band', 'media_type'];
   for (const s of scores) {
     const r = norm(s.final_score);            // 0..1
     for (const kind of kinds) {
-      const code = String(s.post[kind]);
+      const code = String(s.post[kind] ?? '');
+      if (!code) continue;
       for (const scope of ['global', `product:${s.post.product_uid}`]) {
         const k = key(scope, kind, code);
         const cur = out.get(k) ?? { scope, lever_kind: kind, lever_code: code,

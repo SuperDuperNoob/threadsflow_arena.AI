@@ -2,7 +2,7 @@
 
 Self-optimizing Shopee-affiliate posting machine for Threads.
 
-**You do:** paste an affiliate URL + 2–4 images into a form.
+**You do:** paste an affiliate URL, plus images *or* a description (or both) into a form.
 **It does:** writes non-templated copy, posts 5×/day at jittered times, drops the tracked
 affiliate link in the first comment, measures views → clicks → orders, and every 3 days
 re-invests posting slots into the styles that actually earned money. Forever, until you stop it.
@@ -41,6 +41,7 @@ docs/04-technique-library.md  why NOT to call NotebookLM live, and what to do in
 db/schema.sql               PostgreSQL schema
 db/seed_levers.sql          12 formats, 9 angles, 7 tones, banned phrases, CTA pool, settings
 db/seed_techniques.sql      42 cold-start techniques — the system runs with ZERO PDFs uploaded
+db/migrations/              001_optional_media.sql — makes images optional on existing installs
 db/queries.sql              the analysis queries you'll actually use
 db/schema_techniques.sql    Technique Library: mined copywriting techniques as testable arms
 db/mining_questions.sql     30 questions to extract technique from your NotebookLM PDFs

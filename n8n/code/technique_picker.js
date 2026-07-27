@@ -55,7 +55,10 @@ function selectDevices({ techniques, arm, recent_technique_ids = [] }) {
     const okF = !t.compatible_formats?.length   || t.compatible_formats.includes(arm.format);
     const okT = !t.compatible_tones?.length     || t.compatible_tones.includes(arm.tone);
     const okI = !t.compatible_intensity?.length || t.compatible_intensity.includes(intensity);
-    return okF && okT && okI;
+    // A technique that leans on the photo ("make the object the grammatical subject") must
+    // never fire on a text-only post — it would produce copy describing an image nobody sees.
+    const okM = !t.compatible_media?.length || t.compatible_media.includes(arm.media_type);
+    return okF && okT && okI && okM;
   });
 
   if (!compatible.length) return { devices: [], fragment: '' };

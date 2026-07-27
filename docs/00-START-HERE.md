@@ -75,6 +75,35 @@ The Knowledge Base is an amplifier, never a dependency.
 
 ---
 
+## 3b. Three ways to add a product — images are optional
+
+| You have | Accepted | What happens |
+|---|---|---|
+| link + images | ✅ | Single-image and carousel posts. ~15% of posts still go text-only as exploration. |
+| link + images + description | ✅ | Richest input. Description feeds facts the photo can't show (price, warranty, size). |
+| **link + description** | ✅ | **Text-only posts.** No image needed anywhere in the pipeline. |
+| link alone | ❌ | Rejected. With no photo and no words there is nothing concrete to write from, and invented copy is exactly the slop this project exists to avoid. |
+
+**Text-only is a first-class mode, not a fallback.** Threads is a text-first feed and text posts
+often out-reach image posts there. `media_type` is a real bandit lever (TEXT / IMAGE / CAROUSEL)
+scored alongside tone and format, so within ~6 cycles `SELECT * FROM v_media_performance` tells
+you which actually earns on *your* account.
+
+Three rules make it safe:
+- **No images → description must be ≥ 80 characters.** Without a photo the words carry
+  everything, so the QA gate also demands at least one concrete detail (a number, material or
+  measurement) even at `sell_intensity=0`.
+- **The bandit can never pick an impossible media type.** 0 images → TEXT only. 1 image → TEXT
+  or IMAGE. 2+ → all three. A DB CHECK constraint enforces the same invariant, so a malformed
+  post can't reach the Threads API and fail opaquely 30 seconds later.
+- **If a CDN image goes missing at publish time**, wf3 downgrades to TEXT rather than losing the
+  slot. A text post is a fine post; a failed API call is a wasted slot.
+
+The QA gate also blocks the two characteristic failures: a text post referring to a photo that
+doesn't exist, and an image post narrating the photo the reader can already see.
+
+---
+
 ## 4. What YOU must do by hand
 
 ### Before anything (blocking, ~2 hours, mostly waiting on Meta)
@@ -103,6 +132,8 @@ The Knowledge Base is an amplifier, never a dependency.
    schema.sql → schema_techniques.sql → schema_kb.sql
    → seed_levers.sql → seed_techniques.sql → mining_questions.sql
    ```
+   Already running an older install? Apply `db/migrations/001_optional_media.sql` — it is
+   idempotent and backfills `media_mode` from what each product actually has.
 
 4. **Insert your secrets** into the `settings` table (token, user_id, LLM base URL/key).
 
@@ -135,7 +166,7 @@ only you know what sounds wrong in your voice, to your audience.
 | When | What |
 |---|---|
 | Weekly | Read 5 random posts. Add robotic phrases to `banned_phrases`. |
-| Weekly | Add 1–2 products (2–4 images each). The bandit needs variety. |
+| Weekly | Add 1–2 products. Images optional — a link + good description is enough. |
 | Weekly | `SELECT * FROM run_log WHERE level='error' AND ts > now()-interval '7 days'` |
 | Every 3 days | Read the cycle digest — **but don't act before cycle 5** |
 | Monthly | Retire CTA variants with `use_count > 8`; add 5 new ones |

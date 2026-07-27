@@ -41,6 +41,11 @@ INSERT INTO levers (kind, code, label, brief) VALUES
 ('sell_intensity','1','Soft selling','Sebut produk sekali, tanpa mengajak beli. CTA di komentar bersifat informatif ("taruh di komentar").'),
 ('sell_intensity','2','Direct','Boleh mengajak langsung, tetap tanpa kata "buruan"/"jangan sampai kehabisan".'),
 
+-- ── MEDIA TYPE (3) — images are optional; this is a real arm, not a fallback
+('media_type','TEXT','Teks saja','Tanpa gambar. Kalimat pertama harus berdiri sendiri karena tidak ada visual yang menahan scroll. Detail sensorik harus dibawa oleh kata-kata.'),
+('media_type','IMAGE','Satu gambar','Satu gambar menyertai post. Jangan mendeskripsikan ulang apa yang sudah terlihat di gambar.'),
+('media_type','CAROUSEL','Carousel','Beberapa gambar. Teks boleh mengacu ke urutan, bukan ke satu gambar saja.'),
+
 -- ── LENGTH (3)
 ('length_band','micro','Mikro','Maksimal 120 karakter.'),
 ('length_band','mid','Sedang','120-260 karakter.'),
