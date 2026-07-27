@@ -1,0 +1,149 @@
+# ThreadsFlow — 4GB RAM / 2 vCPU Debian, no open ports (Cloudflare Tunnel only).
+# Peak RSS target: ~2.4GB. Everything else is headroom for n8n spikes.
+#
+#   cp .env.example .env && edit
+#   docker compose up -d
+#   docker compose exec -T postgres psql -U threadsflow -d threadsflow < ../db/schema.sql
+#   docker compose exec -T postgres psql -U threadsflow -d threadsflow < ../db/seed_levers.sql
+
+name: threadsflow
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: threadsflow
+      POSTGRES_PASSWORD: ${PG_PASSWORD}
+      POSTGRES_DB: threadsflow
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    command: >
+      postgres -c shared_buffers=192MB -c effective_cache_size=512MB
+               -c work_mem=8MB -c maintenance_work_mem=64MB
+               -c max_connections=40
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U threadsflow"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    deploy:
+      resources:
+        limits: { memory: 512M }
+
+  n8n:
+    image: docker.n8n.io/n8nio/n8n:latest
+    restart: unless-stopped
+    depends_on:
+      postgres: { condition: service_healthy }
+    environment:
+      DB_TYPE: postgresdb
+      DB_POSTGRESDB_HOST: postgres
+      DB_POSTGRESDB_DATABASE: threadsflow
+      DB_POSTGRESDB_USER: threadsflow
+      DB_POSTGRESDB_PASSWORD: ${PG_PASSWORD}
+      DB_POSTGRESDB_SCHEMA: n8n            # keep n8n tables out of your app schema
+      N8N_HOST: ${N8N_HOST}
+      N8N_PROTOCOL: https
+      WEBHOOK_URL: https://${N8N_HOST}/
+      N8N_EDITOR_BASE_URL: https://${N8N_HOST}/
+      GENERIC_TIMEZONE: Asia/Kuala_Lumpur
+      TZ: Asia/Kuala_Lumpur
+      N8N_ENCRYPTION_KEY: ${N8N_ENCRYPTION_KEY}
+      N8N_BASIC_AUTH_ACTIVE: "true"
+      N8N_BASIC_AUTH_USER: ${N8N_USER}
+      N8N_BASIC_AUTH_PASSWORD: ${N8N_PASSWORD}
+      # ── memory + disk discipline on a small box
+      EXECUTIONS_DATA_PRUNE: "true"
+      EXECUTIONS_DATA_MAX_AGE: "168"
+      EXECUTIONS_DATA_SAVE_ON_SUCCESS: none
+      EXECUTIONS_DATA_SAVE_ON_ERROR: all
+      EXECUTIONS_DATA_SAVE_ON_PROGRESS: "false"
+      N8N_PAYLOAD_SIZE_MAX: "32"
+      NODE_OPTIONS: --max-old-space-size=1024
+      N8N_DIAGNOSTICS_ENABLED: "false"
+      N8N_RUNNERS_ENABLED: "true"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - n8ndata:/home/node/.n8n
+      - ../n8n/code:/code:ro              # Code nodes can `require` nothing, but handy for copy/paste
+    deploy:
+      resources:
+        limits: { memory: 1400M }
+
+  redirector:
+    build: ../services/redirector
+    restart: unless-stopped
+    depends_on:
+      postgres: { condition: service_healthy }
+    environment:
+      DATABASE_URL: postgres://threadsflow:${PG_PASSWORD}@postgres:5432/threadsflow
+      IP_SALT: ${IP_SALT}
+      FALLBACK_URL: https://shopee.com.my
+      PORT: "8081"
+    deploy:
+      resources:
+        limits: { memory: 128M }
+
+
+  kb:
+    build: ../services/kb
+    restart: unless-stopped
+    depends_on:
+      postgres: { condition: service_healthy }
+    environment:
+      DATABASE_URL: postgres://threadsflow:${PG_PASSWORD}@postgres:5432/threadsflow
+      PORT: "8082"
+      KB_PASSWORD: ${KB_PASSWORD}
+      STORAGE_DIR: /data/pdfs
+      LLM_BASE_URL: ${LLM_BASE_URL}
+      LLM_API_KEY: ${LLM_API_KEY}
+      LLM_MODEL_MINE: ${LLM_MODEL_MINE}
+      LLM_MODEL_EMBED: ${LLM_MODEL_EMBED}
+      MINE_CONCURRENCY: "2"
+      MAX_CHUNKS_PER_DOC: "45"
+      TZ: Asia/Kuala_Lumpur
+    volumes:
+      - kbdata:/data
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    deploy:
+      resources:
+        limits: { memory: 640M }
+
+  # Public image host. Skip this and use Cloudflare R2 if you prefer zero self-hosting.
+  minio:
+    image: minio/minio:latest
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_PASSWORD}
+      MINIO_BROWSER: "off"
+    volumes:
+      - miniodata:/data
+    deploy:
+      resources:
+        limits: { memory: 320M }
+
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    restart: unless-stopped
+    command: tunnel --no-autoupdate run --token ${CF_TUNNEL_TOKEN}
+    depends_on: [n8n, ui, redirector]
+    deploy:
+      resources:
+        limits: { memory: 96M }
+
+volumes:
+  pgdata:
+  n8ndata:
+  miniodata:
+  kbdata:
+
+# ── Cloudflare Tunnel public hostnames to configure in the Zero Trust dashboard:
+#   n8n.yourdomain.com  → http://n8n:5678         (put an Access policy on this!)
+#   kb.yourdomain.com   → http://kb:8082          (Access policy: your email only)
+#   r.yourdomain.com    → http://redirector:8081  (PUBLIC, no Access — buyers hit this)
+#   cdn.yourdomain.com  → http://minio:9000       (PUBLIC, read-only bucket)

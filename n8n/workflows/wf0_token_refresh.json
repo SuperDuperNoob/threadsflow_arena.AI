@@ -1,0 +1,50 @@
+{
+  "name": "wf0_token_refresh",
+  "nodes": [
+    { "parameters": { "rule": { "interval": [{ "field": "cronExpression", "expression": "0 4 */25 * *" }] } },
+      "id": "cron", "name": "Every 25 days", "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2, "position": [-600, 300],
+      "notes": "Runs twice inside the 60-day token life. Refreshing early is free; refreshing late is fatal." },
+    { "parameters": { "operation": "executeQuery",
+        "query": "SELECT value->>'token' AS token, value->>'user_id' AS user_id FROM settings WHERE key='threads_creds';",
+        "options": {} },
+      "id": "get", "name": "Current token", "type": "n8n-nodes-base.postgres", "typeVersion": 2.5,
+      "position": [-380, 300], "credentials": { "postgres": { "id": "PG", "name": "Postgres threadsflow" } } },
+    { "parameters": { "url": "https://graph.threads.net/refresh_access_token",
+        "sendQuery": true,
+        "queryParameters": { "parameters": [
+          { "name": "grant_type", "value": "th_refresh_token" },
+          { "name": "access_token", "value": "={{ $json.token }}" } ] },
+        "options": { "response": { "response": { "neverError": true } } } },
+      "id": "ref", "name": "Refresh", "type": "n8n-nodes-base.httpRequest", "typeVersion": 4.2,
+      "position": [-160, 300], "retryOnFail": true, "maxTries": 3, "waitBetweenTries": 10000 },
+    { "parameters": { "conditions": { "options": { "version": 2 },
+        "conditions": [{ "leftValue": "={{ $json.access_token }}", "rightValue": "",
+          "operator": { "type": "string", "operation": "exists", "singleValue": true } }],
+        "combinator": "and" }, "options": {} },
+      "id": "ok", "name": "Got a token?", "type": "n8n-nodes-base.if", "typeVersion": 2.2,
+      "position": [60, 300] },
+    { "parameters": { "operation": "executeQuery",
+        "query": "UPDATE settings SET value = jsonb_set(jsonb_set(value,'{token}',to_jsonb($1::text)),\n  '{expires_at}', to_jsonb((now() + ($2||' seconds')::interval)::text))\n WHERE key='threads_creds';\nINSERT INTO run_log (workflow, level, message) VALUES ('wf0_token_refresh','info','token refreshed');",
+        "options": { "queryReplacement": "={{ $json.access_token }},={{ $json.expires_in || 5184000 }}" } },
+      "id": "save", "name": "Store new token", "type": "n8n-nodes-base.postgres", "typeVersion": 2.5,
+      "position": [280, 220], "credentials": { "postgres": { "id": "PG", "name": "Postgres threadsflow" } } },
+    { "parameters": { "operation": "executeQuery",
+        "query": "INSERT INTO run_log (workflow, level, message, meta)\nVALUES ('wf0_token_refresh','error','TOKEN REFRESH FAILED — posting will stop within days', $1::jsonb);",
+        "options": { "queryReplacement": "={{ JSON.stringify($json).slice(0,500) }}" } },
+      "id": "err", "name": "ALERT: refresh failed", "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5, "position": [280, 400],
+      "credentials": { "postgres": { "id": "PG", "name": "Postgres threadsflow" } },
+      "notes": "Add a Telegram/email node here. A dead token is silent for 3 days otherwise." }
+  ],
+  "connections": {
+    "Every 25 days": { "main": [[{ "node": "Current token", "type": "main", "index": 0 }]] },
+    "Current token": { "main": [[{ "node": "Refresh", "type": "main", "index": 0 }]] },
+    "Refresh": { "main": [[{ "node": "Got a token?", "type": "main", "index": 0 }]] },
+    "Got a token?": { "main": [
+      [{ "node": "Store new token", "type": "main", "index": 0 }],
+      [{ "node": "ALERT: refresh failed", "type": "main", "index": 0 }]] }
+  },
+  "settings": { "executionOrder": "v1", "timezone": "Asia/Kuala_Lumpur" },
+  "tags": [{ "name": "threadsflow" }]
+}

@@ -1,0 +1,925 @@
+{
+  "name": "wf3_publish",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "minutes",
+              "minutesInterval": 5
+            }
+          ]
+        }
+      },
+      "id": "cron",
+      "name": "Every 5 min",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        -820,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "WITH s AS (\n  SELECT value FROM settings WHERE key = 'threads_creds'\n)\nSELECT p.*, pr.affiliate_url, pr.uid AS product_uid, pr.media_mode,\n       (SELECT array_agg(pi.public_url ORDER BY pi.id)\n          FROM product_images pi WHERE pi.id = ANY(p.image_ids)) AS image_urls,\n       (SELECT value->>'token'   FROM s) AS token,\n       (SELECT value->>'user_id' FROM s) AS user_id\n  FROM posts p\n  JOIN products pr ON pr.id = p.product_id\n WHERE p.status = 'queued'\n   AND p.scheduled_at <= now()\n ORDER BY p.scheduled_at\n LIMIT 1;",
+        "options": {}
+      },
+      "id": "fetch",
+      "name": "Fetch due post",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        -600,
+        300
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "PG",
+          "name": "Postgres threadsflow"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "version": 2
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.id }}",
+              "rightValue": "",
+              "operator": {
+                "type": "number",
+                "operation": "exists",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "has_post",
+      "name": "Any post due?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        -380,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "url": "=https://graph.threads.net/v1.0/{{ $json.user_id }}/threads_publishing_limit",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "fields",
+              "value": "quota_usage,config"
+            },
+            {
+              "name": "access_token",
+              "value": "={{ $json.token }}"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true
+            }
+          }
+        }
+      },
+      "id": "quota",
+      "name": "Check quota",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -160,
+        220
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000
+    },
+    {
+      "parameters": {
+        "jsCode": "const post  = $('Fetch due post').first().json;\nconst quota = $json?.data?.[0]?.quota_usage ?? 0;\nconst total = $json?.data?.[0]?.config?.quota_total ?? 250;\nif (quota >= Math.min(200, total - 20)) {\n  return [{ json: { ...post, abort: true, reason: `quota ${quota}/${total}` } }];\n}\n\nconst urls = (post.image_urls || []).filter(Boolean);\n// Trust the column, but never trust it blindly: if media_type claims images and none resolved\n// (deleted file, broken CDN), fall back to TEXT rather than sending Meta a null image_url.\n// A text post is a fine post. A failed API call is 30 wasted seconds and a lost slot.\nlet media_type = post.media_type || (urls.length ? 'IMAGE' : 'TEXT');\nif (media_type !== 'TEXT' && urls.length === 0) media_type = 'TEXT';\nif (media_type === 'CAROUSEL' && urls.length < 2) media_type = urls.length === 1 ? 'IMAGE' : 'TEXT';\nif (media_type === 'IMAGE' && urls.length > 1) urls.length = 1;\n\nreturn [{ json: { ...post, abort: false, quota, image_urls: urls, media_type,\n                  is_text: media_type === 'TEXT',\n                  is_carousel: media_type === 'CAROUSEL',\n                  wait_seconds: media_type === 'TEXT' ? 3 : 35 } }];"
+      },
+      "id": "guard",
+      "name": "Quota guard",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        60,
+        220
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE posts SET status = 'publishing' WHERE id = $1 AND status = 'queued' RETURNING id;",
+        "options": {
+          "queryReplacement": "={{ $json.id }}"
+        }
+      },
+      "id": "lock",
+      "name": "Lock row",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        280,
+        220
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "PG",
+          "name": "Postgres threadsflow"
+        }
+      },
+      "notes": "Optimistic lock: if two runs overlap, only one gets a row back."
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://graph.threads.net/v1.0/{{ $('Quota guard').first().json.user_id }}/threads",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "media_type",
+              "value": "IMAGE"
+            },
+            {
+              "name": "image_url",
+              "value": "={{ $('Quota guard').first().json.image_urls[0] }}"
+            },
+            {
+              "name": "text",
+              "value": "={{ $('Quota guard').first().json.body }}"
+            },
+            {
+              "name": "access_token",
+              "value": "={{ $('Quota guard').first().json.token }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "container_image",
+      "name": "Create IMAGE container",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        600,
+        220
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 8000,
+      "onError": "continueErrorOutput",
+      "notes": "For carousels: loop images with is_carousel_item=true, then media_type=CAROUSEL&children=..."
+    },
+    {
+      "parameters": {
+        "amount": "={{ $('Quota guard').first().json.wait_seconds }}"
+      },
+      "id": "wait35",
+      "name": "Wait for media processing",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        1260,
+        220
+      ],
+      "webhookId": "wait-media"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://graph.threads.net/v1.0/{{ $('Quota guard').first().json.user_id }}/threads_publish",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "creation_id",
+              "value": "={{ $json.id }}"
+            },
+            {
+              "name": "access_token",
+              "value": "={{ $('Quota guard').first().json.token }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "publish",
+      "name": "Publish post",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1480,
+        220
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 10000,
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE posts SET status='published', threads_media_id=$2, published_at=now() WHERE id=$1 RETURNING uid, sell_intensity, cta_text, tracked_url, reply_delay_sec, image_ids;",
+        "options": {
+          "queryReplacement": "={{ $('Quota guard').first().json.id }},={{ $json.id }}"
+        }
+      },
+      "id": "mark_published",
+      "name": "Mark published",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        1700,
+        220
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "PG",
+          "name": "Postgres threadsflow"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "version": 2
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.sell_intensity }}",
+              "rightValue": 0,
+              "operator": {
+                "type": "number",
+                "operation": "gt"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "needs_cta",
+      "name": "Needs link comment?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1920,
+        220
+      ]
+    },
+    {
+      "parameters": {
+        "amount": "={{ $json.reply_delay_sec || 70 }}"
+      },
+      "id": "wait_reply",
+      "name": "Wait 45-120s (human pause)",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        2140,
+        140
+      ],
+      "webhookId": "wait-reply"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://graph.threads.net/v1.0/{{ $('Quota guard').first().json.user_id }}/threads",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "media_type",
+              "value": "TEXT"
+            },
+            {
+              "name": "text",
+              "value": "={{ $('Mark published').first().json.cta_text }}"
+            },
+            {
+              "name": "reply_to_id",
+              "value": "={{ $('Publish post').first().json.id }}"
+            },
+            {
+              "name": "access_token",
+              "value": "={{ $('Quota guard').first().json.token }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "cta_container",
+      "name": "Create CTA reply",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2360,
+        140
+      ],
+      "retryOnFail": true,
+      "maxTries": 3
+    },
+    {
+      "parameters": {
+        "amount": 10
+      },
+      "id": "wait10",
+      "name": "Wait 10s",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        2580,
+        140
+      ],
+      "webhookId": "wait-cta"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://graph.threads.net/v1.0/{{ $('Quota guard').first().json.user_id }}/threads_publish",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "creation_id",
+              "value": "={{ $('Create CTA reply').first().json.id }}"
+            },
+            {
+              "name": "access_token",
+              "value": "={{ $('Quota guard').first().json.token }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "publish_cta",
+      "name": "Publish CTA reply",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2800,
+        140
+      ],
+      "retryOnFail": true,
+      "maxTries": 3
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE posts SET threads_reply_id = $2 WHERE id = $1;\nUPDATE product_images SET use_count = use_count + 1, last_used_at = now()\n WHERE id = ANY((SELECT COALESCE(image_ids,'{}') FROM posts WHERE id = $1));",
+        "options": {
+          "queryReplacement": "={{ $('Quota guard').first().json.id }},={{ $json.id }}"
+        }
+      },
+      "id": "finalize",
+      "name": "Finalize",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        3020,
+        140
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "PG",
+          "name": "Postgres threadsflow"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE posts SET status='failed', fail_reason=$2 WHERE id=$1;\nINSERT INTO run_log (workflow, level, message, meta) VALUES ('wf3_publish','error',$2,'{}');",
+        "options": {
+          "queryReplacement": "={{ $('Quota guard').first().json.id }},={{ JSON.stringify($json).slice(0,500) }}"
+        }
+      },
+      "id": "fail",
+      "name": "Record failure",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        1480,
+        520
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "PG",
+          "name": "Postgres threadsflow"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "version": 2
+                },
+                "combinator": "and",
+                "conditions": [
+                  {
+                    "leftValue": "={{ $('Quota guard').first().json.media_type }}",
+                    "rightValue": "TEXT",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ]
+              },
+              "outputKey": "TEXT"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "version": 2
+                },
+                "combinator": "and",
+                "conditions": [
+                  {
+                    "leftValue": "={{ $('Quota guard').first().json.media_type }}",
+                    "rightValue": "CAROUSEL",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ]
+              },
+              "outputKey": "CAROUSEL"
+            }
+          ]
+        },
+        "options": {
+          "fallbackOutput": "extra",
+          "renameFallbackOutput": "IMAGE"
+        }
+      },
+      "id": "route",
+      "name": "Route by media type",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.2,
+      "position": [
+        380,
+        220
+      ],
+      "notes": "TEXT posts skip container media entirely. This is the branch that makes image-free products work."
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://graph.threads.net/v1.0/{{ $('Quota guard').first().json.user_id }}/threads",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "media_type",
+              "value": "TEXT"
+            },
+            {
+              "name": "text",
+              "value": "={{ $('Quota guard').first().json.body }}"
+            },
+            {
+              "name": "access_token",
+              "value": "={{ $('Quota guard').first().json.token }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "container_text",
+      "name": "Create TEXT container",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        600,
+        60
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 8000,
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "return ($('Quota guard').first().json.image_urls || []).map(u => ({ json: { url: u } }));"
+      },
+      "id": "split_imgs",
+      "name": "Split images",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        420,
+        380
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://graph.threads.net/v1.0/{{ $('Quota guard').first().json.user_id }}/threads",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "media_type",
+              "value": "IMAGE"
+            },
+            {
+              "name": "is_carousel_item",
+              "value": "true"
+            },
+            {
+              "name": "image_url",
+              "value": "={{ $json.url }}"
+            },
+            {
+              "name": "access_token",
+              "value": "={{ $('Quota guard').first().json.token }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "carousel_items",
+      "name": "Create carousel items",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        600,
+        380
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "onError": "continueErrorOutput",
+      "notes": "Runs once per image (fed by Split Out). Collect ids, then build the CAROUSEL container."
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://graph.threads.net/v1.0/{{ $('Quota guard').first().json.user_id }}/threads",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "media_type",
+              "value": "CAROUSEL"
+            },
+            {
+              "name": "children",
+              "value": "={{ $items().map(i => i.json.id).filter(Boolean).join(',') }}"
+            },
+            {
+              "name": "text",
+              "value": "={{ $('Quota guard').first().json.body }}"
+            },
+            {
+              "name": "access_token",
+              "value": "={{ $('Quota guard').first().json.token }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "carousel_container",
+      "name": "Create CAROUSEL container",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        820,
+        380
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "numberInputs": 3
+      },
+      "id": "merge_containers",
+      "name": "Merge container id",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3,
+      "position": [
+        1040,
+        220
+      ]
+    }
+  ],
+  "connections": {
+    "Every 5 min": {
+      "main": [
+        [
+          {
+            "node": "Fetch due post",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch due post": {
+      "main": [
+        [
+          {
+            "node": "Any post due?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Any post due?": {
+      "main": [
+        [
+          {
+            "node": "Check quota",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        []
+      ]
+    },
+    "Check quota": {
+      "main": [
+        [
+          {
+            "node": "Quota guard",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Quota guard": {
+      "main": [
+        [
+          {
+            "node": "Lock row",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Lock row": {
+      "main": [
+        [
+          {
+            "node": "Route by media type",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Publish post": {
+      "main": [
+        [
+          {
+            "node": "Mark published",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Record failure",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Mark published": {
+      "main": [
+        [
+          {
+            "node": "Needs link comment?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Needs link comment?": {
+      "main": [
+        [
+          {
+            "node": "Wait 45-120s (human pause)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        []
+      ]
+    },
+    "Wait 45-120s (human pause)": {
+      "main": [
+        [
+          {
+            "node": "Create CTA reply",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create CTA reply": {
+      "main": [
+        [
+          {
+            "node": "Wait 10s",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait 10s": {
+      "main": [
+        [
+          {
+            "node": "Publish CTA reply",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Publish CTA reply": {
+      "main": [
+        [
+          {
+            "node": "Finalize",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Route by media type": {
+      "main": [
+        [
+          {
+            "node": "Create TEXT container",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Split images",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Create IMAGE container",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create TEXT container": {
+      "main": [
+        [
+          {
+            "node": "Merge container id",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Record failure",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Split images": {
+      "main": [
+        [
+          {
+            "node": "Create carousel items",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create carousel items": {
+      "main": [
+        [
+          {
+            "node": "Create CAROUSEL container",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Record failure",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create CAROUSEL container": {
+      "main": [
+        [
+          {
+            "node": "Merge container id",
+            "type": "main",
+            "index": 2
+          }
+        ],
+        [
+          {
+            "node": "Record failure",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create IMAGE container": {
+      "main": [
+        [
+          {
+            "node": "Merge container id",
+            "type": "main",
+            "index": 1
+          }
+        ],
+        [
+          {
+            "node": "Record failure",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Merge container id": {
+      "main": [
+        [
+          {
+            "node": "Wait for media processing",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait for media processing": {
+      "main": [
+        [
+          {
+            "node": "Publish post",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "Asia/Kuala_Lumpur",
+    "saveDataSuccessExecution": "none"
+  },
+  "tags": [
+    {
+      "name": "threadsflow"
+    }
+  ]
+}
