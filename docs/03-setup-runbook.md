@@ -446,7 +446,7 @@ Create these four entries, one at a time:
 | `n8n.yourdomain.com` | `http://n8n:5678` | **Require your email** | Your automation dashboard. Lock it. |
 | `kb.yourdomain.com` | `http://kb:8082` | **Require your email** | Product upload form. Lock it. |
 | `r.yourdomain.com` | `http://redirector:8081` | **None** | Link in post comments. Must be public so buyers can click it. |
-| `cdn.yourdomain.com` | `http://kb:8082` | **None** | Image serving. Must be public so Meta servers can fetch your product photos. |
+| `cdn.yourdomain.com` | `http://kb:8082` | **None** | Only needed if IMAGE_BACKEND=local. With R2, images are served from Cloudflare's CDN directly — skip this hostname. |
 
 > **"Access policy"** is Cloudflare's gatekeeper. If you set it to "Require
 > your email," anyone who visits that address must log in with the email
@@ -634,10 +634,14 @@ PUBLIC_IMAGE_BASE=https://cdn.yourdomain.com
 ### 3b.5 — Test the full pipeline
 
 Upload a product with an image through the KB:
-
 ```bash
-# Use a real image file (any JPEG or PNG will do)
-curl -u "admin:YOUR_KB_PASSWORD" \
+# First, log in to get a session cookie
+curl -c /tmp/kb_cookies.txt -X POST https://kb.yourdomain.com/api/login \
+  -H "Content-Type: application/json" \
+  -d '{"password":"YOUR_KB_PASSWORD"}'
+
+# Upload a product with an image (any JPEG or PNG will do)
+curl -b /tmp/kb_cookies.txt \
   -F "affiliate_url=https://s.shopee.com.my/xxxx" \
   -F "description=Test product for R2 setup" \
   -F "images=@test.jpg" \
@@ -647,8 +651,9 @@ curl -u "admin:YOUR_KB_PASSWORD" \
 The JSON response includes a `product_uid`. Look up the image URL:
 
 ```bash
-curl -u "admin:YOUR_KB_PASSWORD" https://kb.yourdomain.com/api/products | jq '.[0]'
+curl -b /tmp/kb_cookies.txt https://kb.yourdomain.com/api/products | jq '.[0]'
 ```
+
 
 Then open the image URL in a **browser incognito window** (this proves it is
 truly public and not relying on your Cloudflare login cookies). If the image
@@ -754,10 +759,10 @@ Import these in order:
 
 | File | What it does | Ready to use? |
 |---|---|---|
-| `wf0_token_refresh.json` | Renews the Threads API token every 50 days | Yes, just set the credential |
+| `wf0_token_refresh.json` | Renews the Threads API token every 25 days | Yes, just set the credential |
 | `wf3_publish.json` | Publishes queued posts to Threads every 5 min | Yes |
 | `wf2_generate.json` | Writes 5 posts nightly at 3 AM | Needs 4 code blocks pasted |
-| `wf4_evaluate.json` | Scores posts and updates the bandit every 3 days | Needs 3 code blocks pasted |
+| `wf4_evaluate.json` | Scores posts and updates the bandit every 3 days | Needs 4 code blocks pasted |
 
 > **What is a "workflow"?** It is a recipe. wf3_publish says: "Every 5 minutes,
 > check the database for posts that are queued and due. If there is one, post
@@ -780,16 +785,18 @@ For each workflow with Code nodes:
 
 | Workflow | Code node | Paste from |
 |---|---|---|
-| wf2_generate | slot_plan | `n8n/code/slot_plan.js` |
-| wf2_generate | bandit | `n8n/code/bandit.js` |
-| wf2_generate | technique_picker | `n8n/code/technique_picker.js` |
-| wf2_generate | qa | `n8n/code/qa.js` |
-| wf4_evaluate | scoring | `n8n/code/scoring.js` |
-| wf4_evaluate | bandit | `n8n/code/bandit.js` |
-| wf4_evaluate | technique_picker | `n8n/code/technique_picker.js` |
+| wf2_generate | Build slot plan | `n8n/code/slot_plan.js` |
+| wf2_generate | Bandit: pick arm | `n8n/code/bandit.js` |
+| wf2_generate | Pick devices | `n8n/code/technique_picker.js` |
+| wf2_generate | QA gate | `n8n/code/qa.js` |
+| wf4_evaluate | Flatten metrics | `n8n/code/scoring.js` |
+| wf4_evaluate | Score cycle | `n8n/code/scoring.js` |
+| wf4_evaluate | Update arms + plan | `n8n/code/bandit.js` |
+| wf4_evaluate | Update techniques | `n8n/code/technique_picker.js` |
 
-> **For technique_picker**, open the node settings and look for a "Mode"
-> parameter. Set it to `select` in wf2_generate and `update` in wf4_evaluate.
+> **For technique_picker**, the same file is pasted into both workflows but
+> with different modes: `select` in wf2_generate (picks which techniques to use
+> for this post) and `update` in wf4_evaluate (scores past technique usage).
 
 5. Click outside the node to save. n8n auto-saves.
 
@@ -903,9 +910,11 @@ The KB service has two web pages, both at `https://kb.yourdomain.com`:
 | Product intake | `https://kb.yourdomain.com/product.html` | Add products with images and/or description |
 | Knowledge Base | `https://kb.yourdomain.com/` | Upload copywriting PDFs to grow the technique library |
 
-Open the product page. Paste an affiliate link, then either drop 1–4 images
-OR write a description of at least 80 characters (or both). The form tells you
-which mode you are in as you type.
+Open the product page. You will go through two login steps: first Cloudflare
+Access (if you set the email policy on kb.yourdomain.com), then the KB's own
+login form using your KB_PASSWORD. After that, paste an affiliate link, then
+either drop 1–4 images OR write a description of at least 80 characters (or
+both). The form tells you which mode you are in as you type.
 
 > **Link alone is rejected.** With no photo and no words, the AI has nothing
 > real to write from. You will see a message explaining what to add.
@@ -925,7 +934,7 @@ Activate these in order, one per day, checking output each time:
 | 1 | `wf3_publish` | Test posts from Step 5 appeared on Threads |
 | 2 | `wf2_generate` | Check the n8n execution history. 5 posts should be created with status='queued' each night |
 | 3 | `wf4_evaluate` | After 3 days, check the `cycles` table for a digest row |
-| 4 | `wf0_token_refresh` | Check `settings.threads_creds.expires_at` updates after 50 days |
+| 4 | `wf0_token_refresh` | Check `settings.threads_creds.expires_at` refreshes every 25 days |
 
 > **"Activate"** means clicking the toggle in the top-right of the workflow
 > canvas so it turns green. An active workflow runs on its schedule. An

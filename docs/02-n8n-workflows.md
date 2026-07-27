@@ -261,7 +261,7 @@ and POST it to a small `/import/conversions` webhook. The learning loop still wo
 
 ---
 
-## wf0_token_refresh — Cron every 50 days
+## wf0_token_refresh — Cron every 25 days
 
 ```
 GET https://graph.threads.net/refresh_access_token

@@ -343,7 +343,7 @@ extra levers you can analyze later — store them even before you optimize them.
 - Never post the identical CTA text twice — 30-variant pool + LLM paraphrase.
 - Reply to real human comments (optional L4 workflow: fetch replies, LLM drafts, you approve in
   the UI). This is a large reach multiplier on Threads.
-- Refresh the long-lived token every 50 days (cron) — it expires at 60.
+- Refresh the long-lived token every 25 days (cron) — it expires at 60.
 - Check `threads_publishing_limit` before every publish; back off exponentially on 429/4xx.
 
 ---
