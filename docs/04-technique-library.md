@@ -1,4 +1,4 @@
-# Technique Library — mining your NotebookLM copywriting PDFs into the bandit
+# Technique Library — turning copywriting PDFs into testable bandit arms
 
 Short answer to your question: **yes to extraction, no to live MCP calls in the posting loop.**
 Do it once (well), store it as structured data, and let the bandit optimize it. Here's why, then
@@ -64,14 +64,16 @@ The Technique Library plus the bandit is how you find out which half.
 
 ## 3. The schema
 
-Added in `db/schema_techniques.sql`:
+Added in `db/schema_techniques.sql` and `db/schema_kb.sql`:
 
-```sql
+```text
 techniques           -- the atomic units: name, type, when_to_use, the actual instruction,
                      -- do/dont examples, source book, and live performance stats
 technique_usage      -- join table: which techniques were in which post (for attribution)
 technique_sources    -- which PDF/notebook each came from
 mining_questions     -- the 30 questions, so the extraction is reproducible
+kb_documents         -- uploaded PDFs, 3-level dedup, ingestion status
+kb_candidates        -- staging: every extraction lands here before touching the live library
 ```
 
 The key column is `instruction` — a single imperative sentence the writer LLM can act on.
@@ -85,54 +87,64 @@ abstract to be a technique — break it into three that can.
 
 ---
 
-## 4. The mining process (one afternoon, once)
+## 4. Two ways to fill the library
 
-### Step A — ask NotebookLM 30 questions, manually
+### Way 1 (recommended): drop PDFs into the Knowledge Base — already built
 
-Open your notebook in the browser. Paste each question from `db/mining_questions.sql`. Copy each
-answer into a text file. This is 30 copy-pastes — genuinely faster than debugging headless Chrome
-on a VPS, and you only do it once.
+Open `https://kb.yourdomain.com`, drag your copywriting PDFs onto the page, done. The KB service
+(`services/kb/`) handles everything:
 
-The questions are designed to extract *mechanisms*, not *summaries*. Examples:
+```
+upload → 3-level dedup → extract text → chunk & score → mine → validate → dedup vs library
+       → merge or insert → promote anti-patterns to banned_phrases, hooks/structures to levers
+```
 
-- "List every specific technique in these sources for opening a piece of copy so the reader
-  cannot stop. For each: the name, the psychological mechanism, and one concrete example."
-- "What do these sources say makes copy sound fake, salesy, or untrustworthy? List every
-  specific word, phrase pattern, or structure to avoid."
-- "What techniques do these sources give for selling WITHOUT appearing to sell?"
-- "Which techniques in these sources are specific to short-form social media rather than
-  long-form sales letters?"
-- "Where do these sources disagree with each other? What are the contested claims?"
+You do not run a script, do not answer 30 questions by hand, and do not touch NotebookLM.
+Progress streams into the UI; a 300-page book takes a few minutes and peaks at ~88 MB RAM.
 
-That last one is gold. Contested claims become your highest-priority A/B tests — the bandit can
-settle arguments the authors couldn't.
+Dedup runs at three levels so re-uploading is always safe:
+1. **file sha256** — identical bytes, rejected instantly at upload
+2. **text sha256** — same text, different file (re-export, different scanner)
+3. **simhash ≤ 6** — near-duplicate, e.g. a second edition or another scan
 
-### Step B — structure with one LLM call per answer
+Then at the technique level, embeddings decide per candidate:
+- **≥ 0.90 similarity and same type** → merge, and `corroboration` increments (a claim two books
+  make independently is a stronger prior than one book asserting it)
+- **0.83–0.90** → parked in the **Review** tab for you to judge
+- **< 0.83** → inserted as new
 
-`scripts/mine_techniques.mjs` takes the raw answers and emits `techniques` rows. The extraction
-prompt is in `prompts/technique_extractor.md`. It forces:
-- one imperative sentence per technique
-- a type (`hook`, `structure`, `psychology`, `voice`, `cta`, `anti_pattern`, `proof`)
-- a `compatible_with` array (which formats/tones/intensities it fits)
-- concrete do/don't examples
-- **rejection** of anything too vague to check
+Type equality is a hard gate on merging. Embeddings place *"state a measurable drawback"* and
+*"name a physical sensation"* very close — both are short imperative sentences about the reader —
+but they are different techniques, and merging them silently destroys a good row. This was a real
+bug caught in testing.
 
-### Step C — route the output four ways
+**Scanned PDFs are rejected** with a clear message rather than mined into garbage. Run them
+through `ocrmypdf` first.
 
-| Extracted type | Where it lands |
-|---|---|
-| `hook`, `structure` | new rows in `levers` (kind=`format`) → bandit tests them as full arms |
-| `psychology`, `proof` | new rows in `levers` (kind=`angle`) |
-| `voice` | new rows in `levers` (kind=`tone`) |
-| `anti_pattern` | new rows in `banned_phrases` → enforced by the QA gate for free |
-| `cta` | new rows in `cta_variants` |
-| everything else | `techniques` table, injected as **devices** (see §5) |
+### Way 2 (optional): NotebookLM for things that aren't PDFs
 
-So your PDFs don't just inform the copy — they **expand the search space** the bandit explores.
-You might go from 12 formats to 25, from 9 angles to 20. Search space grows to ~50k combos, which
-is fine because the learner works on marginals, not combos.
+If your material lives in NotebookLM as web pages, YouTube transcripts, or Google Docs rather
+than files, ask it the 30 questions in `db/mining_questions.sql`, paste each answer into a text
+file, and upload that as a `.pdf` (or paste into the description of a source). The same pipeline
+processes it.
 
----
+Keep the NotebookLM MCP server on your **laptop**, never the VPS — see §6. And re-mine every
+2–3 months, not daily. There is nothing daily about a book.
+
+### Either way: review before it costs you posting slots
+
+```sql
+SELECT code, type, instruction FROM techniques WHERE array_length(document_ids,1) > 0;
+```
+
+Read them. Disable anything that would sound wrong in your voice:
+
+```sql
+UPDATE techniques SET enabled = false WHERE code IN ('x','y');
+```
+
+A bad technique doesn't just make one bad post — it burns posting slots for a whole cycle before
+the bandit can down-weight it. The UI has a toggle per technique for exactly this.
 
 ## 5. Devices: how techniques enter a post without templating it
 
@@ -190,9 +202,9 @@ tiny HTTP endpoint that n8n calls. Your VPS never runs a browser. Practical opti
 - `PleasePrompto/notebooklm-mcp` — Patchright-based, most installed.
 
 Since you already have **Antigravity and Codex** on the box, the cleanest version is: point one
-of those agents at the MCP server on your laptop, have it run the 30 mining questions, and write
-`techniques.json`. Then `scripts/import_techniques.mjs` loads it into Postgres. Zero browser on
-the VPS, full automation of the boring part.
+of those agents at the MCP server on your laptop, have it run the 30 mining questions, and save
+the answers as a text file. Upload that file through the KB web UI like any other document —
+the same dedup, validation and merge pipeline applies. Zero browser on the VPS.
 
 **Re-mine cadence: every 2–3 months, or when you add new PDFs.** Not daily. There is nothing
 daily about a book.

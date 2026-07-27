@@ -1,7 +1,7 @@
 # ThreadsFlow — Architecture & Flow
 
-Goal: you drop **1 affiliate URL + 2–4 images** into a small web form. The system then runs forever
-by itself: writes non-templated copy, posts to Threads ~5×/day, drops the affiliate link in the
+Goal: you drop **1 affiliate URL, plus images and/or a description** into a small web form.
+The system then runs forever by itself: writes non-templated copy, posts to Threads ~5×/day, drops the affiliate link in the
 first comment, measures what worked, and every 3 days re-invests posting slots into the winning
 styles — per product and globally.
 
@@ -57,16 +57,17 @@ just *which post* worked.
 Caddy 30MB, cloudflared 40MB → ~2.4GB peak, leaves headroom. **Do not run a local LLM.**
 Use 9router to hit hosted models; a post costs fractions of a cent.
 
-> **Image hosting note:** Threads fetches `image_url` server-side, so images must be on a
+> **Image hosting note (only matters if you upload images):** Threads fetches `image_url`
+> server-side, so images must be on a
 > publicly reachable HTTPS URL. Easiest: Cloudflare R2 with a public bucket (free tier, no egress
 > cost), or MinIO exposed through a second Cloudflare Tunnel hostname `cdn.yourdomain`.
 > Do **not** serve them from the VPS directly — you have no open ports and Meta needs to fetch.
 
 ---
 
-## 2. The five levers (why the copy never looks templated)
+## 2. The six levers (why the copy never looks templated)
 
-Every post is a point in a 5-dimensional space. The bandit optimizes over the *combination*,
+Every post is a point in a 6-dimensional space. The bandit optimizes over the *combination*,
 and the LLM is forbidden from ever seeing a "template".
 
 | Lever | Examples | Count |
@@ -76,8 +77,9 @@ and the LLM is forbidden from ever seeing a "template".
 | **tone** | deadpan, hyper-casual gaul, warm older-sibling, dry corporate-parody, chaotic gen-z, calm minimalist, over-enthusiastic | 7 |
 | **sell_intensity** | 0 = pure story/value (link still in comment), 1 = soft, 2 = direct | 3 |
 | **length_band** | micro (<120 chars), mid (120–260), long (260–480) | 3 |
+| **media_type** | TEXT, IMAGE, CAROUSEL — constrained by what the product actually has | 3 |
 
-Combinatorial space = 12×9×7×3×3 = **6,804 arms**. You post ~150/month, so you will never repeat
+Combinatorial space = 12×9×7×3×3×3 = **20,412 arms**. You post ~150/month, so you will never repeat
 a combination in practice. Plus each generation carries an **anti-repetition context**: the last
 20 posts' first 8 words + their embeddings; the QA node rejects anything with cosine similarity
 > 0.86 against the last 30 posts and regenerates.
@@ -102,26 +104,43 @@ a combination in practice. Plus each generation carries an **anti-repetition con
 ### L0 — Intake (you, in the browser, 60 seconds)
 
 ```
-POST /api/products  (UI → n8n Webhook)
+POST /api/products   (multipart, served by the KB service)
 {
-  affiliate_url: "https://s.shopee.co.id/xxxx",
-  images: [file, file, file],
-  product_name: "optional, LLM fills if blank",
-  notes: "optional: 'ini buat ibu-ibu, harga 89rb, gratis ongkir'"
+  affiliate_url: "https://s.shopee.co.id/xxxx",   // the only universally required field
+  images:        [file, ...],                     // 0-4. optional
+  description:   "...",                           // required only when images are absent (>=80 chars)
+  product_name:  "optional, LLM fills if blank",
+  price_idr:     "optional",
+  notes:         "optional: 'ini buat ibu-ibu, harga 89rb, gratis ongkir'"
 }
 ```
 
-n8n does:
-1. Upload images → R2/MinIO → public URLs → `product_images`
-2. **Enrich**: call Apify Shopee actor (or just fetch the OG tags of the affiliate URL) to get
-   real title, price, rating, sold count, top review snippets → `products.enrichment` JSONB.
-   *This is the single biggest quality lever* — real price + real review quotes make copy stop
-   sounding generic.
-3. Vision pass: send each image to a cheap vision model → `product_images.vision_desc`
-   ("close-up of the matte black handle, wooden table, warm light"). The writer LLM later gets
-   this so the copy **matches the image it's paired with**.
-4. `INSERT` product with `status='active'`, seed all 6,804 arms lazily (arms are created on first
-   pull, not pre-materialized).
+**Three valid shapes.** `link + images`, `link + images + description`, `link + description`.
+Only `link` alone is rejected: with neither a photo nor words there is nothing concrete to write
+from, and the LLM would invent details — the exact failure this project exists to prevent.
+
+`products.media_mode` is set to `images` or `text` at intake and drives everything downstream.
+
+The KB service does:
+1. Upload any images → R2/MinIO/local → public URLs → `product_images`. **Skipped entirely
+   when none were supplied.**
+2. **Enrich**: fetch the OG tags of the affiliate URL (free, no Apify needed) and fold in your
+   description + notes → `products.enrichment` JSONB. Emits `concrete_details` (checkable facts)
+   and `detail_confidence`. *This is the single biggest quality lever.*
+   Shopee blocks datacenter IPs often, so this is best-effort — it falls back to splitting your
+   own description into facts, and the product stays fully postable either way.
+3. **Vision pass (images only)**: each image → a cheap vision model → `product_images.vision_desc`
+   ("close-up of the matte black handle, wooden table, warm light"), so copy **matches the image
+   it's paired with**.
+   **Text-only path instead**: enrichment emits `sensory_details` — physical facts drawn strictly
+   from your description that stand in for the missing photo. If the description doesn't support
+   them it returns an empty array and sets `detail_confidence='low'`, and the writer is told to
+   work with less rather than invent.
+4. `INSERT` product with `status='active'` and `media_mode`. Arms are created lazily on first
+   pull, never pre-materialized.
+
+Enrichment and vision run **after** the DB commit and are allowed to fail. The product exists and
+is postable the moment you hit submit; no external service can block you.
 
 ### L1 — Nightly generation (03:00, 1 run, produces 5 queued posts)
 
@@ -130,15 +149,26 @@ Cron 03:00
  └─ pick 5 slots for today  (slot times = jittered: 07:1x, 11:3x, 15:0x, 19:2x, 21:4x ±18min)
      └─ for each slot:
          1. SELECT product  → weighted by product_score (Thompson sampling, see §4)
-         2. SELECT arm      → epsilon-greedy 0.25 explore / 0.75 exploit over lever combos
-         3. SELECT image    → the image with fewest impressions for that product (round-robin)
-         4. BUILD prompt    → system + product facts + vision_desc + lever instructions
+         2. SELECT arm      → epsilon-greedy 0.25 explore / 0.75 exploit over lever combos.
+                              media_type is gated by what the product HAS:
+                                0 images → TEXT only
+                                1 image  → TEXT | IMAGE
+                                2+       → TEXT | IMAGE | CAROUSEL
+                              Products with images still draw TEXT ~15% of the time, so you
+                              learn whether the photo was even helping.
+         3. SELECT image    → fewest impressions first, round-robin. Skipped for TEXT.
+         4. BUILD prompt    → system + product facts + lever instructions
+                              + vision_desc (image posts) OR the no-image block (text posts)
                               + last-20-posts anti-repeat list + banned phrase list
          5. LLM call #1     → draft (temp 1.0)
          6. LLM call #2     → critique+rewrite ("you are a skeptical Indonesian copy editor;
                               rewrite so it reads like a real person typed it on their phone")
          7. QA node         → regex bans + length + embedding similarity. Fail → retry ≤3, then
                               fall back to a different arm.
+                              Text-only posts face extra rules: a concrete detail is mandatory
+                              even at sell_intensity=0, minimum 90 chars, and referencing a
+                              photo that doesn't exist is an automatic reject. Image posts are
+                              rejected for narrating the photo the reader can already see.
          8. Generate CTA comment text (separate style pool, 30 variants, also randomized)
          9. Build tracked link: base affiliate URL + sub_id = post_uid  (see §5)
         10. INSERT into `posts` (status='queued', scheduled_at, all lever values, prompt_hash)
@@ -153,12 +183,14 @@ Simpler and self-healing after a reboot.
 
 ```
 1. GET /{threads-user-id}/threads_publishing_limit   → abort if quota_usage > 200
-2. Create container:
-   POST /v1.0/{user-id}/threads
-     media_type=IMAGE  &  image_url=<public url>  &  text=<copy>
-   (or media_type=CAROUSEL + is_carousel_item children if 2–4 images in one post —
-    randomize: 60% single image, 40% carousel)
-3. WAIT 35s   (Meta processes media async)
+2. Branch on posts.media_type:
+     TEXT     → POST /threads  media_type=TEXT & text=<copy>
+     IMAGE    → POST /threads  media_type=IMAGE & image_url=<public url> & text=<copy>
+     CAROUSEL → POST /threads  media_type=IMAGE & is_carousel_item=true  (once per image)
+                then POST /threads media_type=CAROUSEL & children=<ids> & text=<copy>
+   If media_type claims images but none resolve (deleted file, dead CDN), downgrade to TEXT
+   rather than lose the slot — a text post is a fine post, a failed API call is 30 wasted seconds.
+3. WAIT 35s for IMAGE/CAROUSEL, 3s for TEXT   (only media needs async processing)
 4. POST /v1.0/{user-id}/threads_publish?creation_id=...   → media_id
 5. WAIT 45–120s (random) — looks human, and lets the post get initial distribution
 6. Create reply container: media_type=TEXT, text=<cta + tracked link>, reply_to_id=<media_id>
@@ -253,7 +285,7 @@ Shopee Affiliate supports a single SubId (alphanumeric). Use a short base36 post
 Pull conversions with the Apify Shopee Affiliate actor in `mode=conversions`
 (`conversionTimeRangeDays=7`) every 3 days, or export the CSV manually at first.
 
-Also track, per post: hour-of-day, day-of-week, image_id, carousel-vs-single, character count,
+Also track, per post: hour-of-day, day-of-week, image_id, media_type (TEXT/IMAGE/CAROUSEL), character count,
 emoji count, whether a hashtag was used, seconds between post and CTA reply. All of these become
 extra levers you can analyze later — store them even before you optimize them.
 
@@ -265,7 +297,8 @@ extra levers you can analyze later — store them even before you optimize them.
 - Jitter every schedule ±18 min; skip a slot entirely 8% of the time (real humans are irregular).
 - One "non-commercial" post per day: `sell_intensity=0`, no link in comment at all. Keeps the
   account from looking like a pure link farm and Threads' ranking rewards it.
-- Rotate images; never post the same image twice within 10 days.
+- Rotate images; never post the same image twice within 10 days. Text-only posts sidestep this
+  constraint entirely, which is a quiet advantage when you have few images.
 - Never post the identical CTA text twice — 30-variant pool + LLM paraphrase.
 - Reply to real human comments (optional L4 workflow: fetch replies, LLM drafts, you approve in
   the UI). This is a large reach multiplier on Threads.
@@ -278,10 +311,10 @@ extra levers you can analyze later — store them even before you optimize them.
 
 | Phase | Days | Deliverable | Stop-and-check |
 |---|---|---|---|
-| **P0** | 1 | Meta app + Threads tester access + long-lived token, post one image manually via curl | A post appears on your profile |
+| **P0** | 1 | Meta app + Threads tester access + long-lived token, post one **text** post manually via curl | A post appears on your profile |
 | **P1** | 1 | Postgres schema + docker-compose up | `psql` shows tables |
 | **P2** | 1 | Redirector service + Cloudflare tunnel hostname | `r.domain/p/test` redirects & logs |
-| **P3** | 2 | Intake UI + `wf1_intake` workflow (upload, enrich, vision) | Product row + 4 public image URLs |
+| **P3** | 0 | Intake — **already built** into the KB service; just open `/product.html` | Product row created; images optional |
 | **P4** | 2 | `wf2_generate` with levers + QA | 5 queued posts that read like a human wrote them |
 | **P5** | 1 | `wf3_publish` with reply CTA | Live posts with link in comment |
 | **P6** | 2 | `wf4_evaluate` + bandit + dashboard | First cycle report after 3 days |

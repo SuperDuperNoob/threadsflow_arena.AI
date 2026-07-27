@@ -13,9 +13,9 @@ and what will break.
 | Database schema (28 tables/views) | **Ready** | Applied to a real PostgreSQL 16; all views queryable |
 | Cold-start technique library (42) | **Ready** | Every row passes the same validator as PDF-mined ones |
 | Knowledge Base service (PDF → techniques) | **Ready** | End-to-end: upload → dedup → mine → validate → merge → live |
-| Product intake (URL + images) | **Ready** | Runs inside the KB service; graceful when enrichment fails |
+| Product intake (link + images and/or description) | **Ready** | 9/9 input shapes verified live; graceful when enrichment fails |
 | Redirector (click tracking + SubId) | **Ready** | Boots, redirects, logs, filters Meta's crawler |
-| `wf3_publish` | **Ready to import** | All SQL parses; node graph complete |
+| `wf3_publish` | **Ready to import** | 23 nodes; TEXT/IMAGE/CAROUSEL routing verified 10/10 |
 | `wf0_token_refresh` | **Ready to import** | Complete |
 | `wf2_generate` | **Skeleton — you paste 4 code blocks** | Graph + SQL complete; Code nodes are stubs |
 | `wf4_evaluate` | **Skeleton — you paste 3 code blocks** | Graph + SQL complete; Code nodes are stubs |
@@ -137,8 +137,9 @@ doesn't exist, and an image post narrating the photo the reader can already see.
 
 4. **Insert your secrets** into the `settings` table (token, user_id, LLM base URL/key).
 
-5. **Import 4 workflows**, create the `Postgres threadsflow` credential, and **paste the 7 code
-   blocks** into the stub nodes:
+5. **Import 4 workflows** (`wf0`, `wf2`, `wf3`, `wf4` — there is no `wf1` to import, intake is
+   built into the KB service), create the `Postgres threadsflow` credential, and **paste the 7
+   code blocks** into the stub nodes:
    - `wf2_generate`: slot_plan.js, bandit.js (select), technique_picker.js (select), qa.js
    - `wf4_evaluate`: scoring.js, bandit.js (update+plan), technique_picker.js (update)
 
@@ -169,6 +170,7 @@ only you know what sounds wrong in your voice, to your audience.
 | Weekly | Add 1–2 products. Images optional — a link + good description is enough. |
 | Weekly | `SELECT * FROM run_log WHERE level='error' AND ts > now()-interval '7 days'` |
 | Every 3 days | Read the cycle digest — **but don't act before cycle 5** |
+| Cycle 6+ | `SELECT * FROM v_media_performance` and query #17 — is TEXT or IMAGE earning more? |
 | Monthly | Retire CTA variants with `use_count > 8`; add 5 new ones |
 | Every 25 days | Confirm wf0 refreshed the token |
 
@@ -239,5 +241,5 @@ Failure modes are ranked by how likely they are to actually hit you.
 - `docs/01-architecture.md` — the flow, levers, scoring math, risks
 - `docs/02-n8n-workflows.md` — node-by-node build spec
 - `docs/03-setup-runbook.md` — VPS → first post, plus a troubleshooting table
-- `docs/04-technique-library.md` — why not to call NotebookLM live, and what to do instead
+- `docs/04-technique-library.md` — how the PDF miner works, and why not to call NotebookLM live
 - `db/queries.sql` — the 15 analysis queries you'll actually use

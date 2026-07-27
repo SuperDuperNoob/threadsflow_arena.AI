@@ -13,10 +13,11 @@ re-invests posting slots into the styles that actually earned money. Forever, un
 
 Three things make or break it, and only one of them is the posting:
 
-1. **Levers, not templates.** Every post is a point in a 6,804-combination space
-   (12 formats × 9 angles × 7 tones × 3 sell intensities × 3 lengths). The LLM never sees a
-   template — it sees a different behavioural brief every time, plus a hard list of banned
-   phrases and the last 20 posts to avoid.
+1. **Levers, not templates.** Every post is a point in a 20,412-combination space
+   (12 formats × 9 angles × 7 tones × 3 sell intensities × 3 lengths × 3 media types). The LLM
+   never sees a template — it sees a different behavioural brief every time, plus a hard list of
+   banned phrases and the last 20 posts to avoid. Images are optional: `media_type` is a scored
+   lever, so text-only posts compete on merit rather than being a fallback.
 2. **Real tracking.** A 100-line redirector service sits between Threads and Shopee. It gives
    you per-post clicks immediately and passes `sub_id=<post_uid>` to Shopee so orders join back
    to the exact post → the exact lever combination. Without this you're optimizing likes, and

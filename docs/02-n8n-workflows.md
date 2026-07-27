@@ -5,7 +5,7 @@ one piece without touching the rest.
 
 ```
 wf0_token_refresh   Cron  50d      keep the Threads long-lived token alive
-wf1_intake          Webhook        product + images → DB
+wf1_intake          NOT AN N8N WORKFLOW — built into the KB service, see below
 wf2_generate        Cron 03:00     make tomorrow's 5 posts
 wf3_publish         Cron */5min    publish queue + CTA reply
 wf4_evaluate        Cron 3d 02:00  metrics → scores → bandit update → breeding
@@ -19,36 +19,48 @@ wf0 can rotate it.
 
 ---
 
-## wf1_intake — Webhook
+## wf1_intake — ALREADY BUILT, not an n8n workflow
+
+**Do not build this.** Product intake is a real endpoint in the KB service
+(`services/kb/server.js` → `POST /api/products`, form at `/product.html`). It is already
+written, tested, and deployed by `docker compose up`. Nothing to import.
+
+It accepts three shapes; only the affiliate link is universally required:
+
+| Shape | `media_mode` | Notes |
+|---|---|---|
+| link + images (1–4) | `images` | vision pass runs per image |
+| link + images + description | `images` | richest input |
+| link + description (≥80 chars) | `text` | no images anywhere in the pipeline |
+| link alone | — | **rejected**, with a message explaining what to add |
+
+What it does internally:
 
 ```
-[Webhook POST /intake]
+POST /api/products (multipart)
    ↓
-[Function: validate]           affiliate_url present, 2–4 images, size < 8MB, jpg/png only
+validate            link required; description >= 80 chars ONLY when no images
    ↓
-[Postgres: INSERT product]     RETURNING id, uid
+INSERT products     uid, media_mode, description, notes     ← transaction commits HERE
    ↓
-[Split In Batches: images]
-   ├─ [HTTP/S3: upload to R2]  key = products/{uid}/{n}.jpg  → public_url
-   ├─ [HTTP: 9router vision]   "Describe literally what is in this photo in 1 sentence,
-   │                            Indonesian, mention colour, setting, lighting, framing."
-   └─ [Postgres: INSERT product_images]
+upload images       0-4 files -> R2 / MinIO / local -> product_images   (skipped if none)
+   ↓  (everything below is post-commit and allowed to fail)
+enrich              OG tags of the affiliate URL + your description + notes
+                    -> {concrete_details[], sensory_details[], detail_confidence, price, persona}
    ↓
-[HTTP: enrichment]             option A: Apify shopee actor with the item URL
-                               option B: GET the affiliate URL, parse og:title/og:image/price
-   ↓
-[LLM: normalize enrichment]    → {name, price_idr, rating, sold, top_reviews:[3 short quotes],
-                                  category, target_persona, 5 concrete_details}
-   ↓
-[Postgres: UPDATE products SET name, enrichment]
-   ↓
-[Respond to Webhook]           {product_uid, images: n, enrichment}
+vision pass         images only -> product_images.vision_desc
 ```
 
-**`concrete_details` matters more than anything else here.** Force the enrichment LLM to output
-5 concrete, checkable facts (weight, cable length, capacity, material, warranty, real review
-sentence). Every generated post must use at least one. That single rule is what stops copy
-from being generic.
+**Why the commit happens early:** Shopee blocks datacenter IPs frequently and vision calls can
+time out. The product is created and postable the instant you submit; enrichment failure
+downgrades quality, never availability. Failures land in `run_log` at `warn`.
+
+**`concrete_details` matters more than anything else here.** Checkable facts only — weight,
+cable length, capacity, material, warranty, a real review sentence. Every generated post must
+use at least one; the QA gate enforces it. For text-only products `sensory_details` does the
+same job in place of the photo, and both are derived *strictly* from what you supplied — if the
+input is thin the enricher returns fewer facts and sets `detail_confidence='low'` rather than
+inventing. A wrong specific is worse than a missing one.
 
 ---
 
@@ -67,10 +79,19 @@ from being generic.
 [Postgres: arm_stats for scope global + product]
    ↓
 [Code: bandit pick]                              → product_id, format, angle, tone,
-                                                    sell_intensity, length_band  (code/bandit.js)
+                                                    sell_intensity, length_band, media_type
+                                                    (code/bandit.js)
+     media_type is gated by the product's real image count — the bandit can never
+     choose something the product cannot produce:
+       0 images -> TEXT            1 image -> TEXT | IMAGE
+       2+ images -> TEXT | IMAGE | CAROUSEL
+     Products WITH images still draw TEXT ~15% of the time. That is deliberate: it is
+     the only way to learn whether the photo was helping.
    ↓
 [Postgres: pick image(s)]  ORDER BY use_count ASC, last_used_at ASC NULLS FIRST
                            WHERE last_used_at IS NULL OR last_used_at < now() - interval '10 days'
+                           LIMIT depends on media_type; returns 0 rows for TEXT posts
+                           (node has alwaysOutputData=true so the branch does not stall)
    ↓
 [Postgres: last 30 posts]  body, embedding  (anti-repetition context)
    ↓
@@ -130,12 +151,23 @@ Do not paraphrase it."*
    ↓
 [Postgres: status='publishing']    ← lock, prevents double-post if a run overlaps
    ↓
-[IF is_carousel]
- ├─ true:  [Loop images] POST /threads  media_type=IMAGE&is_carousel_item=true&image_url=..
- │         [Merge] → POST /threads media_type=CAROUSEL&children=id1,id2&text=body
- └─ false: POST /threads  media_type=IMAGE&image_url=..&text=body
+[Code: Quota guard]  resolves the FINAL media_type. Trusts posts.media_type but verifies
+                     against the image URLs that actually resolved:
+                       claims IMAGE/CAROUSEL but 0 urls  → downgrade to TEXT
+                       claims CAROUSEL but only 1 url    → downgrade to IMAGE
+                       claims IMAGE but >1 url           → truncate to 1
+                     A dead CDN link costs you nothing; the post still ships as text.
    ↓
-[Wait 35s]
+[Switch: Route by media type]
+ ├─ TEXT     → POST /threads  media_type=TEXT&text=body
+ ├─ CAROUSEL → [Code: Split images] → POST /threads media_type=IMAGE&is_carousel_item=true&image_url=..
+ │             → POST /threads media_type=CAROUSEL&children=id1,id2,..&text=body
+ └─ IMAGE    → POST /threads  media_type=IMAGE&image_url=..&text=body
+   ↓
+[Merge container id]   (3 inputs, one per branch)
+   ↓
+[Wait]  35s for IMAGE/CAROUSEL, 3s for TEXT — only media needs async processing,
+        so text posts publish ~30s faster
    ↓
 [HTTP POST] /threads_publish?creation_id=...   → media_id
    ├─ error → [Postgres: status='failed', fail_reason] + [run_log] → end
@@ -153,7 +185,12 @@ Do not paraphrase it."*
 [Postgres: UPDATE threads_reply_id, reply_delay_sec]
    ↓
 [Postgres: UPDATE product_images SET use_count=use_count+1, last_used_at=now()]
+        ← no-op for TEXT posts, since image_ids is empty
 ```
+
+**The DB is the last line of defence.** `posts_media_consistency_chk` enforces
+`TEXT ⇒ 0 images`, `IMAGE ⇒ exactly 1`, `CAROUSEL ⇒ 2–20`. A malformed post cannot be inserted
+by wf2, so it can never reach the Threads API and fail opaquely 30 seconds later.
 
 Base URL: `https://graph.threads.net/v1.0` (Meta also serves `graph.threads.com`).
 Always send the token as `access_token` query param. Enable **Retry On Fail** (3×, 5s) on every
@@ -207,7 +244,7 @@ HTTP node, and **Continue On Fail** on the publish node so the error branch can 
 > **Cycle 7 · 15 posts · 41.2k views · 388 clicks (0.94% CTR) · 6 orders · Rp 71.400**
 > Money weight is now 0.30, so decisions are still 70% engagement-driven.
 > **Up:** tone=deadpan (+38% vs cycle mean, n=11 lifetime), format=honest_review (+51%, n=6),
-> sell_intensity=1 beats 2 on CTR by 1.7×.
+> sell_intensity=1 beats 2 on CTR by 1.7×, media_type=TEXT beats IMAGE by 1.3× on CTR (n=9).
 > **Down:** tone=enthusiast (−44%), format=question_hook (−31%) → cooldown 9 days.
 > **Note:** the 19:00 slot is 2.1× the 11:00 slot on views. Consider moving 11:00 → 20:30.
 > **Next cycle:** 9 slots breeding from posts #812, #806, #799; 6 slots exploring.
