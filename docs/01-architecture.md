@@ -1,5 +1,8 @@
 # ThreadsFlow — Architecture & Flow
 
+> **This is the technical deep-dive.** If you are setting up the system for the
+> first time, read `docs/00-START-HERE.md` and `docs/03-setup-runbook.md` instead.
+
 Goal: you drop **1 affiliate URL, plus images and/or a description** into a small web form.
 The system then runs forever by itself: writes non-templated copy, posts to Threads ~5×/day, drops the affiliate link in the
 first comment, measures what worked, and every 3 days re-invests posting slots into the winning
@@ -10,7 +13,13 @@ styles — per product and globally.
 ## 0. The mental model (read this first)
 
 This is **not** "an n8n workflow that posts". It is a small **multi-armed bandit content machine**
-with 4 loops:
+with 4 loops.
+
+> **Multi-armed bandit:** imagine a row of slot machines. You have limited coins.
+> You do not know which machine pays best. So you try them all at first, and as
+> you see which ones pay, you shift more coins to the winners while still
+> occasionally trying the others to see if they got better. The system does this
+> with writing styles instead of slot machines.
 
 | Loop | Period | What it does |
 |---|---|---|
@@ -70,6 +79,11 @@ Use 9router to hit hosted models; a post costs fractions of a cent.
 Every post is a point in a 6-dimensional space. The bandit optimizes over the *combination*,
 and the LLM is forbidden from ever seeing a "template".
 
+> **Lever:** a setting with multiple options that changes how the post reads.
+> Think of it like the dials on a sound mixer — format is the "instrument" knob,
+> tone is the "brightness" knob, length is the "volume" slider. The system turns
+> all dials to different positions for every post.
+
 | Lever | Examples | Count |
 |---|---|---|
 | **format** | flash_story, confession, POV, text-message screenshot narration, list-of-3, single-line hook + silence, "review jujur", unboxing diary, "chat sama temen", myth-bust | 12 |
@@ -90,6 +104,11 @@ a combination in practice. Plus each generation carries an **anti-repetition con
 20 posts' first 8 words + their embeddings; the QA node rejects anything with cosine similarity
 > 0.86 against the last 30 posts and regenerates.
 
+> **Cosine similarity:** a number from 0 to 1 that measures how similar two pieces
+> of text are. 0 = completely different. 1 = identical. The QA node rejects anything
+> above 0.86, meaning it will not let the system post something that sounds too
+> much like a previous post.
+
 **Hard bans** enforced by the QA node (this is what kills "AI template smell"):
 
 ```
@@ -103,12 +122,8 @@ a combination in practice. Plus each generation carries an **anti-repetition con
 - **no Indonesian.** banget/nggak/gak/aja/udah/bikin/gimana/kalian are banned outright, and
   `bisa` (venom in Malay) and `butuh` (vulgar) are hard errors, not style preferences
 - **no shouting.** 3+ ALL-CAPS words, or >25% of the post in caps, is rejected. RM/OK/USB/LED
-  are exempt. This is enforced in `qa.js` rather than `banned_phrases`, because Postgres matches
-  that table case-insensitively and `[A-Z]` would also match lowercase — an early version of this
-  rule blocked 4 of 5 legitimate Malay sentences
-- **no 2015-era hard sell.** PERCUMA / RAHSIA TERBONGKAR / EKSKLUSIF / "PM saya sekarang" —
-  extracted from the `Books/` folder as anti-patterns, since that is precisely what those books
-  teach and precisely what gets an account down-ranked today
+  are exempt.
+- **no 2015-era hard sell.** PERCUMA / RAHSIA TERBONGKAR / EKSKLUSIF / "PM saya sekarang"
 - text-only posts additionally require one concrete detail and must not reference a photo
 - must pass a "would a human write this?" self-critique pass (second LLM call, cheap model)
 ```
@@ -177,14 +192,9 @@ Cron 03:00
                               + vision_desc (image posts) OR the no-image block (text posts)
                               + last-20-posts anti-repeat list + banned phrase list
          5. LLM call #1     → draft (temp 1.0)
-         6. LLM call #2     → critique+rewrite ("you are a skeptical Malaysian copy editor;
-                              rewrite so it reads like a real person typed it on their phone")
+         6. LLM call #2     → critique+rewrite
          7. QA node         → regex bans + length + embedding similarity. Fail → retry ≤3, then
                               fall back to a different arm.
-                              Text-only posts face extra rules: a concrete detail is mandatory
-                              even at sell_intensity=0, minimum 90 chars, and referencing a
-                              photo that doesn't exist is an automatic reject. Image posts are
-                              rejected for narrating the photo the reader can already see.
          8. Generate CTA comment text (separate style pool, 30 variants, also randomized)
          9. Build tracked link: base affiliate URL + sub_id = post_uid  (see §5)
         10. INSERT into `posts` (status='queued', scheduled_at, all lever values, prompt_hash)
@@ -192,10 +202,7 @@ Cron 03:00
 
 Cost: 5 posts × 3 calls × ~1.5k tokens ≈ nothing (< $0.01/day on a cheap model).
 
-### L2 — Publish (5 separate cron triggers, or 1 cron every 5 min scanning the queue)
-
-Use **one cron every 5 minutes** that picks up `posts WHERE status='queued' AND scheduled_at <= now()`.
-Simpler and self-healing after a reboot.
+### L2 — Publish (scans the queue every 5 minutes)
 
 ```
 1. GET /{threads-user-id}/threads_publishing_limit   → abort if quota_usage > 200
@@ -204,8 +211,7 @@ Simpler and self-healing after a reboot.
      IMAGE    → POST /threads  media_type=IMAGE & image_url=<public url> & text=<copy>
      CAROUSEL → POST /threads  media_type=IMAGE & is_carousel_item=true  (once per image)
                 then POST /threads media_type=CAROUSEL & children=<ids> & text=<copy>
-   If media_type claims images but none resolve (deleted file, dead CDN), downgrade to TEXT
-   rather than lose the slot — a text post is a fine post, a failed API call is 30 wasted seconds.
+   If media_type claims images but none resolve (deleted file, dead CDN), downgrade to TEXT.
 3. WAIT 35s for IMAGE/CAROUSEL, 3s for TEXT   (only media needs async processing)
 4. POST /v1.0/{user-id}/threads_publish?creation_id=...   → media_id
 5. WAIT 45–120s (random) — looks human, and lets the post get initial distribution
@@ -215,25 +221,19 @@ Simpler and self-healing after a reboot.
 ```
 
 **Why link in the comment:** Threads suppresses reach on posts with outbound links in the body.
-Link in the first self-reply keeps the parent clean. This is already your plan — keep it.
-Also set `reply_control=everyone` and consider quoting your own reply later if engagement is high.
+Link in the first self-reply keeps the parent clean.
 
 ### L3 — Evaluation every 3 days (02:00)
 
 ```
 Cron */3 days
- 1. For every post published in the last 3 days (and again at day 7 for a long-tail read):
-      GET /{media-id}/insights?metric=views,likes,replies,reposts,quotes,shares
+ 1. Pull insights for posts from last 3 days (and day-7 long-tail re-read)
  2. Pull clicks from the redirector DB (grouped by post_uid)
- 3. Pull conversions from Shopee (Apify actor mode=conversions, matched on sub_id = post_uid)
+ 3. Pull conversions from Shopee (matched on sub_id = post_uid)
  4. Compute score (see §4)
  5. UPDATE arm_stats: n += 1, reward += score, per lever AND per full combo
- 6. Decide next 3 days:
-      - top 20% arms   → "breed": next cycle generates variations that keep 2 of 3 levers fixed
-                         and mutate one (so you explore *around* the winner)
-      - bottom 30%     → cooldown 9 days (not deleted — tastes change)
-      - products with 0 clicks over 2 cycles → status='resting', excluded 14 days
- 7. Write a human-readable digest row into `cycle_reports` → shown on the UI dashboard
+ 6. Decide next 3 days: breed winners, cooldown losers, rest dead products
+ 7. Write a human-readable digest into cycle_reports
 ```
 
 ---
@@ -243,17 +243,26 @@ Cron */3 days
 Do **not** optimize likes. Optimize money, with engagement as an early proxy while conversion
 data is sparse.
 
+**The formula in plain language:** each post gets a single score answering
+"did it make money?" When there are few sales, likes and reposts carry more
+weight. As sales accumulate, actual commissions take over.
+
 ```
 CTR      = clicks / max(views, 1)
 ENG      = (likes + 3*replies + 5*reposts + 4*quotes) / max(views, 1)
 CVR      = orders / max(clicks, 1)
-EPM      = commission_idr / max(views,1) * 1000      # earnings per 1000 views
+EPM      = commission_myr / max(views,1) * 1000      # earnings per 1000 views
 
 score = 0.55 * z(EPM) + 0.25 * z(CTR) + 0.20 * z(ENG)
 ```
 
 z() = z-score within the same evaluation cycle (so you compare against *that* cycle's baseline,
 not against your best week ever).
+
+> **Z-score** means "how far above or below average was this, measured in
+> standard deviations." This prevents a post in a high-traffic week from
+> looking permanently better than a post in a slow week. You always compare
+> against peers from the same 3-day window.
 
 **Cold start problem:** for the first ~2 weeks you'll have almost no conversions. Use a
 **shrinkage weight**: `w_money = min(1, total_orders_all_time / 20)`, and blend:
@@ -268,6 +277,22 @@ So it starts by learning "what gets attention" and smoothly transitions to "what
 combos. Rewards are normalized to [0,1] by min-max within cycle. Decay old evidence:
 `n *= 0.9, reward *= 0.9` every cycle so the model stays current with what Threads is boosting
 this month.
+
+> **Thompson sampling** is a way to pick actions under uncertainty. Instead of
+> saying "format=flash_story has a score of 0.42," it says "format=flash_story
+> probably has a score somewhere between 0.28 and 0.56 — we are 95% sure."
+> Then it draws a random number from that range each time. A format with 2
+> samples has a wide range (uncertain), so sometimes it draws high and gets
+> chosen (exploration). A format with 50 samples has a narrow range (confident),
+> so it reliably draws near its true value (exploitation). This naturally
+> balances trying new things against sticking with what works.
+>
+> **Epsilon-greedy** is the simpler version used for full combo selection:
+> 75% of the time pick the best-known combo, 25% of the time pick randomly.
+>
+> **Decay** means the system gradually "forgets" old data. If you set
+> `n *= 0.9` every cycle, a post from 10 cycles ago counts for 35% as much
+> as a post from yesterday. This keeps the system responsive to trends.
 
 **Statistical honesty:** with 5 posts/day you get 15 posts per cycle. That is *not* enough to
 declare a winner at the full-combo level. That's why scoring updates **marginal lever stats**
