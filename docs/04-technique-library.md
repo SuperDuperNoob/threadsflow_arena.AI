@@ -14,7 +14,7 @@ technically possible, but it's the wrong architecture for this system. Six reaso
 | Problem | Detail |
 |---|---|
 | **No official API** | Google has never shipped a public NotebookLM API. Every MCP server (`notebooklm-mcp`, `notebooklm-mcp-cli`, `notebooklm-mcp-2026`) drives a **real Chrome browser** via Patchright/Playwright and scrapes the DOM. |
-| **RAM** | Headless Chrome is 300–600MB resident, spiking higher. On your 4GB box with n8n at 1.4GB + Postgres + MinIO, that's the thing that OOM-kills your stack. |
+| **RAM** | Headless Chrome is 300–600MB resident, spiking higher. On your 4GB box with n8n at 1.4GB + Postgres + kb service, that's the thing that OOM-kills your stack. |
 | **Latency** | A NotebookLM query is 15–60s. Your generator makes 5 posts × 3 calls nightly. You'd add minutes and a new failure mode for zero benefit. |
 | **Auth fragility** | Session cookies expire in 2–4 weeks. Your posting pipeline would silently break every month until you re-login through a browser — on a headless VPS, that means `xvfb-run` gymnastics. |
 | **ToS / ban risk** | Browser automation against a Google product from a datacenter IP. Not something to put in a daily cron. |

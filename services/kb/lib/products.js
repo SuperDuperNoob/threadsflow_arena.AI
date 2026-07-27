@@ -39,9 +39,20 @@ async function putLocal(buf, key) {
   return `${PUBLIC_IMAGE_BASE.replace(/\/$/, '')}/${key}`;
 }
 
-/** Minimal SigV4 S3 PUT — works with Cloudflare R2, MinIO, Backblaze B2. No SDK, ~40 lines. */
+/** Minimal SigV4 S3 PUT — works with Cloudflare R2, Backblaze B2, MinIO. No SDK, ~45 lines.
+ *
+ *  SIGV4 PATH-ENCODING GOTCHA: the canonical request must use the *encoded* path
+ *  (RFC 3986, §3.4), but `new URL().pathname` returns the *decoded* form.
+ *  If `key` contains spaces, `+`, `%`, or non-ASCII bytes, the signature computed
+ *  from the decoded path will not match what the server expects and every request
+ *  will return 403 SignatureDoesNotMatch.  We construct the encoded path before
+ *  building the URL so both the fetch target and the signing string agree.
+ */
 async function putS3(buf, key, contentType) {
-  const url = new URL(`${S3_ENDPOINT.replace(/\/$/, '')}/${S3_BUCKET}/${key}`);
+  const encodedKey = key.split('/').map(encodeURIComponent).join('/');
+  const endpoint = S3_ENDPOINT.replace(/\/$/, '');
+  const path   = `/${S3_BUCKET}/${encodedKey}`;
+  const url    = new URL(`${endpoint}${path}`);
   const now = new Date();
   const amzDate = now.toISOString().replace(/[:-]|\.\d{3}/g, '');
   const dateStamp = amzDate.slice(0, 8);
@@ -51,7 +62,7 @@ async function putS3(buf, key, contentType) {
     `host:${url.host}\nx-amz-content-sha256:${payloadHash}\nx-amz-date:${amzDate}\n`;
   const signedHeaders = 'host;x-amz-content-sha256;x-amz-date';
   const canonicalRequest = [
-    'PUT', url.pathname, '', canonicalHeaders, signedHeaders, payloadHash,
+    'PUT', path, '', canonicalHeaders, signedHeaders, payloadHash,
   ].join('\n');
 
   const scope = `${dateStamp}/${S3_REGION}/s3/aws4_request`;

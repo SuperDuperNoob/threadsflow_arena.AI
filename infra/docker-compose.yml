@@ -1,10 +1,11 @@
 # ThreadsFlow — 4GB RAM / 2 vCPU Debian, no open ports (Cloudflare Tunnel only).
-# Peak RSS target: ~2.4GB. Everything else is headroom for n8n spikes.
+# Peak RSS target: ~2.1GB. Everything else is headroom for n8n spikes.
+# Images go to Cloudflare R2 (public bucket, free tier, no egress cost).
 #
 #   cp .env.example .env && edit
 #   docker compose up -d
 #   docker compose exec -T postgres psql -U threadsflow -d threadsflow < ../db/schema.sql
-#   docker compose exec -T postgres psql -U threadsflow -d threadsflow < ../db/seed_levers.sql
+#   docker compose exec -T postgres psql -U threadsflow -d threadsflow < ../db/seed_levers_my.sql
 
 name: threadsflow
 
@@ -97,6 +98,13 @@ services:
       PORT: "8082"
       KB_PASSWORD: ${KB_PASSWORD}
       STORAGE_DIR: /data/pdfs
+      IMAGE_DIR: /data/images
+      IMAGE_BACKEND: ${IMAGE_BACKEND}
+      PUBLIC_IMAGE_BASE: ${PUBLIC_IMAGE_BASE}
+      S3_ENDPOINT: ${S3_ENDPOINT}
+      S3_BUCKET: ${S3_BUCKET}
+      S3_KEY: ${S3_KEY}
+      S3_SECRET: ${S3_SECRET}
       LLM_BASE_URL: ${LLM_BASE_URL}
       LLM_API_KEY: ${LLM_API_KEY}
       LLM_MODEL_MINE: ${LLM_MODEL_MINE}
@@ -112,26 +120,11 @@ services:
       resources:
         limits: { memory: 640M }
 
-  # Public image host. Skip this and use Cloudflare R2 if you prefer zero self-hosting.
-  minio:
-    image: minio/minio:latest
-    restart: unless-stopped
-    command: server /data --console-address ":9001"
-    environment:
-      MINIO_ROOT_USER: ${MINIO_USER}
-      MINIO_ROOT_PASSWORD: ${MINIO_PASSWORD}
-      MINIO_BROWSER: "off"
-    volumes:
-      - miniodata:/data
-    deploy:
-      resources:
-        limits: { memory: 320M }
-
   cloudflared:
     image: cloudflare/cloudflared:latest
     restart: unless-stopped
     command: tunnel --no-autoupdate run --token ${CF_TUNNEL_TOKEN}
-    depends_on: [n8n, ui, redirector]
+    depends_on: [n8n, redirector]
     deploy:
       resources:
         limits: { memory: 96M }
@@ -139,11 +132,13 @@ services:
 volumes:
   pgdata:
   n8ndata:
-  miniodata:
   kbdata:
 
 # ── Cloudflare Tunnel public hostnames to configure in the Zero Trust dashboard:
 #   n8n.yourdomain.com  → http://n8n:5678         (put an Access policy on this!)
 #   kb.yourdomain.com   → http://kb:8082          (Access policy: your email only)
 #   r.yourdomain.com    → http://redirector:8081  (PUBLIC, no Access — buyers hit this)
-#   cdn.yourdomain.com  → http://minio:9000       (PUBLIC, read-only bucket)
+#
+#   Images are served from Cloudflare R2 (public bucket, no egress cost).
+#   If IMAGE_BACKEND=local the kb service at :8082 also serves /img — point
+#   cdn.yourdomain.com → http://kb:8082  (PUBLIC, no Access — Meta fetches images).
