@@ -65,6 +65,8 @@ My own notes about this product: {{product.notes}}
 ### Openings already used recently (pick a completely different entry point)
 {{recent_openers}}
 
+{{technique_fragment}}
+
 {{#if plan.mode == "breed"}}
 ### This post is a descendant of one that performed well
 Parent post (do NOT paraphrase, do NOT reuse its situation or its opening):

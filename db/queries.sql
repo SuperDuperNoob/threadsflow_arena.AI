@@ -90,3 +90,43 @@ ORDER BY lever_kind, mean_reward DESC NULLS LAST;
 SELECT status, count(*), min(scheduled_at), max(scheduled_at) FROM posts GROUP BY 1;
 SELECT * FROM posts WHERE status='publishing' AND scheduled_at < now() - interval '30 minutes';
 SELECT * FROM run_log WHERE level='error' AND ts > now() - interval '3 days' ORDER BY ts DESC;
+
+-- ═══════════════════════════════════════════════════════════════
+-- TECHNIQUE LIBRARY QUERIES (requires schema_techniques.sql)
+-- ═══════════════════════════════════════════════════════════════
+
+-- ── 11. Does the Technique Library actually help? (control group comparison)
+-- Posts with 0 devices are the control arm. If devices aren't beating control after
+-- ~8 cycles, your library is noise and you should prune it hard.
+SELECT CASE WHEN tu.post_id IS NULL THEN 'control (no device)' ELSE 'with device' END AS grp,
+       count(DISTINCT ps.post_id) n,
+       round(avg(ps.final_score)::numeric, 3) mean_score,
+       round(avg(vp.clicks)::numeric, 2) avg_clicks,
+       sum(vp.orders) orders
+FROM post_scores ps
+JOIN v_post_performance vp ON vp.id = ps.post_id
+LEFT JOIN technique_usage tu ON tu.post_id = ps.post_id
+GROUP BY 1;
+
+-- ── 12. Technique leaderboard
+SELECT * FROM v_technique_performance WHERE uses >= 4 LIMIT 25;
+
+-- ── 13. Which book's advice actually works for YOUR audience?
+SELECT ts.title, count(DISTINCT t.id) techniques, sum(vtp.uses) total_uses,
+       round(avg(vtp.mean_score)::numeric, 3) mean_score,
+       sum(vtp.commission) commission
+FROM techniques t
+JOIN technique_sources ts ON ts.id = t.source_id
+JOIN v_technique_performance vtp ON vtp.code = t.code
+GROUP BY 1 ORDER BY mean_score DESC NULLS LAST;
+
+-- ── 14. Contested claims your data has now settled
+SELECT * FROM v_contested_verdicts;
+
+-- ── 15. Library hygiene: techniques never used, or used and failing
+SELECT code, name, type, n, round(reward_sum/NULLIF(n,0),3) mean_reward, cooldown_until,
+       CASE WHEN n = 0 THEN 'never fired — check compatible_* gating is not too narrow'
+            WHEN n < 4 THEN 'not enough data'
+            WHEN reward_sum/n < 0.4 THEN 'underperforming — consider disabling'
+            ELSE 'ok' END AS action
+FROM techniques WHERE enabled ORDER BY n ASC, mean_reward ASC;

@@ -74,6 +74,11 @@ from being generic.
    ↓
 [Postgres: last 30 posts]  body, embedding  (anti-repetition context)
    ↓
+[Postgres: techniques]     SELECT * FROM techniques WHERE enabled
+   ↓
+[Code: technique picker]   1-2 compatible devices, Thompson-sampled, 15% control group
+                                                    (code/technique_picker.js)
+   ↓
 [HTTP 9router: WRITE]      temp 1.0   → draft            (prompts/writer.md)
    ↓
 [HTTP 9router: EDIT]       temp 0.7   → human-pass       (prompts/editor.md)
@@ -89,6 +94,8 @@ from being generic.
 [Code: build tracked url]  https://r.domain/p/{post_uid}
    ↓
 [Postgres: INSERT posts]   status='queued'
+   ↓
+[Postgres: INSERT technique_usage]   post_id x device_ids  (attribution for wf4)
 ```
 
 ### Breeding (what makes cycle N+1 better than cycle N)
@@ -177,6 +184,11 @@ HTTP node, and **Continue On Fail** on the publish node so the error branch can 
 [Code: bandit update]             per-lever alpha/beta + decay             (code/bandit.js)
    ↓
 [Postgres: UPSERT arm_stats, combo_stats]
+   ↓
+[Code: technique update]          same alpha/beta fold, n>=6 before judging
+                                  (code/technique_picker.js, mode='update')
+   ↓
+[Postgres: UPSERT techniques]
    ↓
 [Code: decide next cycle]         winners→breed list, losers→cooldown,
                                   dead products→resting

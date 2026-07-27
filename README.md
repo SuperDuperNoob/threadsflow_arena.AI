@@ -36,17 +36,23 @@ Read [`docs/01-architecture.md`](docs/01-architecture.md) first.
 docs/01-architecture.md     the flow, the levers, the scoring math, the risks
 docs/02-n8n-workflows.md    node-by-node build spec for all 5 workflows
 docs/03-setup-runbook.md    empty VPS → first automated post, plus troubleshooting
+docs/04-technique-library.md  why NOT to call NotebookLM live, and what to do instead
 db/schema.sql               PostgreSQL schema
 db/seed_levers.sql          12 formats, 9 angles, 7 tones, banned phrases, CTA pool, settings
-db/queries.sql              the 10 analysis queries you'll actually use
+db/queries.sql              the analysis queries you'll actually use
+db/schema_techniques.sql    Technique Library: mined copywriting techniques as testable arms
+db/mining_questions.sql     30 questions to extract technique from your NotebookLM PDFs
+scripts/mine_techniques.mjs one-time miner: NotebookLM answers -> structured techniques
 n8n/code/bandit.js          Thompson sampling, arm updates, next-cycle breeding plan
 n8n/code/scoring.js         z-scored EPM/CTR/ENG blend with money shrinkage
 n8n/code/qa.js              the anti-AI-slop gate (regex bans + embedding + 3-gram overlap)
 n8n/code/slot_plan.js       jittered daily slots, skip probability, forced non-commercial post
+n8n/code/technique_picker.js  picks 1-2 compatible devices per post + 15% control group
 n8n/workflows/wf3_publish.json   importable publish workflow (the rest are specced in docs)
 prompts/writer.md           LLM call 1 — the brief
 prompts/editor.md           LLM call 2 — strips AI shape (this one does the heavy lifting)
 prompts/cta.md              LLM call 3 — the link comment
+prompts/technique_extractor.md  turns book prose into executable, testable constraints
 services/redirector/        click tracking + SubId injection
 infra/docker-compose.yml    the whole stack, memory-capped for 4GB/2vCPU
 ```
