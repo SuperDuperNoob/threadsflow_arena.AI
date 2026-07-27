@@ -175,7 +175,7 @@ and writing real specifics in the notes box.
 | Part | Ready? |
 |---|---|
 | Database | ✅ Tested on a real database |
-| Malay copy library (43 styles) | ✅ Works with zero PDFs uploaded |
+| Malay copy library (60 styles) | ✅ 43 built-in + 17 from your Books/ folder |
 | PDF reader (upload copywriting books) | ✅ Fully tested |
 | Product upload page | ✅ All 3 input types tested |
 | Click tracking | ✅ Tested |
@@ -223,4 +223,5 @@ Built in, you don't need to do anything:
 - `docs/01-architecture.md` — how it works inside
 - `docs/02-n8n-workflows.md` — the automations, box by box
 - `docs/04-technique-library.md` — uploading copywriting PDFs
+- `docs/05-books.md` — **what was extracted from your 26 books, and what was rejected**
 - `db/queries.sql` — ready-made reports you can run

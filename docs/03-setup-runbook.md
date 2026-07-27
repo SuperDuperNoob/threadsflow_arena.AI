@@ -60,7 +60,8 @@ docker compose up -d
 # NOTE the _my files — those are the Malaysian Malay versions. Using the non-_my ones
 # would seed the system in Indonesian, which is the wrong language for your audience.
 for f in schema.sql schema_techniques.sql schema_kb.sql \
-         seed_levers_my.sql seed_techniques_my.sql mining_questions.sql; do
+         seed_levers_my.sql seed_techniques_my.sql seed_techniques_books.sql \
+         mining_questions.sql; do
   docker compose exec -T postgres psql -v ON_ERROR_STOP=1 -U threadsflow -d threadsflow < ../db/$f
 done
 

@@ -4,3 +4,8 @@ dist/
 *.log
 .DS_Store
 ui/data/
+
+# Uploaded PDFs stay in the repo (user pushed them intentionally), but any extracted
+# working files do not.
+Books/*.txt
+Books/*.json

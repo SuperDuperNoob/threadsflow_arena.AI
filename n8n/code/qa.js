@@ -121,6 +121,18 @@ function qa(input) {
     }
   }
 
+  // 6b. SHOUTING — from the Malay headline books, which are built on ALL CAPS because they
+  // targeted 2015 Facebook ads. On a text feed capitals are the clearest ad signal there is.
+  // This lives here, not in banned_phrases, because that table is matched case-INsensitively
+  // in Postgres, where [A-Z] would also match lowercase and reject ordinary copy.
+  const shout = (text.match(/\b[A-Z]{4,}\b/g) ?? [])
+    .filter(w => !/^(RM|OK|USB|LED|PDF|XL|XXL|COD|DIY|FYI)$/.test(w));
+  if (shout.length >= 3) reasons.push(`${shout.length} ALL-CAPS words — reads as an ad`);
+  const words = text.split(/\s+/).filter(Boolean);
+  if (words.length >= 8 && shout.length / words.length > 0.25) {
+    reasons.push('more than a quarter of the post is shouting');
+  }
+
   // 7. structural AI tells
   if ((text.match(/—/g) ?? []).length >= 2) reasons.push('em-dash chain');
   if (/^\s*[-*•]\s/m.test(text) && input.length_band !== 'long') reasons.push('bullet list');

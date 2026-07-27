@@ -48,6 +48,8 @@ db/schema.sql               PostgreSQL schema
 db/seed_levers.sql          12 formats, 9 angles, 7 tones, banned phrases, CTA pool, settings
 db/seed_levers_my.sql       Malay levers, banned phrases, CTA pool, MY settings  ← use these
 db/seed_techniques_my.sql   43 cold-start techniques in Malay — runs with ZERO PDFs uploaded
+db/seed_techniques_books.sql 17 techniques mined from your Books/ folder (see docs/05-books.md)
+Books/                      26 copywriting PDFs you pushed; 23 readable, 3 need OCR
 db/seed_levers.sql          Indonesian originals, kept for reference
 db/seed_techniques.sql      Indonesian originals, kept for reference
 db/migrations/              001_optional_media.sql — makes images optional on existing installs
