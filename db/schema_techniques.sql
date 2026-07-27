@@ -96,10 +96,11 @@ ORDER BY mean_score DESC NULLS LAST;
 
 -- ── which contested claims has your data settled?
 CREATE VIEW v_contested_verdicts AS
-SELECT code, name, contested_note, uses, mean_score, lift_vs_all,
-       CASE WHEN uses < 6 THEN 'not enough data'
-            WHEN lift_vs_all > 0.15 THEN 'CONFIRMED for your audience'
-            WHEN lift_vs_all < -0.15 THEN 'REJECTED for your audience'
+SELECT v.code, v.name, t.contested_note, v.uses, v.mean_score, v.lift_vs_all,
+       CASE WHEN v.uses < 6 THEN 'not enough data'
+            WHEN v.lift_vs_all > 0.15 THEN 'CONFIRMED for your audience'
+            WHEN v.lift_vs_all < -0.15 THEN 'REJECTED for your audience'
             ELSE 'no measurable effect' END AS verdict
-FROM v_technique_performance
-WHERE contested ORDER BY uses DESC;
+FROM v_technique_performance v
+JOIN techniques t ON t.code = v.code
+WHERE v.contested ORDER BY v.uses DESC;

@@ -1,0 +1,266 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>ThreadsFlow — Knowledge Base</title>
+<style>
+  :root{
+    --bg:#0d0f12; --panel:#15181d; --panel2:#1c2027; --line:#252a33;
+    --txt:#e6e9ef; --dim:#8b93a1; --acc:#4c9aff; --ok:#3fb950; --warn:#d29922; --bad:#f85149;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--txt);
+       font:14px/1.5 ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+  header{padding:20px 24px;border-bottom:1px solid var(--line);display:flex;
+         align-items:baseline;gap:16px;flex-wrap:wrap}
+  h1{font-size:17px;margin:0;font-weight:600}
+  header .sub{color:var(--dim);font-size:13px}
+  main{max-width:1100px;margin:0 auto;padding:24px}
+  .stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:10px;margin-bottom:22px}
+  .stat{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:12px 14px}
+  .stat b{display:block;font-size:22px;font-weight:600;line-height:1.2}
+  .stat span{color:var(--dim);font-size:12px}
+  #drop{border:2px dashed var(--line);border-radius:12px;padding:44px 20px;text-align:center;
+        background:var(--panel);cursor:pointer;transition:.15s;margin-bottom:22px}
+  #drop.over{border-color:var(--acc);background:#161d29}
+  #drop h2{margin:0 0 6px;font-size:16px;font-weight:600}
+  #drop p{margin:0;color:var(--dim);font-size:13px}
+  .tabs{display:flex;gap:4px;margin-bottom:14px;border-bottom:1px solid var(--line)}
+  .tab{padding:8px 14px;cursor:pointer;color:var(--dim);border-bottom:2px solid transparent;font-size:13px}
+  .tab.on{color:var(--txt);border-bottom-color:var(--acc)}
+  .tab .badge{background:var(--warn);color:#000;border-radius:9px;padding:0 6px;font-size:11px;margin-left:6px}
+  table{width:100%;border-collapse:collapse;font-size:13px}
+  th{text-align:left;color:var(--dim);font-weight:500;padding:8px 10px;border-bottom:1px solid var(--line);font-size:12px}
+  td{padding:9px 10px;border-bottom:1px solid var(--line);vertical-align:top}
+  tr:hover td{background:var(--panel)}
+  .pill{display:inline-block;padding:1px 8px;border-radius:20px;font-size:11px;font-weight:500}
+  .s-done{background:#12261a;color:var(--ok)} .s-duplicate{background:#2a2410;color:var(--warn)}
+  .s-failed,.s-rejected{background:#2b1416;color:var(--bad)}
+  .s-queued,.s-extracting,.s-chunking,.s-mining,.s-merging{background:#12203a;color:var(--acc)}
+  .bar{height:4px;background:var(--panel2);border-radius:3px;overflow:hidden;margin-top:5px;width:150px}
+  .bar>i{display:block;height:100%;background:var(--acc);transition:width .4s}
+  .muted{color:var(--dim)}
+  .mono{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px}
+  button{background:var(--panel2);color:var(--txt);border:1px solid var(--line);border-radius:6px;
+         padding:5px 11px;cursor:pointer;font-size:12px}
+  button:hover{border-color:var(--acc)} button.p{background:var(--acc);color:#04101f;border-color:var(--acc);font-weight:600}
+  button.d{color:var(--bad)}
+  input,select{background:var(--panel2);color:var(--txt);border:1px solid var(--line);
+               border-radius:6px;padding:6px 10px;font-size:13px}
+  .tech{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:12px 14px;margin-bottom:8px}
+  .tech .h{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:6px}
+  .tech .ins{font-size:13px;margin:4px 0}
+  .tech .ex{font-size:12px;color:var(--dim);margin-top:6px;padding-left:10px;border-left:2px solid var(--line)}
+  .t-hook{background:#1b2436;color:#7aa7ff} .t-anti_pattern{background:#2b1416;color:#ff8b84}
+  .t-psychology{background:#241b36;color:#b48bff} .t-voice{background:#12261a;color:#69d68a}
+  .t-structure{background:#2a2410;color:#e3b341} .t-proof{background:#0f2830;color:#5bc8d6}
+  .t-cta{background:#301c26;color:#ff9ec4} .t-rhythm{background:#22252b;color:#a6adba}
+  .corr{background:#12261a;color:var(--ok);font-size:11px;padding:1px 7px;border-radius:20px}
+  .empty{text-align:center;padding:40px;color:var(--dim)}
+  #login{max-width:320px;margin:100px auto;text-align:center}
+  .hide{display:none}
+</style>
+</head>
+<body>
+
+<div id="login" class="hide">
+  <h1>Knowledge Base</h1>
+  <p class="muted">Enter password</p>
+  <input type="password" id="pw" style="width:100%;margin-bottom:8px" onkeydown="if(event.key==='Enter')login()">
+  <button class="p" style="width:100%" onclick="login()">Unlock</button>
+</div>
+
+<div id="app" class="hide">
+<header>
+  <h1>ThreadsFlow Knowledge Base</h1>
+  <span class="sub">Drop copywriting PDFs. They become testable techniques in the posting bandit.</span>
+</header>
+
+<main>
+  <div class="stats" id="stats"></div>
+
+  <div id="drop">
+    <h2>Drop PDFs here</h2>
+    <p>or click to choose &middot; duplicates are detected automatically &middot; max 60&nbsp;MB each</p>
+    <input type="file" id="file" accept="application/pdf" multiple hidden>
+  </div>
+
+  <div class="tabs">
+    <div class="tab on" data-t="docs">Documents</div>
+    <div class="tab" data-t="tech">Technique Library</div>
+    <div class="tab" data-t="review">Review <span class="badge hide" id="rbadge">0</span></div>
+  </div>
+
+  <div id="pane-docs"></div>
+  <div id="pane-tech" class="hide">
+    <div style="display:flex;gap:8px;margin-bottom:12px">
+      <input id="q" placeholder="search techniques…" style="flex:1" oninput="loadTech()">
+      <select id="ftype" onchange="loadTech()">
+        <option value="">all types</option>
+        <option>hook</option><option>structure</option><option>psychology</option>
+        <option>voice</option><option>proof</option><option>cta</option>
+        <option>rhythm</option><option>anti_pattern</option>
+      </select>
+    </div>
+    <div id="techlist"></div>
+  </div>
+  <div id="pane-review" class="hide"></div>
+</main>
+</div>
+
+<script>
+const $ = s => document.querySelector(s);
+let tab = 'docs', timer = null;
+
+async function api(path, opts) {
+  const r = await fetch('/api' + path, opts);
+  if (r.status === 401) { show('login'); throw new Error('auth'); }
+  return r.json();
+}
+function show(which) {
+  $('#login').classList.toggle('hide', which !== 'login');
+  $('#app').classList.toggle('hide', which === 'login');
+}
+async function login() {
+  const r = await fetch('/api/login', {
+    method: 'POST', headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ password: $('#pw').value }),
+  });
+  if (r.ok) { show('app'); boot(); } else alert('wrong password');
+}
+
+// ── upload
+const drop = $('#drop'), fileInput = $('#file');
+drop.onclick = () => fileInput.click();
+drop.ondragover = e => { e.preventDefault(); drop.classList.add('over'); };
+drop.ondragleave = () => drop.classList.remove('over');
+drop.ondrop = e => { e.preventDefault(); drop.classList.remove('over'); send(e.dataTransfer.files); };
+fileInput.onchange = () => send(fileInput.files);
+
+async function send(files) {
+  const pdfs = [...files].filter(f => /\.pdf$/i.test(f.name));
+  if (!pdfs.length) return alert('PDFs only');
+  const fd = new FormData();
+  pdfs.forEach(f => fd.append('pdfs', f));
+  drop.querySelector('h2').textContent = `Uploading ${pdfs.length} file(s)…`;
+  const out = await api('/upload', { method: 'POST', body: fd });
+  drop.querySelector('h2').textContent = 'Drop PDFs here';
+  const dupes = out.results.filter(r => r.status === 'duplicate');
+  if (dupes.length) alert(dupes.map(d => `${d.filename}\n→ ${d.message}`).join('\n\n'));
+  refresh();
+}
+
+// ── tabs
+document.querySelectorAll('.tab').forEach(t => t.onclick = () => {
+  tab = t.dataset.t;
+  document.querySelectorAll('.tab').forEach(x => x.classList.toggle('on', x === t));
+  ['docs','tech','review'].forEach(p => $('#pane-' + p).classList.toggle('hide', p !== tab));
+  refresh();
+});
+
+// ── render
+const esc = s => (s ?? '').replace(/[<>&]/g, c => ({ '<':'&lt;','>':'&gt;','&':'&amp;' }[c]));
+
+async function loadStats() {
+  const s = await api('/stats');
+  $('#stats').innerHTML = [
+    ['Documents', s.docs.done, `${s.docs.total} total · ${s.docs.dupes} dupes`],
+    ['Techniques', s.tech.enabled, `${s.tech.total} total · ${s.tech.in_use} tested`],
+    ['Corroborated', s.tech.corroborated, 'in 2+ books'],
+    ['Contested', s.tech.contested, 'priority experiments'],
+    ['Banned phrases', s.banned, 'enforced on every post'],
+    ['New levers', s.levers, 'added to the bandit'],
+  ].map(([l, v, sub]) => `<div class="stat"><b>${v}</b><span>${l}</span><span class="muted" style="font-size:11px">${sub}</span></div>`).join('');
+  const b = $('#rbadge');
+  b.textContent = s.needs_review;
+  b.classList.toggle('hide', !s.needs_review);
+  return s;
+}
+
+async function loadDocs() {
+  const d = await api('/documents');
+  if (!d.length) { $('#pane-docs').innerHTML = '<div class="empty">No documents yet. Drop a PDF above.</div>'; return false; }
+  let active = false;
+  $('#pane-docs').innerHTML = `<table><tr><th>Document</th><th>Status</th><th>New</th><th>Merged</th>
+    <th>Rejected</th><th>Banned</th><th></th></tr>` + d.map(r => {
+    const running = ['queued','extracting','chunking','mining','merging'].includes(r.status);
+    if (running) active = true;
+    return `<tr>
+      <td><b>${esc(r.title || r.filename)}</b>
+          ${r.author ? `<span class="muted"> — ${esc(r.author)}</span>` : ''}
+          <div class="muted mono">${esc(r.filename)}${r.pages ? ' · ' + r.pages + 'p' : ''}${r.seconds ? ' · ' + r.seconds + 's' : ''}</div>
+          ${r.duplicate_of_file ? `<div class="muted">↳ duplicate of ${esc(r.duplicate_of_file)}</div>` : ''}</td>
+      <td><span class="pill s-${r.status}">${r.status}</span>
+          ${running ? `<div class="bar"><i style="width:${(r.progress*100).toFixed(0)}%"></i></div>
+                       <div class="muted" style="font-size:11px">${esc(r.stage_note||'')}</div>` : ''}</td>
+      <td><b>${r.techniques_new ?? '—'}</b></td><td>${r.techniques_merged ?? '—'}</td>
+      <td class="muted">${r.techniques_rejected ?? '—'}</td><td>${r.banned_added ?? '—'}</td>
+      <td>${['failed','rejected'].includes(r.status) ? `<button onclick="retry(${r.id})">retry</button> ` : ''}
+          <button class="d" onclick="del(${r.id})">×</button></td>
+    </tr>`;
+  }).join('') + '</table>';
+  return active;
+}
+
+async function loadTech() {
+  const p = new URLSearchParams();
+  if ($('#q').value) p.set('q', $('#q').value);
+  if ($('#ftype').value) p.set('type', $('#ftype').value);
+  const t = await api('/techniques?' + p);
+  $('#techlist').innerHTML = t.length ? t.map(x => `
+    <div class="tech">
+      <div class="h">
+        <span class="pill t-${x.type}">${x.type}</span>
+        <b>${esc(x.name)}</b>
+        ${x.corroboration > 1 ? `<span class="corr">${x.corroboration} books agree</span>` : ''}
+        ${x.contested ? '<span class="pill s-duplicate">contested</span>' : ''}
+        ${x.n > 0 ? `<span class="muted" style="font-size:12px">used ${x.n}× · reward ${x.mean_reward ?? '—'}</span>` : '<span class="muted" style="font-size:12px">untested</span>'}
+        <span style="margin-left:auto"></span>
+        <button onclick="toggle(${x.id},${!x.enabled})">${x.enabled ? 'disable' : 'enable'}</button>
+      </div>
+      <div class="ins">${esc(x.instruction)}</div>
+      <div class="ex">✓ ${esc(x.example_do)}<br>✗ ${esc(x.example_dont)}</div>
+      ${x.compatible_tones?.length ? `<div class="muted" style="font-size:11px;margin-top:6px">tones: ${x.compatible_tones.join(', ')}</div>` : ''}
+    </div>`).join('') : '<div class="empty">No techniques yet.</div>';
+}
+
+async function loadReview() {
+  const r = await api('/review');
+  $('#pane-review').innerHTML = r.length ? `<p class="muted">These were too similar to auto-insert
+    but too different to auto-merge. You decide.</p>` + r.map(x => `
+    <div class="tech">
+      <div class="h"><span class="pill t-${x.type}">${x.type}</span><b>${esc(x.name)}</b>
+        <span class="muted">${(x.similarity*100).toFixed(0)}% similar · from ${esc(x.from_document)}</span></div>
+      <div class="ins"><b>New:</b> ${esc(x.instruction)}</div>
+      <div class="ins muted"><b>Existing:</b> ${esc(x.existing_instruction)}</div>
+      <div style="margin-top:8px;display:flex;gap:6px">
+        <button class="p" onclick="review(${x.id},'insert')">Keep both</button>
+        <button onclick="review(${x.id},'discard')">Discard new</button>
+      </div>
+    </div>`).join('') : '<div class="empty">Nothing to review.</div>';
+}
+
+async function toggle(id, enabled) { await api('/techniques/' + id, { method:'PATCH',
+  headers:{'content-type':'application/json'}, body: JSON.stringify({ enabled }) }); loadTech(); }
+async function review(id, action) { await api('/review/' + id, { method:'POST',
+  headers:{'content-type':'application/json'}, body: JSON.stringify({ action }) }); loadReview(); loadStats(); }
+async function retry(id) { await api(`/documents/${id}/retry`, { method:'POST' }); refresh(); }
+async function del(id) { if (confirm('Delete this document? Techniques already in the library are kept.'))
+  { await api('/documents/' + id, { method:'DELETE' }); refresh(); } }
+
+async function refresh() {
+  await loadStats();
+  let active = false;
+  if (tab === 'docs') active = await loadDocs();
+  else if (tab === 'tech') await loadTech();
+  else await loadReview();
+  clearTimeout(timer);
+  if (active) timer = setTimeout(refresh, 2500);   // poll while a job is running
+}
+
+async function boot() { try { await refresh(); } catch {} }
+(async () => { try { await api('/stats'); show('app'); boot(); } catch { show('login'); } })();
+</script>
+</body>
+</html>

@@ -26,7 +26,8 @@ Three things make or break it, and only one of them is the posting:
    ~5 cycles) and only trusts a full combo at n ≥ 4. Money weight ramps in via shrinkage as
    orders accumulate, so early cycles optimize attention and later cycles optimize rupiah.
 
-Read [`docs/01-architecture.md`](docs/01-architecture.md) first.
+**Read [`docs/00-START-HERE.md`](docs/00-START-HERE.md) first** — status, what you must do by
+hand, realistic timeline, and failure modes. Then `docs/01-architecture.md` for the design.
 
 ---
 
@@ -39,6 +40,7 @@ docs/03-setup-runbook.md    empty VPS → first automated post, plus troubleshoo
 docs/04-technique-library.md  why NOT to call NotebookLM live, and what to do instead
 db/schema.sql               PostgreSQL schema
 db/seed_levers.sql          12 formats, 9 angles, 7 tones, banned phrases, CTA pool, settings
+db/seed_techniques.sql      42 cold-start techniques — the system runs with ZERO PDFs uploaded
 db/queries.sql              the analysis queries you'll actually use
 db/schema_techniques.sql    Technique Library: mined copywriting techniques as testable arms
 db/mining_questions.sql     30 questions to extract technique from your NotebookLM PDFs
@@ -48,7 +50,8 @@ n8n/code/scoring.js         z-scored EPM/CTR/ENG blend with money shrinkage
 n8n/code/qa.js              the anti-AI-slop gate (regex bans + embedding + 3-gram overlap)
 n8n/code/slot_plan.js       jittered daily slots, skip probability, forced non-commercial post
 n8n/code/technique_picker.js  picks 1-2 compatible devices per post + 15% control group
-n8n/workflows/wf3_publish.json   importable publish workflow (the rest are specced in docs)
+n8n/workflows/              wf0 + wf3 ready to import; wf2 + wf4 need 7 code blocks pasted
+services/kb/                Knowledge Base: PDF upload -> techniques, plus product intake UI
 prompts/writer.md           LLM call 1 — the brief
 prompts/editor.md           LLM call 2 — strips AI shape (this one does the heavy lifting)
 prompts/cta.md              LLM call 3 — the link comment

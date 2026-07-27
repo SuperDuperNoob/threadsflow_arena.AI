@@ -1,0 +1,223 @@
+{
+  "name": "wf2_generate",
+  "nodes": [
+    {
+      "parameters": { "rule": { "interval": [{ "field": "cronExpression", "expression": "0 3 * * *" }] } },
+      "id": "cron",
+      "name": "Daily 03:00",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [-1120, 300]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT\n  (SELECT value FROM settings WHERE key='posting')          AS posting,\n  (SELECT value FROM settings WHERE key='bandit')           AS bandit,\n  (SELECT value FROM settings WHERE key='qa')               AS qa,\n  (SELECT value FROM settings WHERE key='llm')              AS llm,\n  (SELECT COALESCE(value,'[]'::jsonb) FROM settings WHERE key='next_cycle_plan') AS next_cycle_plan,\n  (SELECT jsonb_agg(to_jsonb(l)) FROM levers l WHERE l.enabled) AS levers,\n  (SELECT jsonb_agg(to_jsonb(b)) FROM banned_phrases b)     AS banned,\n  (SELECT jsonb_agg(to_jsonb(a)) FROM arm_stats a)          AS arm_stats,\n  (SELECT jsonb_agg(to_jsonb(p)) FROM (\n     SELECT pr.id, pr.uid, pr.name, pr.notes, pr.enrichment,\n            (SELECT count(*) FROM posts po WHERE po.product_id=pr.id) AS posts_count\n       FROM products pr\n      WHERE pr.status='active' AND (pr.rest_until IS NULL OR pr.rest_until < now())\n   ) p)                                                     AS products,\n  (SELECT jsonb_agg(to_jsonb(r)) FROM (\n     SELECT body, embedding FROM posts\n      WHERE status IN ('published','queued')\n      ORDER BY created_at DESC LIMIT 30\n   ) r)                                                     AS recent;",
+        "options": {}
+      },
+      "id": "load",
+      "name": "Load config + state",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [-900, 300],
+      "credentials": { "postgres": { "id": "PG", "name": "Postgres threadsflow" } }
+    },
+    {
+      "parameters": {
+        "jsCode": "// ── paste n8n/code/slot_plan.js here ──\n// Produces one item per posting slot for tomorrow, with jitter, skip probability,\n// a forced non-commercial slot, and the breed/explore instruction from wf4.\nconst cfg = $json;\nconst settings = { posting: cfg.posting };\nconst plan = Array.isArray(cfg.next_cycle_plan) ? [...cfg.next_cycle_plan] : [];\nconst s = cfg.posting;\nconst dayStart = new Date(); dayStart.setHours(0,0,0,0); dayStart.setDate(dayStart.getDate()+1);\nconst slots = [];\nconst hours = s.slot_hours;\nconst freeIdx = Math.floor(Math.random()*hours.length);\nfor (let i=0;i<hours.length;i++){\n  if (Math.random() < (s.skip_probability ?? 0.08)) continue;\n  const jitter = Math.round((Math.random()*2-1)*(s.jitter_minutes ?? 18));\n  const t = new Date(dayStart); t.setHours(hours[i],0,0,0); t.setMinutes(t.getMinutes()+jitter);\n  t.setSeconds(Math.floor(Math.random()*60));\n  slots.push({\n    slot_index:i, scheduled_at:t.toISOString(),\n    force_sell_intensity: i===freeIdx ? '0' : null,\n    is_carousel: Math.random() < (s.carousel_probability ?? 0.4),\n    reply_delay_sec: Math.round(s.reply_delay_range_sec[0] + Math.random()*(s.reply_delay_range_sec[1]-s.reply_delay_range_sec[0])),\n    plan: plan.shift() ?? { mode:'explore' },\n    cfg\n  });\n}\nif (!slots.length){ const t=new Date(dayStart); t.setHours(19,12,0,0);\n  slots.push({slot_index:3,scheduled_at:t.toISOString(),force_sell_intensity:null,is_carousel:false,reply_delay_sec:70,plan:{mode:'explore'},cfg}); }\nreturn slots.map(x=>({json:x}));"
+      },
+      "id": "slots",
+      "name": "Build slot plan",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [-680, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// ── paste n8n/code/bandit.js (select half) here ──\n// Chooses product + the 5 lever values via Thompson sampling / epsilon-greedy.\n// See the file for the full implementation; this node must set:\n//   product, format, angle, tone, sell_intensity, length_band, combo_key\nconst cfg = $json.cfg;\nconst out = { ...$json };\n// placeholder wiring — replace body with bandit.js contents\nreturn [{ json: out }];"
+      },
+      "id": "bandit",
+      "name": "Bandit: pick arm",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [-460, 300],
+      "notes": "Paste n8n/code/bandit.js. Honour slot.force_sell_intensity when set."
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT id, public_url, vision_desc FROM product_images\n WHERE product_id = $1\n   AND (last_used_at IS NULL OR last_used_at < now() - ($2 || ' days')::interval)\n ORDER BY use_count ASC, last_used_at ASC NULLS FIRST\n LIMIT CASE WHEN $3 THEN 4 ELSE 1 END;",
+        "options": { "queryReplacement": "={{ $json.product.id }},={{ $json.cfg.posting.image_cooldown_days }},={{ $json.is_carousel }}" }
+      },
+      "id": "images",
+      "name": "Pick image(s)",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [-240, 300],
+      "credentials": { "postgres": { "id": "PG", "name": "Postgres threadsflow" } },
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "url": "=http://kb:8082/api/kb/techniques-for-generation",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            { "name": "format", "value": "={{ $json.format }}" },
+            { "name": "tone", "value": "={{ $json.tone }}" },
+            { "name": "sell_intensity", "value": "={{ $json.sell_intensity }}" }
+          ]
+        },
+        "options": { "response": { "response": { "neverError": true } } }
+      },
+      "id": "kb",
+      "name": "KB: compatible techniques",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [-20, 300],
+      "onError": "continueRegularOutput",
+      "notes": "If the KB service is down this returns nothing and generation proceeds with levers only."
+    },
+    {
+      "parameters": {
+        "jsCode": "// ── paste n8n/code/technique_picker.js (select half) here ──\n// Picks 1-2 compatible devices; 15% of posts get none (control group).\nreturn [{ json: $json }];"
+      },
+      "id": "devices",
+      "name": "Pick devices",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [200, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $json.cfg.llm.base_url }}/chat/completions",
+        "sendHeaders": true,
+        "headerParameters": { "parameters": [{ "name": "authorization", "value": "=Bearer {{ $json.cfg.llm.api_key }}" }] },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ model: $json.cfg.llm.model_write, temperature: 1.0, top_p: 0.95, messages: [ { role:'system', content: $json.writer_system }, { role:'user', content: $json.writer_user } ] }) }}",
+        "options": {}
+      },
+      "id": "write",
+      "name": "LLM: write draft",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [420, 300],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 4000
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Pick devices').item.json.cfg.llm.base_url }}/chat/completions",
+        "sendHeaders": true,
+        "headerParameters": { "parameters": [{ "name": "authorization", "value": "=Bearer {{ $('Pick devices').item.json.cfg.llm.api_key }}" }] },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ model: $('Pick devices').item.json.cfg.llm.model_edit, temperature: 0.7, messages: [ { role:'system', content: $('Pick devices').item.json.editor_system }, { role:'user', content: $json.choices[0].message.content } ] }) }}",
+        "options": {}
+      },
+      "id": "edit",
+      "name": "LLM: human pass",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [640, 300],
+      "retryOnFail": true,
+      "maxTries": 3
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Pick devices').item.json.cfg.llm.base_url }}/embeddings",
+        "sendHeaders": true,
+        "headerParameters": { "parameters": [{ "name": "authorization", "value": "=Bearer {{ $('Pick devices').item.json.cfg.llm.api_key }}" }] },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ model: $('Pick devices').item.json.cfg.llm.model_embed, input: $json.choices[0].message.content }) }}",
+        "options": {}
+      },
+      "id": "embed",
+      "name": "LLM: embed",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [860, 300],
+      "retryOnFail": true,
+      "maxTries": 3
+    },
+    {
+      "parameters": {
+        "jsCode": "// ── paste n8n/code/qa.js here ──\n// Regex bans, length band, emoji cap, opener check, cosine + 3-gram similarity.\n// On fail: route to the retry branch (max 3), then pick a different arm.\nreturn [{ json: { pass: true, cleaned: '' } }];"
+      },
+      "id": "qa",
+      "name": "QA gate",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1080, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": { "version": 2 },
+          "conditions": [{ "leftValue": "={{ $json.pass }}", "rightValue": true, "operator": { "type": "boolean", "operation": "true", "singleValue": true } }],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "qaif",
+      "name": "Passed QA?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [1300, 300]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "WITH new_post AS (\n  INSERT INTO posts (uid, product_id, image_ids, format, angle, tone, sell_intensity,\n    length_band, is_carousel, body, cta_text, tracked_url, embedding, char_count,\n    emoji_count, hashtag_used, status, scheduled_at, reply_delay_sec, parent_post_id, generation)\n  VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,'queued',$17,$18,$19,$20)\n  RETURNING id\n)\nINSERT INTO technique_usage (post_id, technique_id)\nSELECT (SELECT id FROM new_post), unnest($21::bigint[])\nON CONFLICT DO NOTHING;",
+        "options": {}
+      },
+      "id": "insert",
+      "name": "Queue post",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [1520, 220],
+      "credentials": { "postgres": { "id": "PG", "name": "Postgres threadsflow" } }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO run_log (workflow, level, message, meta)\nVALUES ('wf2_generate','warn','QA rejected a draft', $1::jsonb);",
+        "options": { "queryReplacement": "={{ JSON.stringify({reasons: $json.reasons, slot: $json.slot_index}) }}" }
+      },
+      "id": "logfail",
+      "name": "Log QA rejection",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [1520, 400],
+      "credentials": { "postgres": { "id": "PG", "name": "Postgres threadsflow" } },
+      "notes": "Wire this back into 'LLM: write draft' for up to 3 retries before giving up on the slot."
+    }
+  ],
+  "connections": {
+    "Daily 03:00": { "main": [[{ "node": "Load config + state", "type": "main", "index": 0 }]] },
+    "Load config + state": { "main": [[{ "node": "Build slot plan", "type": "main", "index": 0 }]] },
+    "Build slot plan": { "main": [[{ "node": "Bandit: pick arm", "type": "main", "index": 0 }]] },
+    "Bandit: pick arm": { "main": [[{ "node": "Pick image(s)", "type": "main", "index": 0 }]] },
+    "Pick image(s)": { "main": [[{ "node": "KB: compatible techniques", "type": "main", "index": 0 }]] },
+    "KB: compatible techniques": { "main": [[{ "node": "Pick devices", "type": "main", "index": 0 }]] },
+    "Pick devices": { "main": [[{ "node": "LLM: write draft", "type": "main", "index": 0 }]] },
+    "LLM: write draft": { "main": [[{ "node": "LLM: human pass", "type": "main", "index": 0 }]] },
+    "LLM: human pass": { "main": [[{ "node": "LLM: embed", "type": "main", "index": 0 }]] },
+    "LLM: embed": { "main": [[{ "node": "QA gate", "type": "main", "index": 0 }]] },
+    "QA gate": { "main": [[{ "node": "Passed QA?", "type": "main", "index": 0 }]] },
+    "Passed QA?": {
+      "main": [
+        [{ "node": "Queue post", "type": "main", "index": 0 }],
+        [{ "node": "Log QA rejection", "type": "main", "index": 0 }]
+      ]
+    }
+  },
+  "settings": { "executionOrder": "v1", "timezone": "Asia/Jakarta", "saveDataSuccessExecution": "none" },
+  "tags": [{ "name": "threadsflow" }]
+}

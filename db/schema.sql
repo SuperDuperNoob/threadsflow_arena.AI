@@ -1,13 +1,24 @@
 -- ThreadsFlow schema (PostgreSQL 16)
 -- Run: psql -U threadsflow -d threadsflow -f db/schema.sql
 
-CREATE EXTENSION IF NOT EXISTS pgcrypto;
+-- pgcrypto is used only for the default product uid. It ships with postgres:16-alpine but is
+-- absent from some minimal builds, so we degrade to md5(random()) rather than fail the install.
+DO $$
+BEGIN
+  CREATE EXTENSION IF NOT EXISTS pgcrypto;
+EXCEPTION WHEN OTHERS THEN
+  RAISE NOTICE 'pgcrypto unavailable, falling back to md5(random()) for uid defaults';
+END $$;
+
+CREATE OR REPLACE FUNCTION tf_short_uid() RETURNS text LANGUAGE sql VOLATILE AS $$
+  SELECT substr(md5(random()::text || clock_timestamp()::text), 1, 8);
+$$;
 
 -- ─────────────────────────────────────────── products
 
 CREATE TABLE products (
   id             BIGSERIAL PRIMARY KEY,
-  uid            TEXT UNIQUE NOT NULL DEFAULT encode(gen_random_bytes(4),'hex'),
+  uid            TEXT UNIQUE NOT NULL DEFAULT tf_short_uid(),
   name           TEXT,
   affiliate_url  TEXT NOT NULL,
   notes          TEXT,                     -- your free-text hints ("buat ibu-ibu, 89rb")

@@ -63,6 +63,8 @@ services:
       NODE_OPTIONS: --max-old-space-size=1024
       N8N_DIAGNOSTICS_ENABLED: "false"
       N8N_RUNNERS_ENABLED: "true"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     volumes:
       - n8ndata:/home/node/.n8n
       - ../n8n/code:/code:ro              # Code nodes can `require` nothing, but handy for copy/paste
@@ -84,19 +86,31 @@ services:
       resources:
         limits: { memory: 128M }
 
-  ui:
-    build: ../ui
+
+  kb:
+    build: ../services/kb
     restart: unless-stopped
-    environment:
-      N8N_INTAKE_WEBHOOK: http://n8n:5678/webhook/intake
-      DATABASE_URL: postgres://threadsflow:${PG_PASSWORD}@postgres:5432/threadsflow
-      UI_PASSWORD: ${UI_PASSWORD}
-      PORT: "8080"
     depends_on:
       postgres: { condition: service_healthy }
+    environment:
+      DATABASE_URL: postgres://threadsflow:${PG_PASSWORD}@postgres:5432/threadsflow
+      PORT: "8082"
+      KB_PASSWORD: ${KB_PASSWORD}
+      STORAGE_DIR: /data/pdfs
+      LLM_BASE_URL: ${LLM_BASE_URL}
+      LLM_API_KEY: ${LLM_API_KEY}
+      LLM_MODEL_MINE: ${LLM_MODEL_MINE}
+      LLM_MODEL_EMBED: ${LLM_MODEL_EMBED}
+      MINE_CONCURRENCY: "2"
+      MAX_CHUNKS_PER_DOC: "45"
+      TZ: Asia/Jakarta
+    volumes:
+      - kbdata:/data
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     deploy:
       resources:
-        limits: { memory: 256M }
+        limits: { memory: 640M }
 
   # Public image host. Skip this and use Cloudflare R2 if you prefer zero self-hosting.
   minio:
@@ -126,9 +140,10 @@ volumes:
   pgdata:
   n8ndata:
   miniodata:
+  kbdata:
 
 # ── Cloudflare Tunnel public hostnames to configure in the Zero Trust dashboard:
 #   n8n.yourdomain.com  → http://n8n:5678         (put an Access policy on this!)
-#   app.yourdomain.com  → http://ui:8080          (Access policy: your email only)
+#   kb.yourdomain.com   → http://kb:8082          (Access policy: your email only)
 #   r.yourdomain.com    → http://redirector:8081  (PUBLIC, no Access — buyers hit this)
 #   cdn.yourdomain.com  → http://minio:9000       (PUBLIC, read-only bucket)
