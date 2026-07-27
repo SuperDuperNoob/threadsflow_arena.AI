@@ -13,7 +13,10 @@ wf5_conversions     Cron 12h       Shopee conversions → DB   (optional at firs
 ```
 
 Credentials to create in n8n: `Postgres threadsflow`, `HTTP Header Auth threads`
-(not needed — token goes in query), `HTTP Request 9router`, `Apify`, `S3/R2`.
+(not needed — token goes in query), `HTTP Request 9router`, `S3/R2`.
+Shopee conversions come from the **Shopee Affiliate Open API**, not an n8n credential —
+supply `SHOPEE_API_APP_ID` / `SHOPEE_API_SECRET` (env, or the `settings` rows
+`shopee_app_id` / `shopee_app_secret`); the sync runs from code/CLI, see wf5 below.
 Store the Threads token in the `settings` table row `threads_token`, not in the workflow, so
 wf0 can rotate it.
 
@@ -45,7 +48,8 @@ INSERT products     uid, media_mode, description, notes     ← transaction comm
    ↓
 upload images       0-4 files -> Cloudflare R2 -> product_images   (skipped if none)
    ↓  (everything below is post-commit and allowed to fail)
-enrich              OG tags of the affiliate URL + your description + notes
+enrich              Shopee Open API (productOfferV2) when keys are set, else
+                    OG tags of the affiliate URL + your description + notes
                     -> {concrete_details[], sensory_details[], detail_confidence, price, persona}
    ↓
 vision pass         images only -> product_images.vision_desc
@@ -253,11 +257,37 @@ HTTP node, and **Continue On Fail** on the publish node so the error branch can 
 
 ## wf5_conversions — Cron 12h
 
-Apify actor `viralanalyzer/shopee-affiliate-products` with `mode=conversions`,
-`conversionTimeRangeDays=7`. Map `sub_id` → `posts.uid`, upsert on `order_id`.
-If you don't have Shopee Open API keys yet, do this manually: download the affiliate CSV weekly
-and POST it to a small `/import/conversions` webhook. The learning loop still works, just with
-`w_money` climbing more slowly.
+**Now built on the Shopee Affiliate Open API** (GraphQL, `open-api.affiliate.shopee.com.my/graphql`).
+You need an App ID + API Key from the affiliate dashboard → *Open API* section, stored as
+`SHOPEE_API_APP_ID` / `SHOPEE_API_SECRET` (or the `settings` rows `shopee_app_id` /
+`shopee_app_secret`).
+
+What it does: calls `conversionReport` for the last 7 days, maps each node's `utmContent`
+(the sub_id your redirector sets = `post.uid`) onto `conversions.post_uid`, and upserts
+idempotently on `order_id`. One row per order; commission + actual GMV come from the order
+items. Pagination chains on `scrollId` (valid 30s) so it stays inside the window.
+
+Three ways to run it:
+
+1. **From code (recommended):** `lib/shopee_conversions.js` → `pullConversions({ pool })`.
+   Call it from the L3 evaluate loop, or as its own cron:
+   ```bash
+   DATABASE_URL=... SHOPEE_API_APP_ID=... SHOPEE_API_SECRET=... \
+     node bin/shopee.mjs sync            # add --validate to also pull the billing-validated report
+   ```
+2. **From n8n:** an HTTP Request → `POST /api/import/conversions` on the KB service with the
+   normalized rows (this is the keyless fallback — build the rows however you like, e.g. from a
+   downloaded CSV). Body: `{ "rows": [ { "order_id": "...", "post_uid": "...", "commission": 4.3, "status": "completed" } ] }`.
+3. **Verify keys first:** `node bin/shopee.mjs check` does a sample `productOfferV2` call to
+   confirm the signature works before you wire it into a loop.
+
+The learning loop still works without this — it just leans on engagement until `w_money` climbs
+from real commission data.
+
+The `docker-compose.yml` already includes a `shopee-sync` service that runs this every 12h
+automatically — just set `SHOPEE_API_APP_ID` / `SHOPEE_API_SECRET` in `.env` and
+`docker compose up -d`. It self-heals: if keys are missing it retries hourly and starts
+syncing the moment you add them.
 
 ---
 

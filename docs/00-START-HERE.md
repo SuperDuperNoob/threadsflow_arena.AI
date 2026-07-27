@@ -226,10 +226,13 @@ actually buy, and writing real specifics in the notes box.
 | Key auto-renewal (wf0) | Yes — ready to import |
 | Writing automation (wf2_generate) | Needs 4 code blocks pasted in |
 | Learning automation (wf4_evaluate) | Needs 3 code blocks pasted in |
-| Shopee sales import (wf5) | Not built — works on click data until you add it |
+| Shopee sales import (wf5) | Built — pulls from the Shopee Affiliate Open API (needs your keys) |
 
-**Not tested:** the actual connection to Threads and Shopee, because I do not have your login
-details. Everything else was tested against a real database and a real running server.
+**Not tested end-to-end:** the live connections to Threads and the **Shopee Affiliate Open API**,
+because I do not have your login details / API keys. The Shopee client itself (`lib/shopee.js` —
+auth signature, query builders, conversion→`post_uid` mapping) is unit-tested against the
+official contract and just needs your App ID + API Key from the affiliate dashboard's *Open API*
+section. Everything else was tested against a real database and a real running server.
 
 ---
 
@@ -273,7 +276,9 @@ Built in, you do not need to do anything:
 - **The same post going out twice** — locked
 - **Posting too much and getting banned** — checks the limit before every post
 - **A photo failing to load** — posts as text instead, does not lose the slot
-- **Shopee blocking the price lookup** — product still works, just with less detail
+- **Shopee price lookup** — when Shopee Open API keys are present, price + commission come
+  from `productOfferV2` (authoritative). Without keys, or if a call is blocked, it falls back to
+  the page's OG tags and the product still works, just with less detail
 - **Indonesian words slipping in** — blocked automatically
 - **Old-school hard-sell language** (PERCUMA, RAHSIA, PM saya, ALL CAPS) — blocked automatically
 

@@ -42,8 +42,8 @@ Write the comment.
 let cta = llmOut.trim();
 if (cta === 'SKIP') return null;              // intensity-0 posts get no link comment
 cta = cta.replace('{{link}}', trackedUrl);
-if (Math.random() < 0.3 && product.enrichment.price_idr) {
-  cta += `\nharga ${fmtIdr(product.enrichment.price_idr)} pas aku cek`;
+if (Math.random() < 0.3 && product.enrichment.price_myr) {
+  cta += `\nharga ${fmtIdr(product.enrichment.price_myr)} pas aku cek`;
 }
 ```
 

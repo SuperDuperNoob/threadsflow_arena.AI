@@ -48,8 +48,8 @@ You are writing ONE post. Not variations. Not a list.
 
 ### The product (facts only — do not invent anything not listed)
 Name: {{product.name}}
-Price: {{product.enrichment.price_idr}}
-Rating / sold: {{product.enrichment.rating}} · {{product.enrichment.sold}} terjual
+Price: RM {{product.enrichment.price_myr}}
+Commission rate: {{product.enrichment.shopee_commission_rate}} · Rating: {{product.enrichment.shopee_rating}} · {{product.enrichment.shopee_sales}} sold
 Category: {{product.enrichment.category}}
 Who it's for: {{product.enrichment.target_persona}}
 Concrete details you may use:

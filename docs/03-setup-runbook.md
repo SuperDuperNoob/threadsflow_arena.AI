@@ -393,9 +393,18 @@ INSERT INTO settings (key, value) VALUES
           "model_edit":"gpt-4.1-mini",
           "model_embed":"text-embedding-3-small"}');
 
--- Apify: optional, for pulling Shopee order data later. Leave as-is for now.
+-- Shopee Affiliate Open API: used by wf5 (conversion sync) and by product intake
+-- (authoritative price/commission). Get the App ID + API Key from the affiliate
+-- dashboard → Open API section: https://affiliate.shopee.com.my/dashboard
+-- Env vars (SHOPEE_API_APP_ID / SHOPEE_API_SECRET) also work and are simpler — set
+-- those in your .env and you can skip these two rows.
 INSERT INTO settings (key, value) VALUES
-('apify', '{"token":"apify_api_..."}');
+('shopee_app_id', '{"v":"YOUR_SHOPEE_APP_ID"}'),
+('shopee_app_secret', '{"v":"YOUR_SHOPEE_API_SECRET"}');
+
+-- Optional: pull the last 7 days of Shopee conversions into Postgres (wf5):
+--   DATABASE_URL=... SHOPEE_API_APP_ID=... SHOPEE_API_SECRET=... \
+--     node services/kb/bin/shopee.mjs sync
 
 -- Next cycle plan: starts empty, filled by the learning loop
 INSERT INTO settings (key, value) VALUES
