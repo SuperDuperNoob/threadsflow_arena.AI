@@ -137,11 +137,11 @@ a combination in practice. Plus each generation carries an **anti-repetition con
 ```
 POST /api/products   (multipart, served by the KB service)
 {
-  affiliate_url: "https://s.shopee.co.id/xxxx",   // the only universally required field
+  affiliate_url: "https://s.shopee.com.my/xxxx",  // the only universally required field
   images:        [file, ...],                     // 0-4. optional
   description:   "...",                           // required only when images are absent (>=80 chars)
-  product_name:  "optional, LLM fills if blank",
-  price_idr:     "optional",
+  name:          "optional, LLM fills if blank",
+  price_myr:     "optional",
   notes:         "optional: 'untuk mak-mak, harga RM39, free shipping'"
 }
 ```
@@ -155,7 +155,7 @@ from, and the LLM would invent details — the exact failure this project exists
 The KB service does:
 1. Upload any images → Cloudflare R2 (or local) → public URLs → `product_images`. **Skipped entirely
    when none were supplied.**
-2. **Enrich**: fetch the OG tags of the affiliate URL (free, no Apify needed) and fold in your
+2. **Enrich**: fetch the OG tags of the affiliate URL (free, no third-party scraper needed) and fold in your
    description + notes → `products.enrichment` JSONB. Emits `concrete_details` (checkable facts)
    and `detail_confidence`. *This is the single biggest quality lever.*
    Shopee blocks datacenter IPs often, so this is best-effort — it falls back to splitting your

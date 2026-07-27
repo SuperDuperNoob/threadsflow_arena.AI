@@ -13,7 +13,10 @@ wf5_conversions     Cron 12h       Shopee conversions → DB   (optional at firs
 ```
 
 Credentials to create in n8n: `Postgres threadsflow`, `HTTP Header Auth threads`
-(not needed — token goes in query), `HTTP Request 9router`, `Apify`, `S3/R2`.
+(not needed — token goes in query), `HTTP Request 9router`, `S3/R2`.
+Shopee conversions come from the **Shopee Affiliate Open API**, not an n8n credential —
+supply `SHOPEE_API_APP_ID` / `SHOPEE_API_SECRET` (env, or the `settings` rows
+`shopee_app_id` / `shopee_app_secret`); the sync runs from code/CLI, see wf5 below.
 Store the Threads token in the `settings` table row `threads_token`, not in the workflow, so
 wf0 can rotate it.
 
@@ -45,7 +48,8 @@ INSERT products     uid, media_mode, description, notes     ← transaction comm
    ↓
 upload images       0-4 files -> Cloudflare R2 -> product_images   (skipped if none)
    ↓  (everything below is post-commit and allowed to fail)
-enrich              OG tags of the affiliate URL + your description + notes
+enrich              Shopee Open API (productOfferV2) when keys are set, else
+                    OG tags of the affiliate URL + your description + notes
                     -> {concrete_details[], sensory_details[], detail_confidence, price, persona}
    ↓
 vision pass         images only -> product_images.vision_desc

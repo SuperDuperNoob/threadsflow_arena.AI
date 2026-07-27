@@ -95,9 +95,10 @@ export const putImage = (buf, key, ct) =>
 // ─────────────────────────────────────────── enrichment
 
 /**
- * Enrichment is best-effort. It reads the affiliate page's OpenGraph tags — no Apify needed,
- * no API key, no cost. If the page blocks us (Shopee often does), we fall back to whatever the
- * user typed. The system must never be blocked by an external site.
+ * Enrichment is best-effort. When Shopee Open API keys are configured, price + commission come
+ * from productOfferV2 (authoritative, no scraper, no cost). Otherwise — or if the API call
+ * fails — it falls back to the affiliate page's OpenGraph tags. Either way it must never block
+ * the user.
  */
 export async function enrich({ affiliateUrl, name, priceIdr, notes, description = '', mediaMode = 'images' }) {
   let og = {};
