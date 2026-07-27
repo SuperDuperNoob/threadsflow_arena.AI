@@ -11,6 +11,7 @@ import crypto from 'node:crypto';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { complete } from './llm.js';
+import { enrichProductFromShopee } from './shopee.js';
 
 const {
   IMAGE_BACKEND = 'local',            // 'local' | 's3'
@@ -111,11 +112,26 @@ export async function enrich({ affiliateUrl, name, priceIdr, notes, description 
     og = { title: pick('title'), description: pick('description'), image: pick('image') };
   } catch { /* Shopee blocks datacenter IPs routinely — expected, not an error */ }
 
+  // Best-effort authoritative enrichment from the Shopee Affiliate Open API
+  // (price + commission). Overlays on top of the OG scrape; never blocks the user.
+  let shopee = null;
+  try {
+    shopee = await enrichProductFromShopee(affiliateUrl, { name });
+  } catch { /* enrichment is optional — fall through to scraping/fallback */ }
+
   const base = {
-    name: name || og.title || null,
-    price_myr: priceIdr ? Number(priceIdr) : null,
+    name: name || og.title || shopee?.name || null,
+    price_myr: priceIdr ? Number(priceIdr) : (shopee?.price_min ?? null),
     og_description: og.description ?? null,
     media_mode: mediaMode,
+    // Shopee Open API enrichment fields (null unless the API is configured and matched)
+    shopee_source: shopee?.ok ? 'shopee_openapi' : (og.title || og.description ? 'og' : 'none'),
+    shopee_item_id: shopee?.item_id ?? null,
+    shopee_commission_rate: shopee?.commission_rate ?? null,
+    shopee_commission: shopee?.commission ?? null,
+    shopee_sales: shopee?.sales ?? null,
+    shopee_rating: shopee?.rating ?? null,
+    shopee_offer_link: shopee?.offer_link ?? null,
   };
 
   // With no images there is no vision pass, so concrete_details is the ONLY specificity the
@@ -147,7 +163,12 @@ ${textOnly
   : '- Photos exist and are described separately. Leave sensory_details empty.'}
 - Write in Malaysian Malay (tak, nak, dah, je, lah). Currency RM. Never Indonesian.`,
       JSON.stringify({ url: affiliateUrl, og, user_name: name, user_price: priceIdr,
-                       user_notes: notes, user_description: description }),
+                       user_notes: notes, user_description: description,
+                       shopee: shopee?.ok ? {
+                         price_min: shopee.price_min, price_max: shopee.price_max,
+                         commission_rate: shopee.commission_rate, sales: shopee.sales,
+                         rating: shopee.rating,
+                       } : null }),
       { temperature: 0.2 });
     return { ...base, ...out, enriched: true };
   } catch {

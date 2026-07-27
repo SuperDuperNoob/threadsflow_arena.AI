@@ -160,6 +160,10 @@ The KB service does:
    and `detail_confidence`. *This is the single biggest quality lever.*
    Shopee blocks datacenter IPs often, so this is best-effort — it falls back to splitting your
    own description into facts, and the product stays fully postable either way.
+   **When Shopee Open API keys are configured** (`SHOPEE_API_APP_ID`/`SHOPEE_API_SECRET`), the
+   `productOfferV2` query runs first and overlays *authoritative* `price_min`, `commission_rate`,
+   `sales` and `rating` onto the enrichment (see `lib/shopee.js` → `enrichProductFromShopee`). The
+   OG scrape remains the fallback, so absence of keys never degrades the product.
 3. **Vision pass (images only)**: each image → a cheap vision model → `product_images.vision_desc`
    ("close-up of the matte black handle, wooden table, warm light"), so copy **matches the image
    it's paired with**.
@@ -323,8 +327,13 @@ Now you get:
   → back to the exact lever combination. This closes the loop from "tone=deadpan" to "RM 4.30".
 
 Shopee Affiliate supports a single SubId (alphanumeric). Use a short base36 post id, e.g. `p8fk2q`.
-Pull conversions with the Apify Shopee Affiliate actor in `mode=conversions`
-(`conversionTimeRangeDays=7`) every 3 days, or export the CSV manually at first.
+**Pull conversions from the Shopee Affiliate Open API** every 3 days (see `lib/shopee_conversions.js`
+→ `pullConversions`): it calls `conversionReport` and maps each node's `utmContent` (= the sub_id you
+set = `post.uid`) onto `conversions.post_uid`, upserting idempotently on `order_id`. Run it from the
+L3 evaluate loop, a cron, or `node bin/shopee.mjs sync`. If you would rather upload the affiliate
+CSV by hand, POST normalized rows to `POST /api/import/conversions`
+(`{ "rows": [ { order_id, post_uid, commission, status, ... } ] }`) — that is the manual fallback
+path and needs no API keys.
 
 Also track, per post: hour-of-day, day-of-week, image_id, media_type (TEXT/IMAGE/CAROUSEL), character count,
 emoji count, whether a hashtag was used, seconds between post and CTA reply. All of these become

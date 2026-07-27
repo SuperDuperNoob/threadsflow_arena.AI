@@ -15,6 +15,8 @@ import pg from 'pg';
 import { sha256 } from './lib/pdf.js';
 import { startWorker } from './lib/worker.js';
 import { putImage, enrich, describeImage, shortId } from './lib/products.js';
+import { registerShopeePool, isConfigured } from './lib/shopee.js';
+import { upsertConversionRows } from './lib/shopee_conversions.js';
 
 const {
   DATABASE_URL,
@@ -26,6 +28,8 @@ const {
 } = process.env;
 
 const pool = new pg.Pool({ connectionString: DATABASE_URL, max: 6 });
+// Let the Shopee Open API client read app_id/secret from the `settings` table (repo convention).
+registerShopeePool(pool);
 const app = express();
 app.use(express.json({ limit: '1mb' }));
 app.disable('x-powered-by');
@@ -354,6 +358,43 @@ app.get('/api/products', requireAuth, async (_, res) => {
            (SELECT count(*) FROM posts po WHERE po.product_id=p.id AND po.status='published') AS posted
       FROM products p ORDER BY p.created_at DESC LIMIT 200`);
   res.json(rows);
+});
+
+// ─────────────────────────────────────────── Shopee Open API status + conversion import
+// Lets the UI/runbook show whether keys are present, and lets n8n (or a manual CSV upload)
+// push conversion rows in. The wf5 learning loop normally pulls these straight from the
+// Shopee Affiliate Open API via lib/shopee_conversions.js; this endpoint is the fallback
+// path for when you would rather POST a normalized CSV.
+
+app.get('/api/shopee/status', requireAuth, async (_req, res) => {
+  res.json({ configured: await isConfigured() });
+});
+
+app.post('/api/import/conversions', requireAuth, async (req, res) => {
+  const rows = req.body?.rows;
+  if (!Array.isArray(rows)) {
+    return res.status(400).json({ error: 'expected JSON body { "rows": [ ... ] }' });
+  }
+  const norm = rows
+    .map((r) => ({
+      post_uid: r.post_uid ?? null,
+      order_id: String(r.order_id ?? r.conversion_id ?? ''),
+      order_ts: r.order_ts ? new Date(r.order_ts) : null,
+      item_name: r.item_name ?? null,
+      gmv: Number(r.gmv ?? r.gmv_idr ?? 0) || null,
+      commission: Number(r.commission ?? r.commission_idr ?? 0) || null,
+      status: (r.status ?? 'pending').toString().toLowerCase(),
+    }))
+    .filter((r) => r.order_id);
+
+  if (!norm.length) return res.status(400).json({ error: 'no rows with an order_id' });
+
+  try {
+    const { inserted, updated } = await upsertConversionRows(pool, norm);
+    res.json({ ok: true, received: norm.length, inserted, updated });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
 });
 
 // Serve stored images publicly when IMAGE_BACKEND=local. Meta must be able to fetch these,

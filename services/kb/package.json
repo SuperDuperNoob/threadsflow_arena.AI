@@ -6,7 +6,10 @@
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
-    "check": "node --check server.js && node --check lib/pipeline.js && node --check lib/pdf.js && node --check lib/llm.js && node --check lib/worker.js && node --check lib/products.js"
+    "test": "node --test",
+    "shopee:check": "node bin/shopee.mjs check",
+    "shopee:sync": "node bin/shopee.mjs sync",
+    "check": "node --check server.js && node --check lib/pipeline.js && node --check lib/pdf.js && node --check lib/llm.js && node --check lib/worker.js && node --check lib/products.js && node --check lib/shopee.js && node --check lib/shopee_conversions.js && node --check bin/shopee.mjs"
   },
   "dependencies": {
     "express": "^4.21.2",

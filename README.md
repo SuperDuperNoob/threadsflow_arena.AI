@@ -78,6 +78,20 @@ P5 publishing → P6 evaluation → P7 conversions.
 
 **Do not skip P2.** Everything downstream is worthless without click data.
 
+## Shopee Affiliate Open API
+
+The product-intake enrichment and the wf5 conversion-sync are wired to the official
+**Shopee Affiliate Open API** (GraphQL, `open-api.affiliate.shopee.com.my/graphql`), not a
+third-party scraper. Add your App ID + API Key from the affiliate dashboard's *Open API* section
+to `SHOPEE_API_APP_ID` / `SHOPEE_API_SECRET` (or the `settings` rows `shopee_app_id` /
+`shopee_app_secret`):
+
+- **Product enrichment** (`lib/shopee.js` → `productOfferV2`) overlays authoritative price +
+  commission on the OG-tag scrape. Absent keys → graceful fallback, product still works.
+- **Conversion sync** (`lib/shopee_conversions.js` → `conversionReport`) pulls orders and joins
+  them to posts via the affiliate `sub_id` (= `post.uid`, set by the redirector). CLI:
+  `node services/kb/bin/shopee.mjs check|sync|query`.
+
 ## Resource budget (4GB / 2 vCPU)
 
 n8n 1.4GB · Postgres 512MB · kb 640MB · redirector 128MB · cloudflared 96MB ·
