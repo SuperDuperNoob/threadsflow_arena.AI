@@ -105,34 +105,233 @@ In Zero Trust → Networks → Tunnels → your tunnel → Public Hostnames:
 Verify: `curl -I https://r.yourdomain.com/healthz` → 200, and
 `curl -I https://r.yourdomain.com/p/testuid` → 302.
 
-**Cloudflare R2 bucket (image hosting):**
+---
 
-1. Cloudflare Dashboard → R2 → Create bucket → name `threadsflow`.
-2. Settings → Public Access → **enable** `r2.dev` subdomain (free, no custom domain needed
-   for testing) or connect a Custom Domain like `cdn.yourdomain.com`.
-3. Note your public URL: `https://pub-<hash>.r2.dev` or your custom domain.
-4. Create an R2 API token with **Object Read & Write** permission on this bucket.
-5. Fill in `infra/.env`:
+## Step 3b — Cloudflare R2 image hosting (click-by-click)
+
+Threads fetches your images server-side before a post goes live.
+If Meta's servers cannot reach the image URL, the post fails with a cryptic
+error 9004. You need a publicly reachable HTTPS URL — you cannot host images on
+your laptop or behind a login wall.
+
+Cloudflare R2 is the simplest answer. It is Cloudflare's version of Amazon S3:
+**object storage** — a place to dump files and fetch them back over HTTPS.
+Unlike AWS S3, R2 has **zero egress fees** (Meta downloading your images costs
+nothing) and a generous free tier: 10 GB storage, 10 million monthly reads.
+For a Threads poster uploading a handful of product photos a week, you will
+never exceed the free tier.
+
+> **You do not need to understand S3 or SigV4 deeply.** The code in this repo
+> handles all of that. This guide tells you which buttons to click and which
+> values to copy-paste. The "what is SigV4" section at the end is optional
+> reading for the curious.
+
+### 3b.1 — What you are building
 
 ```
+Your phone takes a photo
+       │
+       ▼
+  KB web UI (you upload)  ──PUT──▶  Cloudflare R2 bucket  ──▶  public HTTPS URL
+       │                            (private writes)            (public reads)
+       │                                                              │
+       ▼                                                              ▼
+  products table                                              Meta's servers fetch
+  stores the public URL                                       it when you post
+```
+
+The bucket accepts **writes** only from your API token (nobody else can upload).
+But it serves **reads** to anyone — including Meta's image-fetching crawler.
+This is the "public bucket" pattern and it is exactly what you want.
+
+### 3b.2 — Create the R2 bucket
+
+1. Go to [dash.cloudflare.com](https://dash.cloudflare.com) → left sidebar → **R2**.
+   (If you do not see R2, you may need to add a payment method first — it will
+   not be charged on the free tier, but Cloudflare requires one on file.)
+
+2. Click **Create bucket**. Name it `threadsflow`. Leave the default location
+   (Automatic). Click **Create bucket**.
+
+3. You now have an empty bucket. Before it can serve images publicly, you need
+   to enable public access. Click into your bucket → **Settings** →
+   **Public Access**. There are two options:
+
+   | Method | What you get | Best for |
+   |---|---|---|
+   | **r2.dev subdomain** | `https://pub-abc123.r2.dev` | Testing, or if you do not have a custom domain |
+   | **Custom Domain** | `https://cdn.yourdomain.com` | Production — looks cleaner in post URLs |
+
+   **For testing**, enable r2.dev: toggle it on, click **Allow Access**.
+   Your public URL prefix is now `https://pub-SOMEHASH.r2.dev`. Write this down.
+   It shows at the top of the Public Access settings page.
+
+   **For production**, connect a custom domain: click **Connect Domain**, type
+   `cdn.yourdomain.com` (replace with your actual domain). Cloudflare will
+   auto-configure the DNS. Your public URL prefix is now
+   `https://cdn.yourdomain.com`.
+
+   > ⚠️ **Important:** the bucket name `threadsflow` is NOT part of the public
+   > URL when using a custom domain. With `r2.dev`, the bucket name IS in the
+   > URL: `https://pub-abc123.r2.dev/threadsflow/<key>`. The code handles both
+   > cases — just enter whatever URL prefix you see on the screen.
+
+4. Verify it works. Upload a test file from your terminal:
+
+   ```bash
+   # Replace with YOUR public URL prefix (no trailing slash)
+   PUBLIC=https://pub-abc123.r2.dev
+
+   echo "hello r2" > /tmp/test.txt
+
+   # Upload using the token you will create in the next step
+   curl -X PUT "$PUBLIC/test.txt" \
+     -H "Content-Type: text/plain" \
+     --data-binary @/tmp/test.txt
+   # This will 403 until you create an API token — that is expected.
+   ```
+
+### 3b.3 — Create the API token
+
+The API token is a pair of strings: an **Access Key ID** (like a username) and
+a **Secret Access Key** (like a password). The code sends these with every
+upload to prove it is allowed to write to your bucket.
+
+1. Cloudflare Dashboard → **R2** → **Manage R2 API Tokens** (top right).
+
+2. Click **Create API Token**.
+
+3. Fill in:
+   - **Token name**: `threadsflow-kb` (so you remember what it is for)
+   - **Permissions**: **Object Read & Write**
+   - **Specify bucket(s)**: select `threadsflow` (not "All buckets" — least privilege)
+   - Leave TTL at the default, or set "No Expiry" since this is a long-running server token
+
+4. Click **Create API Token**.
+
+5. You will see **one screen** with these values. Copy them now — you cannot
+   retrieve the Secret Access Key after closing this screen:
+
+   | On screen | Copy into .env as | Example value |
+   |---|---|---|
+   | Access Key ID | `S3_KEY` | `abc123...` |
+   | Secret Access Key | `S3_SECRET` | `xyz789...` |
+   | Endpoint | `S3_ENDPOINT` | `https://ACCTID.r2.cloudflarestorage.com` |
+   | Jurisdiction-specific endpoint (use the one shown) | — | — |
+
+   > **Not shown on the token screen, but you already have it:** your public
+   > URL prefix (`https://pub-abc123.r2.dev` or `https://cdn.yourdomain.com`).
+   > That goes into `PUBLIC_IMAGE_BASE`.
+
+### 3b.4 — Fill in the .env file
+
+Open `infra/.env` and set these five values. Each one is explained:
+
+```
+# Tells the code "use R2" instead of local disk storage.
 IMAGE_BACKEND=s3
-S3_ENDPOINT=https://<accountid>.r2.cloudflarestorage.com
+
+# The S3-compatible API endpoint. This is the address the code talks to when
+# uploading. NOT the public URL — this is a private admin endpoint that needs
+# the token to do anything. Copy from the token-creation screen.
+S3_ENDPOINT=https://abc123def456.r2.cloudflarestorage.com
+
+# The bucket name you chose in step 3b.2. Must match exactly.
 S3_BUCKET=threadsflow
-S3_KEY=<access_key_id>
-S3_SECRET=<secret_access_key>
-PUBLIC_IMAGE_BASE=https://cdn.yourdomain.com   # your public bucket URL, no trailing slash
+
+# Access Key ID — the "username" half of your API token.
+S3_KEY=abc123...
+
+# Secret Access Key — the "password" half. Keep this safe.
+S3_SECRET=xyz789...
+
+# The public URL where images are actually served. This is what Meta fetches
+# and what shows up in post metadata. No trailing slash.
+#   r2.dev style:  PUBLIC_IMAGE_BASE=https://pub-abc123.r2.dev
+#   Custom domain: PUBLIC_IMAGE_BASE=https://cdn.yourdomain.com
+PUBLIC_IMAGE_BASE=https://cdn.yourdomain.com
 ```
 
-6. Test with a curl from outside your network:
+> **What does "S3-compatible" mean?** Amazon S3 is the dominant cloud storage
+> API. Cloudflare R2, Backblaze B2, MinIO, and dozens of others all speak the
+> same S3 protocol. The code sends standard S3-style PUT requests, which R2
+> understands natively — no SDK, no library, just plain HTTP with a signature.
+
+### 3b.5 — Test the full pipeline
+
+After `docker compose up -d`, upload a product with an image through the KB:
+
 ```bash
-# upload a test file through the KB service (not directly — the service owns the path structure)
-curl -u user:pass -F "affiliate_url=https://s.shopee.com.my/xxx" \
-     -F "description=test" -F "images=@test.jpg" https://kb.yourdomain.com/api/products
-# then confirm the returned image URL loads in a browser
+# Use a real image file (any JPEG or PNG will do)
+curl -u "KB_USER:KB_PASSWORD" \
+  -F "affiliate_url=https://s.shopee.com.my/xxxx" \
+  -F "description=Test product for R2 setup" \
+  -F "images=@test.jpg" \
+  https://kb.yourdomain.com/api/products
 ```
 
-If Meta can't fetch the image, container creation returns a useless error 9004.
-**Text-only posts are unaffected — use them to confirm the API works before debugging storage.**
+The JSON response includes a `product_uid`. Look up the image URL:
+
+```bash
+# Replace with the uid from the response above
+curl -u "KB_USER:KB_PASSWORD" https://kb.yourdomain.com/api/products \
+  | jq '.[0]'
+```
+
+Then open the image URL in a **browser incognito window** (this proves it is
+truly public and not relying on your Cloudflare login cookies). If the image
+loads, R2 is configured correctly.
+
+**If the image does not load (403 or 404):**
+
+| Symptom | Likely cause | Fix |
+|---|---|---|
+| 403 on the public URL | r2.dev not enabled or custom domain not connected | Cloudflare Dashboard → R2 → bucket → Settings → Public Access |
+| Wrong URL (bucket name doubled or missing) | PUBLIC_IMAGE_BASE has wrong format | See the note in 3b.2 about custom domain vs r2.dev URLs |
+| 403 on upload (the KB returns error) | S3_KEY / S3_SECRET wrong | Recreate the API token and copy carefully |
+| 403 on upload with correct keys | Bucket name mismatch | S3_BUCKET must match exactly, including case |
+
+### 3b.6 — SigV4: what it is and why you do not need to think about it
+
+*(This section is optional. Skip it and come back if you are curious.)*
+
+When the KB service uploads an image to R2, it sends an HTTP PUT request with a
+special `Authorization` header. That header looks like:
+
+```
+Authorization: AWS4-HMAC-SHA256
+  Credential=S3_KEY/20260727/auto/s3/aws4_request,
+  SignedHeaders=host;x-amz-content-sha256;x-amz-date,
+  Signature=8f3a2b1c...
+```
+
+This is **SigV4** (AWS Signature Version 4). It is a cryptographic handshake:
+
+1. The code builds a "string to sign" from the HTTP method (PUT), the file path,
+   today's date, and a SHA-256 hash of the image bytes.
+2. It uses your `S3_SECRET` as a key to HMAC-sign that string.
+3. It sends the signature along with the request.
+4. R2 independently computes the same signature using its copy of your secret
+   key. If the two signatures match, the request is accepted. If not, 403.
+
+This means:
+- **Nobody can upload without your secret key.** The signature proves possession.
+- **Nobody can tamper with a request in transit.** Changing the body would
+  change its hash, which would change the expected signature.
+- **Nobody can replay an old request.** The date is baked into the signature,
+  and R2 rejects requests with stale timestamps.
+
+**The path-encoding bug (already fixed in this repo):** a subtle issue existed
+where the code used `new URL().pathname` to get the file path for the signature.
+But JavaScript's `URL.pathname` *decodes* percent-encoding — it turns `%20` back
+into a space. SigV4 requires the *encoded* path. If a filename contained a
+space or any special character, the signature computed from the decoded path
+would disagree with the actual URL R2 received, and R2 would return
+`403 SignatureDoesNotMatch` — even though the key and secret were correct.
+
+The fix: the code now percent-encodes the path *before* it builds the canonical
+request and the URL, so both always agree. You will never see this bug — it was
+fixed before you set anything up.
 
 ---
 
@@ -243,6 +442,7 @@ more than any prompt engineering.
 |---|---|---|
 | Container creation returns error 9004 | Meta can't fetch `image_url` | Image not public, or behind Access policy. Test with `curl` from outside. **Text-only posts are unaffected — use them to confirm the API works before debugging storage.** |
 | All image posts fail, text posts fine | Image hosting, not the API | `PUBLIC_IMAGE_BASE` wrong, or `cdn.` hostname has an Access policy on it |
+| R2 upload 403 | Token or path mismatch | Check S3_KEY/S3_SECRET; see the troubleshooting table in Step 3b.5 |
 | Post inserted with wrong media_type | `posts_media_consistency_chk` | The constraint is correct; wf2's bandit gate should have prevented it. Check `plan.imageCount` is being passed. |
 | Product rejected at intake | No images AND description < 80 chars | Add a description with real specifics, or attach an image |
 | Post published but no image | Published before processing finished | Increase the wait from 35s to 60s |
