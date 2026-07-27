@@ -120,6 +120,29 @@ services:
       resources:
         limits: { memory: 640M }
 
+  # ── Shopee Affiliate Open API conversion sync. Same image as kb; runs bin/shopee.mjs
+  # cron (pulls conversions every 12h, self-heals if keys are missing). This is the
+  # wf5 piece — once you set SHOPEE_API_APP_ID / SHOPEE_API_SECRET in .env and
+  # `docker compose up -d`, money data flows into the learning loop automatically.
+  shopee-sync:
+    build: ../services/kb
+    restart: unless-stopped
+    depends_on:
+      postgres: { condition: service_healthy }
+    command: ["node", "bin/shopee.mjs", "cron"]
+    environment:
+      DATABASE_URL: postgres://threadsflow:${PG_PASSWORD}@postgres:5432/threadsflow
+      SHOPEE_API_APP_ID: ${SHOPEE_API_APP_ID}
+      SHOPEE_API_SECRET: ${SHOPEE_API_SECRET}
+      SHOPEE_OPENAPI_URL: ${SHOPEE_OPENAPI_URL}
+      SHOPEE_LOOKBACK_DAYS: ${SHOPEE_LOOKBACK_DAYS:-7}
+      SHOPEE_VALIDATION_ID: ${SHOPEE_VALIDATION_ID}
+      NODE_OPTIONS: --max-old-space-size=128
+      TZ: Asia/Kuala_Lumpur
+    deploy:
+      resources:
+        limits: { memory: 160M }
+
   cloudflared:
     image: cloudflare/cloudflared:latest
     restart: unless-stopped

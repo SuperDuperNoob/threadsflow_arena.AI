@@ -26,6 +26,59 @@ import { pullConversions } from '../lib/shopee_conversions.js';
 
 const [cmd, ...rest] = process.argv.slice(2);
 
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+/**
+ * Long-running mode for the `shopee-sync` container: pulls conversions every 12h
+ * (with jitter) and never exits, so `docker compose up` keeps money data flowing
+ * with no manual command. Self-heals: if keys/DB are missing it logs and retries.
+ */
+async function cron() {
+  const lookbackDays = Number(process.env.SHOPEE_LOOKBACK_DAYS || 7);
+  const includeValidated = Boolean(process.env.SHOPEE_VALIDATION_ID);
+  const validationId = Number(process.env.SHOPEE_VALIDATION_ID || 0) || null;
+  const intervalMs = 12 * 60 * 60 * 1000;
+
+  console.log(
+    `[shopee-sync] cron started — lookback=${lookbackDays}d, validated=${includeValidated}, every 12h`,
+  );
+  // eslint-disable-next-line no-constant-condition
+  while (true) {
+    try {
+      if (!(await isConfigured())) {
+        console.log('[shopee-sync] keys not set (SHOPEE_API_APP_ID / SHOPEE_API_SECRET) — retry in 1h.');
+        await sleep(60 * 60 * 1000);
+        continue;
+      }
+      const url = process.env.DATABASE_URL;
+      if (!url) {
+        console.error('[shopee-sync] DATABASE_URL is required — retry in 1h.');
+        await sleep(60 * 60 * 1000);
+        continue;
+      }
+      const pool = new pg.Pool({ connectionString: url });
+      try {
+        const out = await pullConversions({
+          pool,
+          lookbackDays,
+          includeValidated,
+          validationId: includeValidated ? validationId : null,
+        });
+        console.log('[shopee-sync]', JSON.stringify(out));
+      } finally {
+        await pool.end();
+      }
+    } catch (e) {
+      console.error(
+        '[shopee-sync] error:',
+        e instanceof ShopeeApiError ? `code ${e.code}: ${e.message}` : e.message,
+      );
+    }
+    const jitter = (Math.random() - 0.5) * 40 * 60 * 1000; // +/- 20 min
+    await sleep(intervalMs + jitter);
+  }
+}
+
 async function check() {
   if (!(await isConfigured())) {
     console.error('NOT CONFIGURED — set SHOPEE_API_APP_ID and SHOPEE_API_SECRET (or a settings row).');
@@ -102,6 +155,7 @@ const usage = () => {
 try {
   if (cmd === 'check') await check();
   else if (cmd === 'sync') await sync();
+  else if (cmd === 'cron') await cron();
   else if (cmd === 'query') await query();
   else usage();
 } catch (e) {

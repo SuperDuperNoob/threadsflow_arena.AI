@@ -5,6 +5,7 @@ RUN npm install --omit=dev && npm cache clean --force
 COPY server.js ./
 COPY lib ./lib
 COPY public ./public
+COPY bin ./bin
 ENV NODE_ENV=production
 # 512MB heap cap: a 400-page PDF peaks at ~90MB, so this is 5x headroom and still
 # leaves the OOM killer out of the picture on a 4GB box.

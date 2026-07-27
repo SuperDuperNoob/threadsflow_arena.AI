@@ -284,6 +284,11 @@ Three ways to run it:
 The learning loop still works without this — it just leans on engagement until `w_money` climbs
 from real commission data.
 
+The `docker-compose.yml` already includes a `shopee-sync` service that runs this every 12h
+automatically — just set `SHOPEE_API_APP_ID` / `SHOPEE_API_SECRET` in `.env` and
+`docker compose up -d`. It self-heals: if keys are missing it retries hourly and starts
+syncing the moment you add them.
+
 ---
 
 ## wf0_token_refresh — Cron every 25 days
