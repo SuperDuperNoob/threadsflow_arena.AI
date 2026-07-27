@@ -241,7 +241,7 @@ HTTP node, and **Continue On Fail** on the publish node so the error branch can 
 
 ### The digest you actually read (example)
 
-> **Cycle 7 · 15 posts · 41.2k views · 388 clicks (0.94% CTR) · 6 orders · Rp 71.400**
+> **Cycle 7 · 15 posts · 41.2k views · 388 clicks (0.94% CTR) · 6 orders · RM 71.40**
 > Money weight is now 0.30, so decisions are still 70% engagement-driven.
 > **Up:** tone=deadpan (+38% vs cycle mean, n=11 lifetime), format=honest_review (+51%, n=6),
 > sell_intensity=1 beats 2 on CTR by 1.7×, media_type=TEXT beats IMAGE by 1.3× on CTR (n=9).
@@ -281,7 +281,7 @@ EXECUTIONS_DATA_MAX_AGE=168            # hours (7 days)
 EXECUTIONS_DATA_SAVE_ON_SUCCESS=none   # keep errors only
 EXECUTIONS_DATA_SAVE_ON_ERROR=all
 N8N_PAYLOAD_SIZE_MAX=32
-GENERIC_TIMEZONE=Asia/Jakarta
+GENERIC_TIMEZONE=Asia/Kuala_Lumpur
 NODE_OPTIONS=--max-old-space-size=1024
 DB_TYPE=postgresdb                     # never SQLite for this
 ```

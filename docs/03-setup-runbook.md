@@ -60,15 +60,18 @@ docker compose up -d
 # NOTE the _my files — those are the Malaysian Malay versions. Using the non-_my ones
 # would seed the system in Indonesian, which is the wrong language for your audience.
 for f in schema.sql schema_techniques.sql schema_kb.sql \
-         seed_levers_my.sql seed_techniques_my.sql seed_techniques_books.sql \
-         mining_questions.sql; do
+         seed_levers_my.sql seed_techniques_my.sql mining_questions.sql; do
   docker compose exec -T postgres psql -v ON_ERROR_STOP=1 -U threadsflow -d threadsflow < ../db/$f
 done
 
-# migrations — safe to run twice, run both on a fresh install too
+# migrations next — safe to run twice, and required on a fresh install too
 for m in 001_optional_media.sql 002_localisation.sql; do
-  docker compose exec -T postgres psql -U threadsflow -d threadsflow < ../db/migrations/$m
+  docker compose exec -T postgres psql -v ON_ERROR_STOP=1 -U threadsflow -d threadsflow < ../db/migrations/$m
 done
+
+# the Books/ techniques go LAST: they use compatible_media, a column added by migration 001
+docker compose exec -T postgres psql -v ON_ERROR_STOP=1 -U threadsflow -d threadsflow \
+  < ../db/seed_techniques_books.sql
 ```
 
 Store secrets in the DB so workflows read them at runtime:
@@ -179,8 +182,10 @@ The form tells you which mode you are in as you type. Link alone is rejected —
 no words there is nothing concrete to write from.
 
 The same service at `https://kb.yourdomain.com/` is the Knowledge Base: drag copywriting PDFs
-there to expand the technique library. It ships with 42 built-in techniques, so this is entirely
-optional and can wait until month two.
+there to expand the technique library. It already ships with **60 techniques** (43 built-in
+Malay ones plus 17 mined from your `Books/` folder), so this is entirely optional and can wait
+until month two. See `docs/05-books.md` for what came out of your books and what was
+deliberately rejected.
 
 ---
 

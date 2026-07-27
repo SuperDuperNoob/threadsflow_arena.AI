@@ -162,6 +162,7 @@ and writing real specifics in the notes box.
 | How often | Do this |
 |---|---|
 | Weekly | Read 5 random posts. Anything robotic → add to blocked list |
+| After adding books | `SELECT code,type,instruction FROM techniques WHERE n=0` — read the new ones, disable any you dislike |
 | Weekly | Add 1–2 new products (photos optional) |
 | Weekly | Check for errors: `SELECT * FROM run_log WHERE level='error'` |
 | Every 3 days | Read the report — but ignore it until day 12 |
@@ -190,6 +191,37 @@ details. Everything else was tested against a real database and a real running s
 
 ---
 
+## 7b. Notes on your Books/ folder — worth knowing
+
+Your 26 PDFs are already mined into the database. Three things to be aware of:
+
+**1. Three PDFs are pictures, not text.** Nothing can be read from them until you run OCR:
+`50 Headline Power Proven.pdf`, `TEKNIK COPYWRITING.pdf`, `Ebook - Strategi Tulis Headline
+Sentap Emosi.pdf`. Fix with `ocrmypdf -l msa+eng "in.pdf" "out.pdf"` then upload via the KB page.
+
+**2. Most of your Malay books teach a style that will hurt you on Threads.** They're written for
+2015 Facebook ads — `Headlines produk.pdf` alone contains 17,146 ALL-CAPS words and 492 hype
+words like PERCUMA and RAHSIA TERBONGKAR. That worked then; today it's the fastest way to get
+your account down-ranked.
+
+So I kept the *thinking* from those books and **blocked the style**. The system will never write
+`RAHSIA TERBONGKAR!` or `PM saya sekarang` — those are now on the banned list, taken directly
+from what the books recommend doing. Their biggest value turned out to be showing exactly what
+not to publish.
+
+**3. Three techniques are marked "contested"** because your books contradict each other — for
+example, the Malay books say state the benefit immediately, the storytelling books say delay it.
+Rather than pick a side, both are being tested. Around cycle 6 run this and your own sales data
+gives the verdict:
+
+```sql
+SELECT * FROM v_contested_verdicts;
+```
+
+Full detail in `docs/05-books.md`.
+
+---
+
 ## 8. Things that will go wrong (and are already handled)
 
 Built in, you don't need to do anything:
@@ -201,6 +233,8 @@ Built in, you don't need to do anything:
 - **A photo failing to load** — posts as text instead, doesn't lose the slot
 - **Shopee blocking the price lookup** — product still works, just with less detail
 - **Indonesian words slipping in** — blocked automatically
+- **Old-school hard-sell language** (PERCUMA, RAHSIA, PM saya, ALL CAPS) — blocked automatically,
+  including a check that rejects any post with 3+ shouted words
 
 **You must handle these two:**
 

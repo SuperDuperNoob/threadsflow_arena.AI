@@ -23,7 +23,11 @@
 -- Where a book's claim is unproven or contradicts another book, contested=true so the bandit
 -- settles it with your real Shopee data instead of trusting a PDF.
 --
--- Run AFTER seed_techniques_my.sql.
+-- Run AFTER seed_techniques_my.sql AND after migrations/001_optional_media.sql, which adds
+-- the compatible_media column these techniques use. The guard below makes the file safe to run
+-- in any order rather than failing with a confusing "column does not exist".
+
+ALTER TABLE techniques ADD COLUMN IF NOT EXISTS compatible_media TEXT[] DEFAULT '{}';
 
 INSERT INTO technique_sources (title, author, notes) VALUES
 ('Books/ (Malay copywriting library)', 'various Malaysian authors',

@@ -79,6 +79,12 @@ and the LLM is forbidden from ever seeing a "template".
 | **length_band** | micro (<120 chars), mid (120–260), long (260–480) | 3 |
 | **media_type** | TEXT, IMAGE, CAROUSEL — constrained by what the product actually has | 3 |
 
+On top of the levers, each post also carries **1–2 "devices"** drawn from the 60-technique
+library (43 hand-written in Malay + 17 mined from your `Books/` folder). Devices are
+Thompson-sampled and scored exactly like levers, and 15% of posts deliberately get none so you
+can tell whether the library is helping at all. See `docs/04-technique-library.md` and
+`docs/05-books.md`.
+
 Combinatorial space = 12×9×7×3×3×3 = **20,412 arms**. You post ~150/month, so you will never repeat
 a combination in practice. Plus each generation carries an **anti-repetition context**: the last
 20 posts' first 8 words + their embeddings; the QA node rejects anything with cosine similarity
@@ -87,13 +93,23 @@ a combination in practice. Plus each generation carries an **anti-repetition con
 **Hard bans** enforced by the QA node (this is what kills "AI template smell"):
 
 ```
-- no "Kalian pernah nggak sih..." / "Siapa di sini yang..." openers (banned opener list, 40 entries)
-- no em-dash chains, no "bukan cuma X, tapi juga Y" parallelism
-- no emoji rows, max 2 emoji total, 0 emoji for tone=deadpan/minimalist
-- no "Yuk", "Jangan sampai kehabisan", "Buruan", "Limited stock" unless sell_intensity=2
+- no "Korang pernah tak..." / "Siapa kat sini yang..." openers (banned opener list)
+- no em-dash chains, no "bukan sahaja X, tetapi juga Y" parallelism
+- no emoji rows, max 2 emoji total, 0 emoji for tone=deadpan/minimal
+- no "cepat sebelum", "jangan lepaskan peluang", "stok terhad" unless sell_intensity=2
 - no hashtag stacks (max 1, and only 40% of the time)
 - must not start with the product name
 - must not exceed 500 chars (Threads hard limit)
+- **no Indonesian.** banget/nggak/gak/aja/udah/bikin/gimana/kalian are banned outright, and
+  `bisa` (venom in Malay) and `butuh` (vulgar) are hard errors, not style preferences
+- **no shouting.** 3+ ALL-CAPS words, or >25% of the post in caps, is rejected. RM/OK/USB/LED
+  are exempt. This is enforced in `qa.js` rather than `banned_phrases`, because Postgres matches
+  that table case-insensitively and `[A-Z]` would also match lowercase — an early version of this
+  rule blocked 4 of 5 legitimate Malay sentences
+- **no 2015-era hard sell.** PERCUMA / RAHSIA TERBONGKAR / EKSKLUSIF / "PM saya sekarang" —
+  extracted from the `Books/` folder as anti-patterns, since that is precisely what those books
+  teach and precisely what gets an account down-ranked today
+- text-only posts additionally require one concrete detail and must not reference a photo
 - must pass a "would a human write this?" self-critique pass (second LLM call, cheap model)
 ```
 
@@ -111,7 +127,7 @@ POST /api/products   (multipart, served by the KB service)
   description:   "...",                           // required only when images are absent (>=80 chars)
   product_name:  "optional, LLM fills if blank",
   price_idr:     "optional",
-  notes:         "optional: 'ini buat ibu-ibu, harga 89rb, gratis ongkir'"
+  notes:         "optional: 'untuk mak-mak, harga RM39, free shipping'"
 }
 ```
 
@@ -161,7 +177,7 @@ Cron 03:00
                               + vision_desc (image posts) OR the no-image block (text posts)
                               + last-20-posts anti-repeat list + banned phrase list
          5. LLM call #1     → draft (temp 1.0)
-         6. LLM call #2     → critique+rewrite ("you are a skeptical Indonesian copy editor;
+         6. LLM call #2     → critique+rewrite ("you are a skeptical Malaysian copy editor;
                               rewrite so it reads like a real person typed it on their phone")
          7. QA node         → regex bans + length + embedding similarity. Fail → retry ≤3, then
                               fall back to a different arm.
@@ -279,7 +295,7 @@ Now you get:
 - **bot filtering** (Meta's link preview crawler will hit it — filter `facebookexternalhit`,
   `Threads`, `meta-externalagent` UAs, and dedupe by ip_hash within 60s)
 - **sub_id** flowing into Shopee's conversion report → you can join orders back to the exact post
-  → back to the exact lever combination. This closes the loop from "tone=deadpan" to "Rp 43.000".
+  → back to the exact lever combination. This closes the loop from "tone=deadpan" to "RM 4.30".
 
 Shopee Affiliate supports a single SubId (alphanumeric). Use a short base36 post id, e.g. `p8fk2q`.
 Pull conversions with the Apify Shopee Affiliate actor in `mode=conversions`

@@ -55,9 +55,10 @@ NotebookLM (your PDFs)
 The last line is the payoff. A PDF telling you "urgency converts" is an *untested hypothesis*.
 Your system already has the machinery to test hypotheses against real Shopee commissions. So the
 right move is: turn each book's claim into a **testable arm**, then let 15 posts per cycle tell
-you whether it's true for Indonesian Threads users buying a Rp 89k product.
+you whether it's true for Malaysian Threads users buying an RM39 product.
 
-Books written for 1980s US direct mail will be **wrong** for your audience about half the time.
+Books written for 1980s US direct mail — or 2015 Facebook ads — will be **wrong** for your
+audience about half the time.
 The Technique Library plus the bandit is how you find out which half.
 
 ---
@@ -87,7 +88,11 @@ abstract to be a technique — break it into three that can.
 
 ---
 
-## 4. Two ways to fill the library
+## 4. Filling the library
+
+> **Your `Books/` folder is already done.** 26 PDFs were mined into 17 techniques (60 total in
+> the library). Read `docs/05-books.md` for what was extracted, what was rejected as harmful,
+> and which 3 PDFs need OCR. This section is for adding *more* books later.
 
 ### Way 1 (recommended): drop PDFs into the Knowledge Base — already built
 
@@ -119,7 +124,25 @@ but they are different techniques, and merging them silently destroys a good row
 bug caught in testing.
 
 **Scanned PDFs are rejected** with a clear message rather than mined into garbage. Run them
-through `ocrmypdf` first.
+through `ocrmypdf` first — for Malay material use both language packs:
+
+```bash
+ocrmypdf -l msa+eng "Books/scanned.pdf" "Books/scanned.ocr.pdf"
+```
+
+**The chunk scorer understands Malay as well as English.** This matters more than it sounds: the
+scorer decides which pages are worth sending to the LLM, and the original English-only version
+rated Malay books near zero and skipped them almost entirely. Measured on the real `Books/`
+folder, teaching it Malay signal words (`teknik`, `tajuk`, `jangan`, `sebab`, `pelanggan`,
+`contoh`) and numbered-list detection took the yield from 284 to 465 usable chunks — and one
+book from 6 chunks to 63. If you add books in another language, extend `SIGNAL` in
+`services/kb/lib/pdf.js` or the same silent-skip will happen again.
+
+**Bulk upload** for a whole folder at once:
+
+```bash
+./scripts/ingest_books.sh https://kb.yourdomain.com
+```
 
 ### Way 2 (optional): NotebookLM for things that aren't PDFs
 
@@ -223,7 +246,7 @@ Let me be straight about what this buys you, in order:
 3. **Third: devices.** Real but modest. Good copywriting books mostly encode things a strong LLM
    already knows. The lift comes from *specificity and enforcement*, not novelty.
 4. **Smallest: the prose itself.** Do not paste chunks of the books into prompts. Style transfer
-   from 1980s American direct mail into casual Indonesian Threads posts produces exactly the
+   from 1980s American direct mail into casual Malaysian Threads posts produces exactly the
    uncanny, over-written voice you're trying to avoid.
 
 And the thing worth repeating: **your click and conversion data will eventually be more valuable
