@@ -52,7 +52,7 @@
   </div>
 
   <label>Shopee affiliate URL *</label>
-  <input type="url" id="url" placeholder="https://s.shopee.co.id/...">
+  <input type="url" id="url" placeholder="https://s.shopee.com.my/...">
   <div class="hint">Must be your affiliate link, not the plain product page — the redirector
     appends <code>sub_id</code> so orders can be traced back to the exact post.</div>
 
@@ -62,18 +62,18 @@
       <input type="text" id="name" placeholder="auto-filled if blank">
     </div>
     <div>
-      <label>Price in IDR (optional)</label>
-      <input type="text" id="price" placeholder="89000">
+      <label>Price in RM (optional)</label>
+      <input type="text" id="price" placeholder="39.90">
     </div>
   </div>
 
   <label>Product description <span id="descReq" class="hint" style="display:inline"></span></label>
-  <textarea id="description" placeholder="Spatula silikon tahan panas sampai 230°C. Gagang stainless 11cm. Anti lengket, aman buat teflon. Bisa masuk dishwasher."></textarea>
+  <textarea id="description" placeholder="Spatula silikon tahan panas sehingga 230°C. Pemegang stainless 11cm. Anti melekat, selamat untuk non-stick. Boleh masuk dishwasher."></textarea>
   <div class="hint">Required only if you upload no images. Without a photo this is the only raw
     material the writer has, so include real specifics: sizes, materials, temperatures, what it fits.</div>
 
   <label>Your notes — the single biggest quality lever</label>
-  <textarea id="notes" placeholder="Buat ibu-ibu yang dapurnya sempit. Gagangnya 11cm, agak pendek. Saya pakai sejak Maret. Gratis ongkir."></textarea>
+  <textarea id="notes" placeholder="Untuk yang dapur sempit. Pemegang 11cm, pendek sikit. Saya guna sejak Mac. Free shipping."></textarea>
   <div class="hint">Write concrete facts a machine cannot know: real measurements, how long you've
     used it, who it's for, what's genuinely wrong with it. Generic notes produce generic copy.</div>
 
@@ -159,7 +159,7 @@ $('#go').onclick=async()=>{
   const fd=new FormData();
   fd.append('affiliate_url',$('#url').value.trim());
   fd.append('name',$('#name').value.trim());
-  fd.append('price_idr',$('#price').value.replace(/\D/g,''));
+  fd.append('price_myr',$('#price').value.replace(/[^\d.]/g,''));
   fd.append('notes',$('#notes').value.trim());
   fd.append('description',$('#description').value.trim());
   files.forEach(f=>fd.append('images',f));   // may be empty — that is a valid submission
@@ -171,7 +171,7 @@ $('#go').onclick=async()=>{
       ${j.media_mode==='text'
         ? 'No images — will post as text-only.'
         : `${j.images} image${j.images>1?'s':''} stored publicly. Text-only variants will also be tested.`}<br>
-      First post is scheduled for the next generation run (03:00 Asia/Jakarta).<br>
+      First post is scheduled for the next generation run (03:00 Malaysia time).<br>
       Tracking slug base: <code>${j.product_uid}</code></div>`;
     files=[];render();
     $('#url').value='';$('#name').value='';$('#price').value='';$('#notes').value='';

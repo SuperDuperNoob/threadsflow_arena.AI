@@ -47,8 +47,8 @@ services:
       N8N_PROTOCOL: https
       WEBHOOK_URL: https://${N8N_HOST}/
       N8N_EDITOR_BASE_URL: https://${N8N_HOST}/
-      GENERIC_TIMEZONE: Asia/Jakarta
-      TZ: Asia/Jakarta
+      GENERIC_TIMEZONE: Asia/Kuala_Lumpur
+      TZ: Asia/Kuala_Lumpur
       N8N_ENCRYPTION_KEY: ${N8N_ENCRYPTION_KEY}
       N8N_BASIC_AUTH_ACTIVE: "true"
       N8N_BASIC_AUTH_USER: ${N8N_USER}
@@ -80,7 +80,7 @@ services:
     environment:
       DATABASE_URL: postgres://threadsflow:${PG_PASSWORD}@postgres:5432/threadsflow
       IP_SALT: ${IP_SALT}
-      FALLBACK_URL: https://shopee.co.id
+      FALLBACK_URL: https://shopee.com.my
       PORT: "8081"
     deploy:
       resources:
@@ -103,7 +103,7 @@ services:
       LLM_MODEL_EMBED: ${LLM_MODEL_EMBED}
       MINE_CONCURRENCY: "2"
       MAX_CHUNKS_PER_DOC: "45"
-      TZ: Asia/Jakarta
+      TZ: Asia/Kuala_Lumpur
     volumes:
       - kbdata:/data
     extra_hosts:

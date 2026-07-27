@@ -1,11 +1,14 @@
 # ThreadsFlow
 
-Self-optimizing Shopee-affiliate posting machine for Threads.
+Self-improving Shopee-affiliate posting system for Threads. **Malaysian Malay, RM, KL time.**
 
-**You do:** paste an affiliate URL, plus images *or* a description (or both) into a form.
-**It does:** writes non-templated copy, posts 5×/day at jittered times, drops the tracked
-affiliate link in the first comment, measures views → clicks → orders, and every 3 days
-re-invests posting slots into the styles that actually earned money. Forever, until you stop it.
+**You do:** paste a Shopee affiliate link, plus photos *or* a written description (either works).
+**It does:** writes posts in everyday Malay — a different style every time — posts 5×/day at
+slightly random times, puts the tracked link in the first comment, counts clicks and sales, and
+**every 3 days shifts more posting slots to whatever actually made money**. Runs until you stop it.
+
+New here? **[`docs/00-START-HERE.md`](docs/00-START-HERE.md)** explains everything in plain
+language, including what you have to do by hand and how long before you see results.
 
 ---
 
@@ -18,6 +21,8 @@ Three things make or break it, and only one of them is the posting:
    never sees a template — it sees a different behavioural brief every time, plus a hard list of
    banned phrases and the last 20 posts to avoid. Images are optional: `media_type` is a scored
    lever, so text-only posts compete on merit rather than being a fallback.
+   The banned list also blocks Indonesian, because `bisa` means *venom* in Malay and `butuh` is
+   vulgar — a slip there is worse than a boring post.
 2. **Real tracking.** A 100-line redirector service sits between Threads and Shopee. It gives
    you per-post clicks immediately and passes `sub_id=<post_uid>` to Shopee so orders join back
    to the exact post → the exact lever combination. Without this you're optimizing likes, and
@@ -41,7 +46,10 @@ docs/03-setup-runbook.md    empty VPS → first automated post, plus troubleshoo
 docs/04-technique-library.md  why NOT to call NotebookLM live, and what to do instead
 db/schema.sql               PostgreSQL schema
 db/seed_levers.sql          12 formats, 9 angles, 7 tones, banned phrases, CTA pool, settings
-db/seed_techniques.sql      42 cold-start techniques — the system runs with ZERO PDFs uploaded
+db/seed_levers_my.sql       Malay levers, banned phrases, CTA pool, MY settings  ← use these
+db/seed_techniques_my.sql   43 cold-start techniques in Malay — runs with ZERO PDFs uploaded
+db/seed_levers.sql          Indonesian originals, kept for reference
+db/seed_techniques.sql      Indonesian originals, kept for reference
 db/migrations/              001_optional_media.sql — makes images optional on existing installs
 db/queries.sql              the analysis queries you'll actually use
 db/schema_techniques.sql    Technique Library: mined copywriting techniques as testable arms

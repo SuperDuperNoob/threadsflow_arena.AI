@@ -102,7 +102,7 @@ export async function enrich({ affiliateUrl, name, priceIdr, notes, description 
 
   const base = {
     name: name || og.title || null,
-    price_idr: priceIdr ? Number(priceIdr) : null,
+    price_myr: priceIdr ? Number(priceIdr) : null,
     og_description: og.description ?? null,
     media_mode: mediaMode,
   };
@@ -117,7 +117,7 @@ export async function enrich({ affiliateUrl, name, priceIdr, notes, description 
   try {
     const out = await complete(
       `You prepare product facts for a copywriter. Output JSON only:
-{"name":"","category":"","target_persona":"","price_idr":null,
+{"name":"","category":"","target_persona":"","price_myr":null,
  "concrete_details":["concrete checkable facts: measurements, materials, durations, prices, quantities"],
  "sensory_details":["${textOnly ? '3-5 physical details someone could see or feel: colour, texture, size relative to a hand, weight, sound' : 'leave empty'}"],
  "top_reviews":["up to 3 short realistic buyer phrases, ONLY if present in the input; otherwise empty array"],
@@ -134,7 +134,7 @@ ${textOnly
     'matters more than usual. Derive it ONLY from the description; if the description does not ' +
     'support it, return an empty array and set detail_confidence="low".'
   : '- Photos exist and are described separately. Leave sensory_details empty.'}
-- Write in Indonesian.`,
+- Write in Malaysian Malay (tak, nak, dah, je, lah). Currency RM. Never Indonesian.`,
       JSON.stringify({ url: affiliateUrl, og, user_name: name, user_price: priceIdr,
                        user_notes: notes, user_description: description }),
       { temperature: 0.2 });
@@ -158,7 +158,7 @@ ${textOnly
 export async function describeImage(publicUrl) {
   try {
     const out = await complete(
-      'Describe literally what is visible in this product photo in ONE Indonesian sentence. ' +
+      'Describe literally what is visible in this product photo in ONE Malay sentence. ' +
       'Mention colour, setting, lighting and framing. Output JSON {"desc":""}.',
       `Image URL: ${publicUrl}`, { temperature: 0.2 });
     return out.desc ?? null;

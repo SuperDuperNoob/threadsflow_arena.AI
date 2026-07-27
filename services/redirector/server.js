@@ -16,7 +16,7 @@ const {
   DATABASE_URL,
   PORT = 8081,
   IP_SALT = 'change-me',
-  FALLBACK_URL = 'https://shopee.co.id',
+  FALLBACK_URL = 'https://shopee.com.my',
 } = process.env;
 
 const pool = new pg.Pool({ connectionString: DATABASE_URL, max: 4 });
@@ -49,8 +49,8 @@ async function resolveLink(uid) {
 function withSubId(url, uid) {
   try {
     const u = new URL(url);
-    // Shopee affiliate accepts a single alphanumeric SubId. Different link formats use
-    // different param names, so set the ones Shopee reads and leave everything else intact.
+    // Shopee affiliate accepts a single alphanumeric SubId. Works identically on
+    // shopee.com.my and every other Shopee domain — the param names do not change per market.
     u.searchParams.set('sub_id', uid);
     if (!u.searchParams.has('utm_content')) u.searchParams.set('utm_content', uid);
     return u.toString();

@@ -265,7 +265,7 @@ const imgUpload = multer({
  * invented copy is exactly the generic slop this whole project exists to avoid.
  */
 app.post('/api/products', requireAuth, imgUpload.array('images', 4), async (req, res) => {
-  const { affiliate_url, name, price_idr, notes, description } = req.body ?? {};
+  const { affiliate_url, name, price_myr, notes, description } = req.body ?? {};
   const files = req.files ?? [];
   const desc = (description ?? '').trim();
 
@@ -317,7 +317,7 @@ app.post('/api/products', requireAuth, imgUpload.array('images', 4), async (req,
     // already exists and is postable. Never let an external call block the user.
     (async () => {
       try {
-        const e = await enrich({ affiliateUrl: affiliate_url, name, priceIdr: price_idr,
+        const e = await enrich({ affiliateUrl: affiliate_url, name, priceIdr: price_myr,
                                  notes, description: desc, mediaMode });
         await pool.query(`UPDATE products SET name=COALESCE($2,name), enrichment=$3 WHERE id=$1`,
           [p.id, e.name ?? null, JSON.stringify(e)]);
@@ -347,7 +347,7 @@ app.post('/api/products', requireAuth, imgUpload.array('images', 4), async (req,
 app.get('/api/products', requireAuth, async (_, res) => {
   const { rows } = await pool.query(`
     SELECT p.id, p.uid, p.name, p.status, p.affiliate_url, p.created_at,
-           p.enrichment->>'price_idr' AS price_idr,
+           p.enrichment->>'price_myr' AS price_myr,
            jsonb_array_length(COALESCE(p.enrichment->'concrete_details','[]'::jsonb)) AS facts,
            p.media_mode,
            (SELECT count(*) FROM product_images pi WHERE pi.product_id=p.id) AS images,

@@ -218,6 +218,6 @@
       ]
     }
   },
-  "settings": { "executionOrder": "v1", "timezone": "Asia/Jakarta", "saveDataSuccessExecution": "none" },
+  "settings": { "executionOrder": "v1", "timezone": "Asia/Kuala_Lumpur", "saveDataSuccessExecution": "none" },
   "tags": [{ "name": "threadsflow" }]
 }

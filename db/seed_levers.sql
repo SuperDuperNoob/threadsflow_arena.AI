@@ -64,7 +64,7 @@ INSERT INTO banned_phrases (pattern, reason, scope) VALUES
 ('semoga bermanfaat|happy shopping|selamat berbelanja', 'penutup klise', 'all'),
 ('—.*—', 'em-dash berantai', 'all'),
 ('(#\w+\s*){2,}', 'tumpukan hashtag', 'all'),
-('([\x{1F300}-\x{1FAFF}]\s*){3,}', 'baris emoji', 'all');
+('([^\u0000-\u2fff]\s*){3,}', 'baris emoji (regex Postgres, bukan JS)', 'all');
 
 -- ── CTA POOL (the comment). {{link}} is replaced with the tracked short URL.
 INSERT INTO cta_variants (text) VALUES

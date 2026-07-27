@@ -1,245 +1,226 @@
-# START HERE — what you do, what the machine does, what to expect
+# START HERE — read this one first
 
-Read this one file before anything else. It answers four questions:
-what state the system is in, what you must do by hand, how long until money,
-and what will break.
+Plain-language guide. No jargon. If a word is technical, it's explained right there.
 
 ---
 
-## 1. Honest status: what is and isn't ready
+## 1. What this thing actually does
 
-| Component | State | Tested how |
+You give it: **a Shopee affiliate link**, plus **photos or a written description** (either is fine).
+
+It then does this forever, by itself:
+
+- Writes 5 posts a day in Malay, each one in a different style
+- Puts them on Threads at slightly random times (so it doesn't look like a robot)
+- Puts your affiliate link in the **first comment**, not in the post
+- Counts who clicks and who buys
+- **Every 3 days it checks which styles made money, and does more of those**
+
+That last point is the whole idea. It's not a posting robot. It's a robot that *learns what sells*
+and keeps getting better while you sleep.
+
+**Why the link goes in the comment:** Threads shows your post to fewer people if there's an
+outside link in it. Link in the comment = post stays clean = more people see it.
+
+---
+
+## 2. Everything is in Malay, for Malaysia
+
+Set up for Malaysia, not Indonesia:
+
+- Copy is written in everyday Malaysian Malay — *tak, nak, dah, je, lah* — and mixing in English
+  words (rojak) is allowed, because that's how Malaysians actually post
+- Prices in **RM**
+- Times in **Kuala Lumpur** time
+- Links point to **shopee.com.my**
+
+**The system actively blocks Indonesian.** This matters more than it sounds. Two Indonesian words
+are dangerous in Malay:
+
+| Indonesian word | Means in Indonesia | Means in Malaysia |
 |---|---|---|
-| Database schema (28 tables/views) | **Ready** | Applied to a real PostgreSQL 16; all views queryable |
-| Cold-start technique library (42) | **Ready** | Every row passes the same validator as PDF-mined ones |
-| Knowledge Base service (PDF → techniques) | **Ready** | End-to-end: upload → dedup → mine → validate → merge → live |
-| Product intake (link + images and/or description) | **Ready** | 9/9 input shapes verified live; graceful when enrichment fails |
-| Redirector (click tracking + SubId) | **Ready** | Boots, redirects, logs, filters Meta's crawler |
-| `wf3_publish` | **Ready to import** | 23 nodes; TEXT/IMAGE/CAROUSEL routing verified 10/10 |
-| `wf0_token_refresh` | **Ready to import** | Complete |
-| `wf2_generate` | **Skeleton — you paste 4 code blocks** | Graph + SQL complete; Code nodes are stubs |
-| `wf4_evaluate` | **Skeleton — you paste 3 code blocks** | Graph + SQL complete; Code nodes are stubs |
-| `wf5_conversions` (Shopee orders) | **Not built** | Optional; system runs on click data until you add it |
+| `bisa` | can / able to | **venom, poison** |
+| `butuh` | need | **vulgar slang** |
 
-**Why the two skeletons.** n8n Code nodes hold JavaScript as a string inside JSON. Embedding
-600 lines of bandit and scoring logic as escaped JSON would be unreadable and unmaintainable.
-The logic lives in `n8n/code/*.js` as real, reviewable files. You open each stub node and paste
-the matching file. That's roughly 15 minutes of copy-paste, once.
-
-**What I could not test:** anything touching the real Threads API or real Shopee (no
-credentials), and the real LLM path (tested against a stub that mimics the response shape).
-Everything else ran against a live PostgreSQL and a live HTTP server in this workspace.
+If the AI slipped and wrote *"produk ini bisa dipakai"*, a Malaysian reads *"this product is
+poison"*. So there's an automatic filter that rejects any post containing Indonesian words
+(*banget, nggak, gak, aja, udah, bikin, gimana, kalian*) before it ever gets posted. Tested and
+confirmed working.
 
 ---
 
-## 2. Resource budget — it fits, with room to spare
+## 3. Three ways to add a product
 
-Measured, not estimated:
-
-| Service | Cap | Notes |
+| What you give it | Works? | What you get |
 |---|---|---|
-| n8n | 1400 MB | the only real consumer |
-| postgres | 512 MB | tuned: `shared_buffers=192MB` |
-| kb | 640 MB | **measured peak 88 MB** parsing a 400-page PDF in 0.4 s |
-| minio | 320 MB | skip entirely if you use Cloudflare R2 |
-| redirector | 128 MB | ~40 MB actual |
-| cloudflared | 96 MB | |
-| **Total caps** | **3096 MB** | of 4096 MB — **1 GB headroom** |
+| Link + photos | ✅ | Posts with photos |
+| Link + photos + description | ✅ | Best results |
+| **Link + description only** | ✅ | **Text-only posts. No photos needed at all.** |
+| Link by itself | ❌ | Rejected — see below |
 
-Three rules keep it there:
-1. **No local LLM.** Inference goes out through 9router. ~$0.30/month at 5 posts/day.
-2. **PDF mining is serial** — one book at a time. Two concurrent 300-page books would OOM.
-3. **n8n execution data is pruned** to 7 days, success payloads discarded.
+**Why link-only is rejected:** with no photo and no words, the AI has nothing real to write about,
+so it would invent things. Made-up details are exactly what makes affiliate posts look fake. If
+you have no photos, just write 2–3 real sentences about the product (size, price, how long you've
+used it) and that's enough.
 
-**If you want it smaller:** drop MinIO and use Cloudflare R2 (free tier, no egress fee).
-That's −320 MB and one less thing to back up. Set `IMAGE_BACKEND=s3` and point
-`S3_ENDPOINT` at R2 — the S3 client is built in, no SDK.
-
-**Free outsourcing available:** Threads API (free), Cloudflare Tunnel + R2 (free tier),
-OG-tag enrichment (free, no Apify needed). Apify is optional and only for Shopee conversions.
+**Text-only posts are not second-best.** Threads is mostly a text app, and text posts often reach
+*more* people than photo posts. The system tries both and tells you which works better for your
+account. Even for products where you uploaded photos, about 15% of posts will be text-only, just
+to check.
 
 ---
 
-## 3. The system works with ZERO PDFs
+## 4. What you have to do yourself
 
-This matters, so it's explicit: `db/seed_techniques.sql` ships **42 hand-written techniques**
-covering hooks, proof, voice, psychology, structure, CTA and anti-patterns — plus 19 banned
-phrases, 34 lever values and 15 CTA variants.
+The system can't do these. Budget about a day, most of it waiting.
 
-You can post for months without ever opening the Knowledge Base. Uploading PDFs only:
-- adds techniques the seed set lacks,
-- raises `corroboration` where a book agrees with the seed (a stronger prior),
-- adds regex anti-patterns straight into the QA gate.
+### Step 1 — Get permission from Meta (~2 hours, mostly waiting)
 
-The Knowledge Base is an amplifier, never a dependency.
+You need a key ("token") that lets the system post to your Threads account.
 
----
+1. Go to developers.facebook.com → Create App → choose "Access the Threads API"
+2. Tick these permissions: `threads_basic`, `threads_content_publish`,
+   `threads_manage_insights`, `threads_manage_replies`
+3. **Important shortcut:** in App roles → Threads Tester → add your own username. Then accept
+   the invite in the Threads app (Settings → Website permissions).
+   This lets you skip Meta's review process completely, which otherwise takes weeks.
+4. Test it works by posting one message with the copy-paste command in
+   `docs/03-setup-runbook.md`. **Don't build anything else until you see that test post appear.**
 
-## 3b. Three ways to add a product — images are optional
+### Step 2 — Put the system online (~1 hour)
 
-| You have | Accepted | What happens |
+Follow `docs/03-setup-runbook.md`. It's copy-paste commands.
+
+The one part people get wrong: you need 4 web addresses pointing at your server, and **two of
+them must be public**:
+
+| Address | Who needs to reach it | Locked? |
 |---|---|---|
-| link + images | ✅ | Single-image and carousel posts. ~15% of posts still go text-only as exploration. |
-| link + images + description | ✅ | Richest input. Description feeds facts the photo can't show (price, warranty, size). |
-| **link + description** | ✅ | **Text-only posts.** No image needed anywhere in the pipeline. |
-| link alone | ❌ | Rejected. With no photo and no words there is nothing concrete to write from, and invented copy is exactly the slop this project exists to avoid. |
+| `n8n.yourdomain.com` | just you | 🔒 lock it |
+| `kb.yourdomain.com` | just you | 🔒 lock it |
+| `r.yourdomain.com` | **your buyers** | 🌐 must be open |
+| `cdn.yourdomain.com` | **Meta's servers** | 🌐 must be open |
 
-**Text-only is a first-class mode, not a fallback.** Threads is a text-first feed and text posts
-often out-reach image posts there. `media_type` is a real bandit lever (TEXT / IMAGE / CAROUSEL)
-scored alongside tone and format, so within ~6 cycles `SELECT * FROM v_media_performance` tells
-you which actually earns on *your* account.
+If you lock the last two, buyers can't click your links and photos won't upload. This is the
+number one reason people's setup silently doesn't work.
 
-Three rules make it safe:
-- **No images → description must be ≥ 80 characters.** Without a photo the words carry
-  everything, so the QA gate also demands at least one concrete detail (a number, material or
-  measurement) even at `sell_intensity=0`.
-- **The bandit can never pick an impossible media type.** 0 images → TEXT only. 1 image → TEXT
-  or IMAGE. 2+ → all three. A DB CHECK constraint enforces the same invariant, so a malformed
-  post can't reach the Threads API and fail opaquely 30 seconds later.
-- **If a CDN image goes missing at publish time**, wf3 downgrades to TEXT rather than losing the
-  slot. A text post is a fine post; a failed API call is a wasted slot.
+### Step 3 — Copy-paste 7 bits of code (~15 minutes)
 
-The QA gate also blocks the two characteristic failures: a text post referring to a photo that
-doesn't exist, and an image post narrating the photo the reader can already see.
+Two of the four automations come as templates with blank spots. You open each blank spot and
+paste in a file from the `n8n/code/` folder. The instructions say exactly which file goes where.
 
----
+(Why isn't this done already? The code is 600 lines. Stuffing it inside the template file would
+make it unreadable and impossible to fix later. Keeping it as normal files means you can actually
+read and change it.)
 
-## 4. What YOU must do by hand
+### Step 4 — THE IMPORTANT ONE: read the first week's posts yourself
 
-### Before anything (blocking, ~2 hours, mostly waiting on Meta)
+For week 1, set the system to save posts as **drafts** instead of publishing them.
 
-1. **Get a Threads token.** developers.facebook.com → Create App → "Access the Threads API".
-   Add permissions `threads_basic`, `threads_content_publish`, `threads_manage_insights`,
-   `threads_manage_replies`. Then **App roles → Threads Tester → add your own username**, and
-   accept the invite at threads.net → Settings → Website permissions.
-   *This step replaces Meta App Review entirely because you post to your own account.*
-   Exchange for a long-lived token and **verify with the curl smoke test in
-   `docs/03-setup-runbook.md` §1 before building anything else.**
-
-2. **Point 4 Cloudflare Tunnel hostnames** (Zero Trust → Public Hostnames):
-
-   | Hostname | Service | Access policy |
-   |---|---|---|
-   | `n8n.you.com` | `http://n8n:5678` | **your email only** |
-   | `kb.you.com` | `http://kb:8082` | **your email only** |
-   | `r.you.com` | `http://redirector:8081` | **NONE — buyers must reach it** |
-   | `cdn.you.com` | `http://kb:8082` | **NONE — Meta must fetch images** |
-
-   Getting the last two wrong is the #1 cause of "it silently doesn't work".
-
-3. **Bring up the stack** (`docs/03-setup-runbook.md` §2) and apply the schema in this order:
-   ```
-   schema.sql → schema_techniques.sql → schema_kb.sql
-   → seed_levers.sql → seed_techniques.sql → mining_questions.sql
-   ```
-   Already running an older install? Apply `db/migrations/001_optional_media.sql` — it is
-   idempotent and backfills `media_mode` from what each product actually has.
-
-4. **Insert your secrets** into the `settings` table (token, user_id, LLM base URL/key).
-
-5. **Import 4 workflows** (`wf0`, `wf2`, `wf3`, `wf4` — there is no `wf1` to import, intake is
-   built into the KB service), create the `Postgres threadsflow` credential, and **paste the 7
-   code blocks** into the stub nodes:
-   - `wf2_generate`: slot_plan.js, bandit.js (select), technique_picker.js (select), qa.js
-   - `wf4_evaluate`: scoring.js, bandit.js (update+plan), technique_picker.js (update)
-
-### The one thing that decides whether this makes money
-
-**Week 1: run generation in draft mode and read all 35 posts yourself.**
-
-Set `wf2_generate` to insert `status='draft'` instead of `'queued'`. Then:
+Then read all 35 drafts. You will spot 5–10 phrases that sound like a robot wrote them. Add each
+one to the blocked list:
 
 ```sql
-SELECT format, tone, body FROM posts WHERE status='draft' ORDER BY created_at;
+INSERT INTO banned_phrases (pattern, reason, scope) VALUES ('the phrase', 'sounds fake', 'all');
 ```
 
-You will find 5–10 phrases that sound like a machine. Add each one:
+**This one hour is worth more than everything else in this project.** Only you know what sounds
+wrong to a Malaysian ear. The AI doesn't. Skip this and the system trains itself on your worst
+output.
 
-```sql
-INSERT INTO banned_phrases (pattern, reason, scope) VALUES ('your regex', 'why', 'all');
-```
+---
 
-This hour of reading is worth more than every prompt in this repo. Nobody else can do it —
-only you know what sounds wrong in your voice, to your audience.
+## 5. What to expect, and when
 
-### Ongoing (15 min/week)
+Being straight with you about this.
 
-| When | What |
+| Time | What happens | What NOT to do |
+|---|---|---|
+| Day 1 | Setup. First test post works. | — |
+| Day 2–7 | Draft mode. You read 35 posts and build the blocked list. | Don't go live yet |
+| Week 2 | Real posting starts. First clicks appear. | Don't judge anything |
+| **Day 1–12** | The numbers are basically **random noise**. | **Change nothing. This is the hardest rule to follow.** |
+| Day 12–24 | Patterns become real. The 3-day report starts making sense. | Change 1–2 things per cycle, max |
+| Week 4–6 | First Shopee sales come in. | Don't expect much money yet |
+| Month 3+ | The system has real data. This is when it compounds. | — |
+
+**Why "change nothing" for 12 days:** you post 15 times per 3-day cycle. Fifteen is far too few
+to know anything. You'll see one post do well, think you found the secret, change everything to
+match it — and you'll have been chasing luck. Wait until day 12 minimum.
+
+**Realistic money:** month one will probably earn less than the server costs (~$5–10/month).
+This is normal. The value is that it improves by itself. Month 3 is where it starts paying.
+
+**The biggest factor isn't the software — it's which products you pick.** A perfect system posting
+about something nobody wants earns nothing. Spend your time finding products people actually buy,
+and writing real specifics in the notes box.
+
+---
+
+## 6. Weekly routine (15 minutes)
+
+| How often | Do this |
 |---|---|
-| Weekly | Read 5 random posts. Add robotic phrases to `banned_phrases`. |
-| Weekly | Add 1–2 products. Images optional — a link + good description is enough. |
-| Weekly | `SELECT * FROM run_log WHERE level='error' AND ts > now()-interval '7 days'` |
-| Every 3 days | Read the cycle digest — **but don't act before cycle 5** |
-| Cycle 6+ | `SELECT * FROM v_media_performance` and query #17 — is TEXT or IMAGE earning more? |
-| Monthly | Retire CTA variants with `use_count > 8`; add 5 new ones |
-| Every 25 days | Confirm wf0 refreshed the token |
+| Weekly | Read 5 random posts. Anything robotic → add to blocked list |
+| Weekly | Add 1–2 new products (photos optional) |
+| Weekly | Check for errors: `SELECT * FROM run_log WHERE level='error'` |
+| Every 3 days | Read the report — but ignore it until day 12 |
+| Day 18+ | Check `SELECT * FROM v_media_performance` — photos or text winning? |
+| Every 25 days | Check the Meta key got renewed automatically |
 
 ---
 
-## 5. Timeline — what to expect, honestly
+## 7. What's built, what isn't
 
-| When | What happens | What you should NOT do |
-|---|---|---|
-| **Day 0–1** | Setup. First manual post via curl works. | — |
-| **Day 2–7** | Draft mode. You read 35 posts, build the banned list. | Don't go live before this. |
-| **Week 2** | Live posting, 5/day. First clicks appear in `clicks`. | Don't judge anything yet. |
-| **Cycle 1–4 (day 1–12)** | 15 posts/cycle. Scores are almost pure noise. | **Don't change settings.** n is too small. This is the hardest instruction to follow. |
-| **Cycle 5–8 (day 12–24)** | Tone and format signal stabilizes. Digest becomes readable. | Don't add more than 1–2 changes per cycle. |
-| **Week 4–6** | First Shopee conversions. `w_money` starts climbing from 0. | Don't expect meaningful revenue yet. |
-| **~20 lifetime orders** | Scoring becomes fully money-driven rather than engagement-driven. | — |
-| **Month 3+** | The bandit has real evidence. This is when compounding starts. | — |
+| Part | Ready? |
+|---|---|
+| Database | ✅ Tested on a real database |
+| Malay copy library (43 styles) | ✅ Works with zero PDFs uploaded |
+| PDF reader (upload copywriting books) | ✅ Fully tested |
+| Product upload page | ✅ All 3 input types tested |
+| Click tracking | ✅ Tested |
+| Posting automation | ✅ Ready to import |
+| Key auto-renewal | ✅ Ready to import |
+| Writing automation | ⚠️ Import + paste 4 code blocks |
+| Learning automation | ⚠️ Import + paste 3 code blocks |
+| Shopee sales import | ❌ Not built — works on click data until you add it |
 
-**Realistic revenue expectation.** With 5 posts/day on a new account: expect a few hundred to a
-few thousand views per post initially, sub-1% CTR, and Shopee commissions of 2–10% on low-ticket
-items. The first month will likely earn less than the VPS costs. The system's value is that it
-compounds — it gets better while you sleep — not that it prints money in week one.
-
-**The single biggest variable is not the software. It's your product selection and your notes
-field.** A great system posting about a product nobody wants earns zero. Spend your time picking
-products with real demand and writing concrete notes about them.
+**Not tested:** the actual connection to Threads and Shopee, because I don't have your login
+details. Everything else was tested against a real database and a real running server.
 
 ---
 
-## 6. Making it not break
+## 8. Things that will go wrong (and are already handled)
 
-Failure modes are ranked by how likely they are to actually hit you.
+Built in, you don't need to do anything:
 
-### Already handled in code
-- **Meta's crawler inflating clicks** → UA filter + 60s IP dedup in the redirector. Without this
-  your bandit optimizes for bot traffic.
-- **Double-posting on overlapping cron runs** → optimistic row lock (`status='publishing'`).
-- **Quota exhaustion** → checks `threads_publishing_limit` before every publish, aborts over 200.
-- **Enrichment/vision failure** → product still created, posting still works.
-- **KB service down during generation** → HTTP node continues; generation proceeds with levers only.
-- **Worker crash mid-PDF** → stale jobs reclaimed after 45 min, 3 attempts, then marked failed.
-- **A PDF yielding nothing** → explicit warning instead of silent "done, 0 techniques".
-- **Merge corrupting a technique** → type-equality gate (this was a real bug found in testing).
-- **Short PDFs vanishing** → whole-document fallback chunk (also a real bug found in testing).
-- **Over-broad regex from the LLM** → validator rejects `.*`-style patterns that would nuke every post.
+- **Facebook's own robot clicking your links** — filtered out, otherwise your numbers would be
+  garbage
+- **The same post going out twice** — locked
+- **Posting too much and getting banned** — checks the limit before every post
+- **A photo failing to load** — posts as text instead, doesn't lose the slot
+- **Shopee blocking the price lookup** — product still works, just with less detail
+- **Indonesian words slipping in** — blocked automatically
 
-### You must handle
-1. **Token expiry.** wf0 runs every 25 days. **Add a Telegram or email node to its failure
-   branch.** A dead token is silent for 3 days before you notice, and that's 15 lost posts.
-2. **Account throttling.** If views collapse across all posts for 3+ days, you're flagged.
-   Drop to 2 posts/day for a week and raise the `sell_intensity=0` share to 40%.
-3. **Model drift.** Your banned list is a living document. Re-read posts every 2 weeks or the
-   LLM slowly finds new ways to sound generic.
-4. **Backups.** `docker compose exec postgres pg_dump -U threadsflow threadsflow | gzip > bk.gz`
-   weekly. The bandit's learned state is the asset here, not the code.
+**You must handle these two:**
 
-### The three mistakes that kill this
-1. **Acting on cycle 1–4 data.** 15 posts is not a sample. You will see a "winner" that is noise,
-   over-invest in it, and destroy the exploration the system needs. Wait for cycle 5.
-2. **Skipping the redirector.** Without click data you're optimizing likes. Likes don't pay.
-3. **Skipping draft week.** Going straight to live posting means 35 mediocre posts train the
-   bandit on your worst output, and the account starts with weak signals.
+1. **Add an alert to the key-renewal automation.** If the Meta key expires and you don't notice,
+   posting silently stops for days. Add a Telegram or email step to its failure branch.
+2. **Back up weekly.** `docker compose exec postgres pg_dump -U threadsflow threadsflow | gzip > backup.gz`
+   What matters isn't the code — it's everything the system has *learned*.
+
+**The three mistakes that kill this:**
+
+1. Acting on the first 12 days of data (it's noise, you'll chase luck)
+2. Skipping the click tracker (then you're optimising for likes, and likes don't pay)
+3. Skipping draft week (the system learns from your worst output)
 
 ---
 
-## 7. Where to go next
+## Where to go next
 
-- `docs/01-architecture.md` — the flow, levers, scoring math, risks
-- `docs/02-n8n-workflows.md` — node-by-node build spec
-- `docs/03-setup-runbook.md` — VPS → first post, plus a troubleshooting table
-- `docs/04-technique-library.md` — how the PDF miner works, and why not to call NotebookLM live
-- `db/queries.sql` — the 15 analysis queries you'll actually use
+- `docs/03-setup-runbook.md` — copy-paste setup, step by step
+- `docs/01-architecture.md` — how it works inside
+- `docs/02-n8n-workflows.md` — the automations, box by box
+- `docs/04-technique-library.md` — uploading copywriting PDFs
+- `db/queries.sql` — ready-made reports you can run

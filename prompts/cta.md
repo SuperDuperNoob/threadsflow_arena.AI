@@ -13,7 +13,8 @@ find the thing. It is short, lowercase, and unenthusiastic.
 Rules:
 - 3 to 9 words before the link. Never more.
 - Lowercase unless a proper noun.
-- No emoji. No "cek", no "yuk", no "klik", no "buruan", no "jangan sampai".
+- No emoji. No "jom", no "klik", no "cepat", no "jangan lepaskan".
+- Malaysian Malay only. Never Indonesian (yuk, buruan, cek, nih, sih).
 - Never repeat words from the parent post.
 - The link goes at the end, on the same line or the line below.
 - Output only the comment text, with the literal token {{link}} where the URL goes.

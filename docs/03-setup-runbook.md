@@ -57,14 +57,17 @@ nano .env
 
 docker compose up -d
 # order matters — dependencies flow downward
+# NOTE the _my files — those are the Malaysian Malay versions. Using the non-_my ones
+# would seed the system in Indonesian, which is the wrong language for your audience.
 for f in schema.sql schema_techniques.sql schema_kb.sql \
-         seed_levers.sql seed_techniques.sql mining_questions.sql; do
+         seed_levers_my.sql seed_techniques_my.sql mining_questions.sql; do
   docker compose exec -T postgres psql -v ON_ERROR_STOP=1 -U threadsflow -d threadsflow < ../db/$f
 done
 
-# upgrading an install created before images became optional? this is idempotent:
-docker compose exec -T postgres psql -U threadsflow -d threadsflow \
-  < ../db/migrations/001_optional_media.sql
+# migrations — safe to run twice, run both on a fresh install too
+for m in 001_optional_media.sql 002_localisation.sql; do
+  docker compose exec -T postgres psql -U threadsflow -d threadsflow < ../db/migrations/$m
+done
 ```
 
 Store secrets in the DB so workflows read them at runtime:
@@ -123,15 +126,15 @@ hosting, so it isolates the Threads API from your storage setup:
 
 ```sql
 INSERT INTO products (name, affiliate_url, description, media_mode)
-VALUES ('Test', 'https://s.shopee.co.id/xxxx',
-        'Produk uji coba dengan gagang 11cm dan tahan panas 230 derajat celsius.', 'text');
+VALUES ('Test', 'https://s.shopee.com.my/xxxx',
+        'Produk ujian dengan pemegang 11cm dan tahan panas 230 darjah celsius.', 'text');
 
 INSERT INTO posts (uid, product_id, image_ids, media_type, format, angle, tone,
                    sell_intensity, length_band, body, cta_text, tracked_url, scheduled_at)
 VALUES ('t' || substr(md5(random()::text),1,5),
         (SELECT id FROM products ORDER BY id DESC LIMIT 1),
         '{}', 'TEXT', 'one_liner', 'utility', 'deadpan', 1, 'mid',
-        'Gagang 11cm itu kependekan buat tangan saya. Tapi tahan 230 derajat dan udah empat bulan aman.',
+        'Pemegang 11cm tu pendek sikit untuk tangan saya. Tapi tahan 230 darjah dan dah empat bulan okay.',
         'nih https://r.yourdomain.com/p/tXXXXX',
         'https://r.yourdomain.com/p/tXXXXX', now());
 ```
@@ -150,7 +153,7 @@ VALUES ('i' || substr(md5(random()::text),1,5),
         (SELECT id FROM products ORDER BY id DESC LIMIT 1),
         ARRAY[(SELECT id FROM product_images ORDER BY id DESC LIMIT 1)],
         'IMAGE', 'one_liner', 'utility', 'deadpan', 1, 'micro',
-        'test post dari sistem, gagang 11cm',
+        'test post dari sistem, pemegang 11cm',
         'nih https://r.yourdomain.com/p/iXXXXX',
         'https://r.yourdomain.com/p/iXXXXX', now());
 ```

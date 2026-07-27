@@ -45,6 +45,6 @@
       [{ "node": "Store new token", "type": "main", "index": 0 }],
       [{ "node": "ALERT: refresh failed", "type": "main", "index": 0 }]] }
   },
-  "settings": { "executionOrder": "v1", "timezone": "Asia/Jakarta" },
+  "settings": { "executionOrder": "v1", "timezone": "Asia/Kuala_Lumpur" },
   "tags": [{ "name": "threadsflow" }]
 }

@@ -12,7 +12,7 @@
 
 const settings = $json.settings.posting;
 const plan = $json.next_cycle_plan ?? [];
-const tz = settings.timezone ?? 'Asia/Jakarta';
+const tz = settings.timezone ?? 'Asia/Kuala_Lumpur';
 
 const now = new Date();
 const dayStart = new Date(now);
