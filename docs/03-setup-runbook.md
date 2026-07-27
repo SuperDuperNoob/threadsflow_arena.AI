@@ -105,14 +105,34 @@ In Zero Trust → Networks → Tunnels → your tunnel → Public Hostnames:
 Verify: `curl -I https://r.yourdomain.com/healthz` → 200, and
 `curl -I https://r.yourdomain.com/p/testuid` → 302.
 
-**MinIO public bucket:**
-```bash
-docker compose exec minio mc alias set local http://localhost:9000 $MINIO_USER $MINIO_PASSWORD
-docker compose exec minio mc mb local/threadsflow
-docker compose exec minio mc anonymous set download local/threadsflow
+**Cloudflare R2 bucket (image hosting):**
+
+1. Cloudflare Dashboard → R2 → Create bucket → name `threadsflow`.
+2. Settings → Public Access → **enable** `r2.dev` subdomain (free, no custom domain needed
+   for testing) or connect a Custom Domain like `cdn.yourdomain.com`.
+3. Note your public URL: `https://pub-<hash>.r2.dev` or your custom domain.
+4. Create an R2 API token with **Object Read & Write** permission on this bucket.
+5. Fill in `infra/.env`:
+
 ```
-Then confirm from *outside your network* that `https://cdn.yourdomain.com/threadsflow/test.jpg`
-loads. If Meta can't fetch it, container creation fails with a useless error.
+IMAGE_BACKEND=s3
+S3_ENDPOINT=https://<accountid>.r2.cloudflarestorage.com
+S3_BUCKET=threadsflow
+S3_KEY=<access_key_id>
+S3_SECRET=<secret_access_key>
+PUBLIC_IMAGE_BASE=https://cdn.yourdomain.com   # your public bucket URL, no trailing slash
+```
+
+6. Test with a curl from outside your network:
+```bash
+# upload a test file through the KB service (not directly — the service owns the path structure)
+curl -u user:pass -F "affiliate_url=https://s.shopee.com.my/xxx" \
+     -F "description=test" -F "images=@test.jpg" https://kb.yourdomain.com/api/products
+# then confirm the returned image URL loads in a browser
+```
+
+If Meta can't fetch the image, container creation returns a useless error 9004.
+**Text-only posts are unaffected — use them to confirm the API works before debugging storage.**
 
 ---
 

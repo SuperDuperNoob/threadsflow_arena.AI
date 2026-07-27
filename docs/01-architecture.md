@@ -44,7 +44,7 @@ just *which post* worked.
         └───────────┬──────────────┴─────────────┬─────────────┘
                     │                            │
              ┌──────▼──────┐              ┌──────▼──────┐
-             │ PostgreSQL  │              │   MinIO or  │
+             │ PostgreSQL  │              │ Cloudflare  │
              │  ~400MB     │              │  R2 bucket  │  ← images must be PUBLIC URLs
              └─────────────┘              └─────────────┘
                     │
@@ -53,14 +53,14 @@ just *which post* worked.
              └────────────────────────────────────┘
 ```
 
-**RAM budget**: n8n 700MB–1GB, Postgres 400MB, UI 150MB, redirector 40MB, MinIO 200MB,
-Caddy 30MB, cloudflared 40MB → ~2.4GB peak, leaves headroom. **Do not run a local LLM.**
+**RAM budget**: n8n 700MB–1GB, Postgres 400MB, UI 150MB, redirector 40MB,
+Caddy 30MB, cloudflared 40MB → ~2.1GB peak, leaves headroom. **Do not run a local LLM.**
 Use 9router to hit hosted models; a post costs fractions of a cent.
 
 > **Image hosting note (only matters if you upload images):** Threads fetches `image_url`
 > server-side, so images must be on a
-> publicly reachable HTTPS URL. Easiest: Cloudflare R2 with a public bucket (free tier, no egress
-> cost), or MinIO exposed through a second Cloudflare Tunnel hostname `cdn.yourdomain`.
+> publicly reachable HTTPS URL. The system uses Cloudflare R2 with a public bucket
+> (free tier, 10 GB storage, zero egress cost — Meta's fetches cost you nothing).
 > Do **not** serve them from the VPS directly — you have no open ports and Meta needs to fetch.
 
 ---
@@ -138,7 +138,7 @@ from, and the LLM would invent details — the exact failure this project exists
 `products.media_mode` is set to `images` or `text` at intake and drives everything downstream.
 
 The KB service does:
-1. Upload any images → R2/MinIO/local → public URLs → `product_images`. **Skipped entirely
+1. Upload any images → Cloudflare R2 (or local) → public URLs → `product_images`. **Skipped entirely
    when none were supplied.**
 2. **Enrich**: fetch the OG tags of the affiliate URL (free, no Apify needed) and fold in your
    description + notes → `products.enrichment` JSONB. Emits `concrete_details` (checkable facts)

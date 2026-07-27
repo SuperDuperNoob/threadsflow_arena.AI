@@ -90,7 +90,7 @@ infra/docker-compose.yml    the whole stack, memory-capped for 4GB/2vCPU
 
 ## Resource budget (4GB / 2 vCPU)
 
-n8n 1.4GB cap · Postgres 512MB · MinIO 320MB · UI 256MB · redirector 128MB · cloudflared 96MB
+n8n 1.4GB cap · Postgres 512MB · kb 640MB · redirector 128MB · cloudflared 96MB · images → Cloudflare R2 (zero local RAM)
 ≈ 2.7GB ceiling. No local LLM — inference goes out through 9router to hosted models
 (~$0.30/month at 5 posts/day × 3 calls).
 

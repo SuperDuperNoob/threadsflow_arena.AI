@@ -43,7 +43,7 @@ validate            link required; description >= 80 chars ONLY when no images
    ↓
 INSERT products     uid, media_mode, description, notes     ← transaction commits HERE
    ↓
-upload images       0-4 files -> R2 / MinIO / local -> product_images   (skipped if none)
+upload images       0-4 files -> Cloudflare R2 -> product_images   (skipped if none)
    ↓  (everything below is post-commit and allowed to fail)
 enrich              OG tags of the affiliate URL + your description + notes
                     -> {concrete_details[], sensory_details[], detail_confidence, price, persona}
