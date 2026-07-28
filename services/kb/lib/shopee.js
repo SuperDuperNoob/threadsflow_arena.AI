@@ -53,9 +53,11 @@ async function readSetting(key) {
 }
 
 export async function getShopeeConfig() {
-  const appId = _explicit.appId ?? process.env.SHOPEE_API_APP_ID ?? (await readSetting('shopee_app_id'));
-  const secret = _explicit.secret ?? process.env.SHOPEE_API_SECRET ?? (await readSetting('shopee_app_secret'));
-  const url = _explicit.url ?? process.env.SHOPEE_OPENAPI_URL ?? SHOPEE_OPENAPI_DEFAULT_URL;
+  // Treat blank env values as absent. docker-compose commonly passes optional variables as
+  // empty strings; using nullish coalescing here used to select "" as the fetch URL.
+  const appId = _explicit.appId || process.env.SHOPEE_API_APP_ID || (await readSetting('shopee_app_id'));
+  const secret = _explicit.secret || process.env.SHOPEE_API_SECRET || (await readSetting('shopee_app_secret'));
+  const url = _explicit.url || process.env.SHOPEE_OPENAPI_URL || SHOPEE_OPENAPI_DEFAULT_URL;
   return { appId: appId || '', secret: secret || '', url };
 }
 
@@ -121,6 +123,13 @@ export async function callShopee(query, { variables, appId, secret, url } = {}) 
   if (Array.isArray(json.errors) && json.errors.length) {
     const e = json.errors[0];
     throw new ShopeeApiError(e.message || 'Shopee API error', e.extensions?.code, e);
+  }
+  if (!res.ok) {
+    throw new ShopeeApiError(
+      json.message || `Shopee API HTTP ${res.status}`,
+      json.code ?? res.status,
+      json,
+    );
   }
   return json.data ?? null;
 }
