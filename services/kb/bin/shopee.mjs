@@ -16,9 +16,8 @@ import pg from 'pg';
 import {
   isConfigured,
   searchProductOffers,
-  generateShortLink,
   callShopee,
-  configureShopee,
+  registerShopeePool,
   ShopeeNotConfigured,
   ShopeeApiError,
 } from '../lib/shopee.js';
@@ -45,11 +44,6 @@ async function cron() {
   // eslint-disable-next-line no-constant-condition
   while (true) {
     try {
-      if (!(await isConfigured())) {
-        console.log('[shopee-sync] keys not set (SHOPEE_API_APP_ID / SHOPEE_API_SECRET) — retry in 1h.');
-        await sleep(60 * 60 * 1000);
-        continue;
-      }
       const url = process.env.DATABASE_URL;
       if (!url) {
         console.error('[shopee-sync] DATABASE_URL is required — retry in 1h.');
@@ -57,6 +51,15 @@ async function cron() {
         continue;
       }
       const pool = new pg.Pool({ connectionString: url });
+      // Register before checking configuration so settings-table credentials really work.
+      // Previously cron checked first, while the Shopee client had no pool to read settings from.
+      registerShopeePool(pool);
+      if (!(await isConfigured())) {
+        await pool.end();
+        console.log('[shopee-sync] keys not set (env or settings table) — retry in 1h.');
+        await sleep(60 * 60 * 1000);
+        continue;
+      }
       try {
         const out = await pullConversions({
           pool,
@@ -80,18 +83,25 @@ async function cron() {
 }
 
 async function check() {
-  if (!(await isConfigured())) {
-    console.error('NOT CONFIGURED — set SHOPEE_API_APP_ID and SHOPEE_API_SECRET (or a settings row).');
-    process.exit(2);
-  }
-  console.log('Configured. Verifying signature with a sample productOfferV2 call...\n');
+  const pool = process.env.DATABASE_URL
+    ? new pg.Pool({ connectionString: process.env.DATABASE_URL })
+    : null;
+  if (pool) registerShopeePool(pool);
   try {
+    if (!(await isConfigured())) {
+      console.error('NOT CONFIGURED — set SHOPEE_API_APP_ID and SHOPEE_API_SECRET (or a settings row).');
+      process.exitCode = 2;
+      return;
+    }
+    console.log('Configured. Verifying signature with a sample productOfferV2 call...\n');
     const nodes = await searchProductOffers({ keyword: 'phone', limit: 1, sortType: 5 });
     console.log('OK. Sample offer:');
     console.log(JSON.stringify(nodes[0] ?? null, null, 2));
   } catch (e) {
     console.error('CALL FAILED:', e instanceof ShopeeApiError ? `code ${e.code}: ${e.message}` : e.message);
-    process.exit(1);
+    process.exitCode = 1;
+  } finally {
+    await pool?.end();
   }
 }
 
@@ -106,6 +116,7 @@ async function sync() {
   const lookbackDays = Number(process.env.SHOPEE_LOOKBACK_DAYS || 7);
 
   const pool = new pg.Pool({ connectionString: url });
+  registerShopeePool(pool);
   try {
     if (!(await isConfigured())) {
       console.error('NOT CONFIGURED — set SHOPEE_API_APP_ID and SHOPEE_API_SECRET first.');
@@ -138,12 +149,18 @@ async function query() {
       process.exit(2);
     }
   }
+  const pool = process.env.DATABASE_URL
+    ? new pg.Pool({ connectionString: process.env.DATABASE_URL })
+    : null;
+  if (pool) registerShopeePool(pool);
   try {
     const data = await callShopee(q);
     console.log(JSON.stringify(data, null, 2));
   } catch (e) {
     console.error('QUERY FAILED:', e instanceof ShopeeApiError ? `code ${e.code}: ${e.message}` : e.message);
-    process.exit(1);
+    process.exitCode = 1;
+  } finally {
+    await pool?.end();
   }
 }
 

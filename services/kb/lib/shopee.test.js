@@ -12,7 +12,7 @@ import {
   ShopeeApiError,
   ShopeeNotConfigured,
 } from './shopee.js';
-import { mapConversionNodes } from './shopee_conversions.js';
+import { mapConversionNodes, upsertConversionRows } from './shopee_conversions.js';
 
 const APP_ID = '123456';
 const SECRET = 'secret_key';
@@ -100,6 +100,23 @@ test('callShopee throws ShopeeApiError on GraphQL errors', async () => {
   }
 });
 
+test('callShopee rejects non-2xx HTTP responses without GraphQL errors', async () => {
+  const realFetch = global.fetch;
+  global.fetch = async () => ({
+    ok: false,
+    status: 503,
+    json: async () => ({ message: 'maintenance' }),
+  });
+  try {
+    await assert.rejects(
+      () => callShopee('{ x }', { appId: APP_ID, secret: SECRET }),
+      (e) => e instanceof ShopeeApiError && e.code === 503 && e.message === 'maintenance',
+    );
+  } finally {
+    global.fetch = realFetch;
+  }
+});
+
 test('callShopee throws ShopeeNotConfigured when no credentials', async () => {
   configureShopee({ appId: '', secret: '' });
   await assert.rejects(() => callShopee('{ x }'), ShopeeNotConfigured);
@@ -137,4 +154,33 @@ test('mapConversionNodes maps utmContent (sub_id) -> post_uid and one row per or
   assert.equal(rows[2].post_uid, null);
   assert.equal(rows[2].status, 'pending');
   assert.equal(rows[2].commission, 70);
+});
+
+test('mapConversionNodes sums item commission per order instead of duplicating conversion total', () => {
+  const rows = mapConversionNodes([{
+    conversionId: 333,
+    totalCommission: '100',
+    orders: [
+      { orderId: 'A', items: [{ itemTotalCommission: '30', actualAmount: '10' }] },
+      { orderId: 'B', items: [{ itemTotalCommission: '70', actualAmount: '20' }] },
+    ],
+  }]);
+  assert.deepEqual(rows.map((r) => r.commission), [30, 70]);
+});
+
+test('upsertConversionRows writes currency-neutral columns (historical *_idr are generated)', async () => {
+  const statements = [];
+  const pool = {
+    async query(sql) {
+      statements.push(sql);
+      if (/RETURNING/.test(sql)) return { rows: [{ inserted: true }] };
+      return { rows: [] };
+    },
+  };
+  const result = await upsertConversionRows(pool, [{ order_id: 'O1', gmv: 50, commission: 5 }]);
+  const insert = statements.find((sql) => /INSERT INTO conversions/.test(sql));
+  assert.match(insert, /gmv_minor/);
+  assert.match(insert, /commission_minor/);
+  assert.doesNotMatch(insert, /gmv_idr|commission_idr/);
+  assert.deepEqual(result, { inserted: 1, updated: 0 });
 });

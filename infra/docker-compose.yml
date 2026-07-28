@@ -109,6 +109,11 @@ services:
       LLM_API_KEY: ${LLM_API_KEY}
       LLM_MODEL_MINE: ${LLM_MODEL_MINE}
       LLM_MODEL_EMBED: ${LLM_MODEL_EMBED}
+      # Optional. Product intake still works without approval; with keys it also gets
+      # authoritative Shopee price/commission data.
+      SHOPEE_API_APP_ID: ${SHOPEE_API_APP_ID:-}
+      SHOPEE_API_SECRET: ${SHOPEE_API_SECRET:-}
+      SHOPEE_OPENAPI_URL: ${SHOPEE_OPENAPI_URL:-https://open-api.affiliate.shopee.com.my/graphql}
       MINE_CONCURRENCY: "2"
       MAX_CHUNKS_PER_DOC: "45"
       TZ: Asia/Kuala_Lumpur
@@ -132,11 +137,11 @@ services:
     command: ["node", "bin/shopee.mjs", "cron"]
     environment:
       DATABASE_URL: postgres://threadsflow:${PG_PASSWORD}@postgres:5432/threadsflow
-      SHOPEE_API_APP_ID: ${SHOPEE_API_APP_ID}
-      SHOPEE_API_SECRET: ${SHOPEE_API_SECRET}
-      SHOPEE_OPENAPI_URL: ${SHOPEE_OPENAPI_URL}
+      SHOPEE_API_APP_ID: ${SHOPEE_API_APP_ID:-}
+      SHOPEE_API_SECRET: ${SHOPEE_API_SECRET:-}
+      SHOPEE_OPENAPI_URL: ${SHOPEE_OPENAPI_URL:-https://open-api.affiliate.shopee.com.my/graphql}
       SHOPEE_LOOKBACK_DAYS: ${SHOPEE_LOOKBACK_DAYS:-7}
-      SHOPEE_VALIDATION_ID: ${SHOPEE_VALIDATION_ID}
+      SHOPEE_VALIDATION_ID: ${SHOPEE_VALIDATION_ID:-}
       NODE_OPTIONS: --max-old-space-size=128
       TZ: Asia/Kuala_Lumpur
     deploy:

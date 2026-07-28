@@ -6,9 +6,9 @@
  * `utmContent` on each conversion node. The redirector already appends `sub_id=<post.uid>`
  * to every click, so `utmContent` == `post.uid` and we map straight onto `conversions.post_uid`.
  *
- * Amounts (gmv / commission) are stored in the account's LOCAL currency (RM for MY). The
- * column names `gmv_idr` / `commission_idr` are a pre-existing artifact — we keep them to
- * avoid a schema migration, but they hold MYR here.
+ * Amounts (gmv / commission) are stored in the account's LOCAL currency (RM for MY), in the
+ * currency-neutral `gmv_minor` / `commission_minor` columns added by migration 002. Historical
+ * `*_idr` names are generated read-only mirrors and must not be INSERTed into.
  */
 
 import { getConversions, getValidatedReport } from './shopee.js';
@@ -50,13 +50,20 @@ export function mapConversionNodes(nodes = []) {
         items.reduce((s, it) => s + (num(it.actualAmount) || 0), 0) ||
         num(order.actualAmount) ||
         null;
+      const itemCommission = items.reduce(
+        (sum, item) => sum + (num(item.itemTotalCommission) || 0),
+        0,
+      );
       rows.push({
         post_uid,
         order_id: String(order.orderId),
         order_ts: toDate(node.purchaseTime),
         item_name: items[0]?.itemName ?? null,
         gmv,
-        commission: num(order.itemTotalCommission) ?? num(node.totalCommission) ?? null,
+        // Commission is an item field in conversionReport. Using the conversion total for
+        // every order duplicated commission whenever one conversion contained several orders.
+        commission: itemCommission || num(order.itemTotalCommission) ||
+          (orders.length === 1 ? num(node.totalCommission) : null),
         status: toStatus(order.orderStatus),
       });
     }
@@ -74,16 +81,17 @@ export async function upsertConversionRows(pool, rows = []) {
   try {
     for (const r of rows) {
       const { rows: [row] } = await pool.query(
-        `INSERT INTO conversions (post_uid, order_id, order_ts, item_name, gmv_idr, commission_idr, status)
+        `INSERT INTO conversions
+           (post_uid, order_id, order_ts, item_name, gmv_minor, commission_minor, status)
          VALUES ($1,$2,$3,$4,$5,$6,$7)
          ON CONFLICT (order_id) DO UPDATE SET
-           post_uid        = COALESCE(EXCLUDED.post_uid, conversions.post_uid),
-           order_ts        = COALESCE(EXCLUDED.order_ts, conversions.order_ts),
-           item_name       = COALESCE(EXCLUDED.item_name, conversions.item_name),
-           gmv_idr         = COALESCE(EXCLUDED.gmv_idr, conversions.gmv_idr),
-           commission_idr  = COALESCE(EXCLUDED.commission_idr, conversions.commission_idr),
-           status          = COALESCE(EXCLUDED.status, conversions.status),
-           ingested_at     = now()
+           post_uid          = COALESCE(EXCLUDED.post_uid, conversions.post_uid),
+           order_ts          = COALESCE(EXCLUDED.order_ts, conversions.order_ts),
+           item_name         = COALESCE(EXCLUDED.item_name, conversions.item_name),
+           gmv_minor         = COALESCE(EXCLUDED.gmv_minor, conversions.gmv_minor),
+           commission_minor  = COALESCE(EXCLUDED.commission_minor, conversions.commission_minor),
+           status            = COALESCE(EXCLUDED.status, conversions.status),
+           ingested_at       = now()
          RETURNING (xmax = 0) AS inserted`,
         [
           r.post_uid ?? null,

@@ -92,6 +92,13 @@ to `SHOPEE_API_APP_ID` / `SHOPEE_API_SECRET` (or the `settings` rows `shopee_app
   them to posts via the affiliate `sub_id` (= `post.uid`, set by the redirector). CLI:
   `node services/kb/bin/shopee.mjs check|sync|query`.
 
+**You do not need to wait for Shopee Open API approval to set up, generate drafts, publish, or
+track clicks.** Without approved API keys, product intake falls back to your description/photos
+and best-effort page metadata, while the conversion-sync service waits safely. Approval is needed
+only for authoritative Shopee price/commission enrichment and automatic order attribution. You
+can add the keys later and restart with `docker compose up -d`; keep the first week in draft mode
+as described in the runbook.
+
 ## Resource budget (4GB / 2 vCPU)
 
 n8n 1.4GB · Postgres 512MB · kb 640MB · redirector 128MB · cloudflared 96MB ·
