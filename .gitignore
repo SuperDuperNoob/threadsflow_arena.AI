@@ -9,3 +9,4 @@ ui/data/
 # working files do not.
 Books/*.txt
 Books/*.json
+persona.parquet
