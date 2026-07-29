@@ -45,6 +45,7 @@ docs/
   03-setup-runbook.md        empty VPS → first automated post (click-by-click)
   04-technique-library.md    how the technique system works
   05-books.md                what was mined from your 26 PDFs
+  06-malaysian-dataset-persona.md optional Malaysian-Dataset cadence corpus
 
 db/                          PostgreSQL: schema, seeds, migrations, queries
 

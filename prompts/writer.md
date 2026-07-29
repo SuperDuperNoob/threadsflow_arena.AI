@@ -121,6 +121,19 @@ something to say and didn't reach for their camera.
 ### Openings already used recently (pick a completely different entry point)
 {{recent_openers}}
 
+{{#if persona_fragment}}
+{{persona_fragment}}
+{{else}}
+{{#if persona_snippets}}
+### Persona calibration — Malaysian cadence references
+These are NOT product facts and NOT templates. Borrow only rhythm, sentence pressure, and Malay
+register. Do not copy wording, claims, religious advice, or topic.
+{{#each persona_snippets}}
+- ({{this.register}} · {{this.domain}}) {{this.text}}
+{{/each}}
+{{/if}}
+{{/if}}
+
 {{technique_fragment}}
 
 {{#if plan.mode == "breed"}}

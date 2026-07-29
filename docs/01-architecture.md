@@ -263,16 +263,17 @@ ENG      = (likes + 3*replies + 5*reposts + 4*quotes) / max(views, 1)
 CVR      = orders / max(clicks, 1)
 EPM      = commission_myr / max(views,1) * 1000      # earnings per 1000 views
 
-score = 0.55 * z(EPM) + 0.25 * z(CTR) + 0.20 * z(ENG)
+Global_CTR = sum(clicks) / max(sum(views), 1)
+Global_EPM = sum(commission_myr) / max(sum(views), 1) * 1000
+C          = 50 clicks  # Bayesian prior weight
+
+Bayes_CTR = ((clicks * CTR) + (C * Global_CTR)) / (clicks + C)
+Bayes_EPM = ((clicks * EPM) + (C * Global_EPM)) / (clicks + C)
+score     = smooth lift of Bayes_EPM/Bayes_CTR/Bayes_ENG vs global baseline
 ```
 
-z() = z-score within the same evaluation cycle (so you compare against *that* cycle's baseline,
-not against your best week ever).
-
-> **Z-score** means "how far above or below average was this, measured in
-> standard deviations." This prevents a post in a high-traffic week from
-> looking permanently better than a post in a slow week. You always compare
-> against peers from the same 3-day window.
+The old cycle z-score logic was too jumpy at ~15 posts/cycle. Bayesian shrinkage prevents the
+bandit from declaring a winner because one post got 1–2 lucky clicks.
 
 **Cold start problem:** for the first ~2 weeks you'll have almost no conversions. Use a
 **shrinkage weight**: `w_money = min(1, total_orders_all_time / 20)`, and blend:
