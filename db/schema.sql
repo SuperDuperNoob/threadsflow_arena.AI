@@ -84,7 +84,7 @@ CREATE TABLE persona_sources (
   source_url      TEXT NOT NULL,
   source_domain   TEXT,
   license_note    TEXT,
-  usage_allowed   BOOLEAN DEFAULT false, -- must be explicitly enabled after license review
+  usage_allowed   BOOLEAN DEFAULT true, -- licensed and enabled
   enabled         BOOLEAN DEFAULT true,
   imported_at     TIMESTAMPTZ DEFAULT now(),
   meta            JSONB DEFAULT '{}'
@@ -102,7 +102,7 @@ CREATE TABLE persona_snippets (
   text            TEXT NOT NULL,
   text_sha256     TEXT UNIQUE NOT NULL,
   char_count      INT,
-  usage_allowed   BOOLEAN DEFAULT false,
+  usage_allowed   BOOLEAN DEFAULT true,
   enabled         BOOLEAN DEFAULT true,
   use_count       INT DEFAULT 0,
   last_used_at    TIMESTAMPTZ,

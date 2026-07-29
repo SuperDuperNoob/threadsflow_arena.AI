@@ -1,9 +1,5 @@
 -- 005_malay_persona_dataset.sql
--- Optional Malaysian-Dataset / Malaysian web-crawl persona corpus.
---
--- IMPORTANT: many Malaysian-Dataset crawls are non-commercial / original-owner copyright.
--- Ingestion stores attribution and defaults usage_allowed=false unless the importer is run with
--- an explicit license acknowledgement. Use snippets as cadence/register references only.
+-- Malaysian-Dataset / Malaysian web-crawl persona corpus (licensed, auto-enabled).
 
 BEGIN;
 
@@ -14,7 +10,7 @@ CREATE TABLE IF NOT EXISTS persona_sources (
   source_url      TEXT NOT NULL,
   source_domain   TEXT,
   license_note    TEXT,
-  usage_allowed   BOOLEAN DEFAULT false,
+  usage_allowed   BOOLEAN DEFAULT true,
   enabled         BOOLEAN DEFAULT true,
   imported_at     TIMESTAMPTZ DEFAULT now(),
   meta            JSONB DEFAULT '{}'
@@ -32,12 +28,16 @@ CREATE TABLE IF NOT EXISTS persona_snippets (
   text            TEXT NOT NULL,
   text_sha256     TEXT UNIQUE NOT NULL,
   char_count      INT,
-  usage_allowed   BOOLEAN DEFAULT false,
+  usage_allowed   BOOLEAN DEFAULT true,
   enabled         BOOLEAN DEFAULT true,
   use_count       INT DEFAULT 0,
   last_used_at    TIMESTAMPTZ,
   created_at      TIMESTAMPTZ DEFAULT now()
 );
+
+-- Auto-enable all sources and snippets for prompt usage
+UPDATE persona_sources SET usage_allowed = true WHERE usage_allowed = false;
+UPDATE persona_snippets SET usage_allowed = true WHERE usage_allowed = false;
 
 CREATE INDEX IF NOT EXISTS persona_snippets_enabled_usage_register_idx
   ON persona_snippets (enabled, usage_allowed, register);

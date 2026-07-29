@@ -306,5 +306,5 @@ Built in, you do not need to do anything:
 - `docs/02-n8n-workflows.md` — the automations, box by box (for when you need to debug)
 - `docs/04-technique-library.md` — uploading copywriting PDFs
 - `docs/05-books.md` — what was extracted from your 26 books, and what was rejected
-- `docs/06-malaysian-dataset-persona.md` — optional Malaysian-Dataset cadence snippets
+- `docs/07-l4-reply-loop.md` — on-post user comment engagement loop
 - `db/queries.sql` — ready-made reports you can run
