@@ -3,7 +3,7 @@
 > **This is the technical deep-dive.** If you are setting up the system for the
 > first time, read `docs/00-START-HERE.md` and `docs/03-setup-runbook.md` instead.
 
-Goal: you drop **1 affiliate URL, plus images and/or a description** into a small web form.
+Goal: you drop **1 affiliate URL, optionally the full product URL for enrichment, plus images and/or a description** into a small web form.
 The system then runs forever by itself: writes non-templated copy, posts to Threads ~5×/day, drops the affiliate link in the
 first comment, measures what worked, and every 3 days re-invests posting slots into the winning
 styles — per product and globally.
@@ -137,7 +137,8 @@ a combination in practice. Plus each generation carries an **anti-repetition con
 ```
 POST /api/products   (multipart, served by the KB service)
 {
-  affiliate_url: "https://s.shopee.com.my/xxxx",  // the only universally required field
+  affiliate_url: "https://s.shopee.com.my/xxxx",  // required buyer/money link
+  product_url:   "https://shopee.com.my/product/...", // optional, enrichment only
   images:        [file, ...],                     // 0-4. optional
   description:   "...",                           // required only when images are absent (>=80 chars)
   name:          "optional, LLM fills if blank",
@@ -146,24 +147,29 @@ POST /api/products   (multipart, served by the KB service)
 }
 ```
 
-**Three valid shapes.** `link + images`, `link + images + description`, `link + description`.
-Only `link` alone is rejected: with neither a photo nor words there is nothing concrete to write
-from, and the LLM would invent details — the exact failure this project exists to prevent.
+**Three valid shapes.** `affiliate link + images`, `affiliate link + images + description`,
+`affiliate link + description`. The optional `product_url` may be added to any of them. Only
+`affiliate link` alone is rejected: with neither a photo nor words there is nothing concrete to
+write from, and the LLM would invent details — the exact failure this project exists to prevent.
 
-`products.media_mode` is set to `images` or `text` at intake and drives everything downstream.
+`products.affiliate_url` is always the buyer redirect target. `products.product_url` is optional
+and used only for enrichment/Open API item lookup. `products.media_mode` is set to `images` or
+`text` at intake and drives everything downstream.
 
 The KB service does:
 1. Upload any images → Cloudflare R2 (or local) → public URLs → `product_images`. **Skipped entirely
    when none were supplied.**
-2. **Enrich**: fetch the OG tags of the affiliate URL (free, no third-party scraper needed) and fold in your
-   description + notes → `products.enrichment` JSONB. Emits `concrete_details` (checkable facts)
-   and `detail_confidence`. *This is the single biggest quality lever.*
-   Shopee blocks datacenter IPs often, so this is best-effort — it falls back to splitting your
-   own description into facts, and the product stays fully postable either way.
+2. **Enrich**: if `product_url` exists, use that plain Shopee product page first; otherwise use
+   the affiliate URL. The optional product URL helps the Shopee Open API parse the visible item id
+   while preserving `affiliate_url` as the commission-bearing buyer link. The service fetches OG
+   tags when available and folds in your description + notes → `products.enrichment` JSONB. Emits
+   `concrete_details` (checkable facts) and `detail_confidence`. *This is the single biggest
+   quality lever.* Shopee blocks datacenter IPs often, so this is best-effort — it falls back to
+   splitting your own description into facts, and the product stays fully postable either way.
    **When Shopee Open API keys are configured** (`SHOPEE_API_APP_ID`/`SHOPEE_API_SECRET`), the
-   `productOfferV2` query runs first and overlays *authoritative* `price_min`, `commission_rate`,
-   `sales` and `rating` onto the enrichment (see `lib/shopee.js` → `enrichProductFromShopee`). The
-   OG scrape remains the fallback, so absence of keys never degrades the product.
+   `productOfferV2` query overlays *authoritative* `price_min`, `commission_rate`, `sales` and
+   `rating` onto the enrichment (see `lib/shopee.js` → `enrichProductFromShopee`). The OG scrape
+   remains the fallback, so absence of keys never degrades the product.
 3. **Vision pass (images only)**: each image → a cheap vision model → `product_images.vision_desc`
    ("close-up of the matte black handle, wooden table, warm light"), so copy **matches the image
    it's paired with**.

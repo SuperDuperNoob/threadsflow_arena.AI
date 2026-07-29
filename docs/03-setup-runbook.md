@@ -353,7 +353,8 @@ docker compose exec -T postgres psql -v ON_ERROR_STOP=1 -U threadsflow -d thread
 #     001 adds compatible_media column (so techniques can declare whether they
 #         work with TEXT, IMAGE, or CAROUSEL posts)
 #     002 fixes locale references
-for m in 001_optional_media.sql 002_localisation.sql; do
+#     003 adds optional product_url for enrichment while keeping affiliate_url as the money link
+for m in 001_optional_media.sql 002_localisation.sql 003_product_url.sql; do
   docker compose exec -T postgres psql -v ON_ERROR_STOP=1 -U threadsflow -d threadsflow < ../db/migrations/$m
 done
 
@@ -652,6 +653,7 @@ curl -c /tmp/kb_cookies.txt -X POST https://kb.yourdomain.com/api/login \
 # Upload a product with an image (any JPEG or PNG will do)
 curl -b /tmp/kb_cookies.txt \
   -F "affiliate_url=https://s.shopee.com.my/xxxx" \
+  -F "product_url=https://shopee.com.my/product/43768/18938427295" \
   -F "description=Test product for R2 setup" \
   -F "images=@test.jpg" \
   https://kb.yourdomain.com/api/products
@@ -859,8 +861,9 @@ Paste this. It creates a product and a queued post:
 
 ```sql
 -- Create a test product. media_mode='text' means no images needed.
-INSERT INTO products (name, affiliate_url, description, media_mode)
-VALUES ('Test', 'https://s.shopee.com.my/xxxx',
+-- product_url is optional and used only for enrichment; buyer clicks still use affiliate_url.
+INSERT INTO products (name, affiliate_url, product_url, description, media_mode)
+VALUES ('Test', 'https://s.shopee.com.my/xxxx', 'https://shopee.com.my/product/43768/18938427295',
         'Produk ujian dengan pemegang 11cm dan tahan panas 230 darjah celsius.', 'text');
 
 -- Create a queued post. scheduled_at = now() means "publish immediately."
@@ -921,12 +924,14 @@ The KB service has two web pages, both at `https://kb.yourdomain.com`:
 
 Open the product page. You will go through two login steps: first Cloudflare
 Access (if you set the email policy on kb.yourdomain.com), then the KB's own
-login form using your KB_PASSWORD. After that, paste an affiliate link, then
-either drop 1–4 images OR write a description of at least 80 characters (or
-both). The form tells you which mode you are in as you type.
+login form using your KB_PASSWORD. After that, paste your Shopee affiliate link
+(the money link). If you also have the normal full product page, paste it into
+`Full Shopee product URL` — it is optional and used only to help enrichment find
+the item ID. Then either drop 1–4 images OR write a description of at least 80
+characters (or both). The form tells you which mode you are in as you type.
 
-> **Link alone is rejected.** With no photo and no words, the AI has nothing
-> real to write from. You will see a message explaining what to add.
+> **Affiliate link alone is rejected.** With no photo and no words, the AI has
+> nothing real to write from. You will see a message explaining what to add.
 
 The Knowledge Base at the same domain is optional. It already ships with **60
 techniques** (43 built-in Malay ones + 17 from your Books/ folder), so

@@ -42,8 +42,9 @@
   <a href="/">← Knowledge Base</a>
 </header>
 <main>
-  <p class="hint">Only the product link is required. Add images, a description, or both —
-  the system adapts. Everything after this is automatic: enrichment, copy generation,
+  <p class="hint">Only the Shopee affiliate link is required. Add the full product URL when you
+  have it — it improves enrichment but is never used as the buyer link. Add images, a description,
+  or both; the system adapts. Everything after this is automatic: enrichment, copy generation,
   scheduling, posting, link tracking, and the 3-day learning cycle.</p>
 
   <div class="box" id="mode" style="margin-top:0">
@@ -51,10 +52,16 @@
     <div class="hint" id="modeHint">Link + images, link + description, or all three.</div>
   </div>
 
-  <label>Shopee affiliate URL *</label>
+  <label>Shopee affiliate URL * <span class="hint" style="display:inline">(buyer/money link)</span></label>
   <input type="url" id="url" placeholder="https://s.shopee.com.my/...">
   <div class="hint">Must be your affiliate link, not the plain product page — the redirector
     appends <code>sub_id</code> so orders can be traced back to the exact post.</div>
+
+  <label>Full Shopee product URL <span class="hint" style="display:inline">(optional — enrichment only)</span></label>
+  <input type="url" id="productUrl" placeholder="https://shopee.com.my/product/43768/18938427295">
+  <div class="hint">Use the normal product page here if you have it. This helps the Shopee API
+    find the item ID, price, sales, rating and commission. Buyers still receive the affiliate
+    link above, never this plain URL.</div>
 
   <div class="row">
     <div>
@@ -118,16 +125,24 @@ function render(){
   validate();
 }
 const MIN_DESC=80;
+function httpUrlOk(s){
+  if(!s) return false;
+  try{const u=new URL(s);return u.protocol==='http:'||u.protocol==='https:'}catch{return false}
+}
 function validate(){
-  const hasUrl=/^https?:\/\/.+/.test($('#url').value.trim());
+  const hasUrl=httpUrlOk($('#url').value.trim());
+  const productUrl=$('#productUrl').value.trim();
+  const productUrlOk=!productUrl || httpUrlOk(productUrl);
   const desc=$('#description').value.trim();
   const n=files.length;
 
-  // Mirror the server rule exactly: link is always required; a description is required only
-  // when there are no images. Tell the user which mode they are in as they type.
+  // Mirror the server rule exactly: affiliate link is always required; a description is
+  // required only when there are no images. Tell the user which mode they are in as they type.
   let title,hint,ok=false;
   if(!hasUrl){
-    title='Choose your input'; hint='Paste the product link to begin.';
+    title='Choose your input'; hint='Paste the Shopee affiliate link to begin.';
+  } else if(!productUrlOk){
+    title='Check product URL'; hint='The optional full product URL must start with http:// or https://, or be blank.';
   } else if(n===0 && desc.length<MIN_DESC){
     title='Text-only post — description needed';
     hint=`No images, so a description of at least ${MIN_DESC} characters is required `+
@@ -152,12 +167,14 @@ function validate(){
   $('#go').disabled=!ok;
 }
 $('#url').oninput=validate;
+$('#productUrl').oninput=validate;
 $('#description').oninput=validate;
 
 $('#go').onclick=async()=>{
   $('#go').disabled=true; $('#go').textContent='Uploading…';
   const fd=new FormData();
   fd.append('affiliate_url',$('#url').value.trim());
+  fd.append('product_url',$('#productUrl').value.trim());
   fd.append('name',$('#name').value.trim());
   fd.append('price_myr',$('#price').value.replace(/[^\d.]/g,''));
   fd.append('notes',$('#notes').value.trim());
@@ -171,10 +188,11 @@ $('#go').onclick=async()=>{
       ${j.media_mode==='text'
         ? 'No images — will post as text-only.'
         : `${j.images} image${j.images>1?'s':''} stored publicly. Text-only variants will also be tested.`}<br>
+      ${j.product_url ? 'Full product URL saved for enrichment. Buyer links still use your affiliate URL.<br>' : ''}
       First post is scheduled for the next generation run (03:00 Malaysia time).<br>
       Tracking slug base: <code>${j.product_uid}</code></div>`;
     files=[];render();
-    $('#url').value='';$('#name').value='';$('#price').value='';$('#notes').value='';
+    $('#url').value='';$('#productUrl').value='';$('#name').value='';$('#price').value='';$('#notes').value='';
     $('#description').value='';
   }catch(e){
     $('#out').innerHTML=`<div class="box bad"><b>Failed.</b> ${e.message}</div>`;

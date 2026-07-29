@@ -20,10 +20,11 @@ CREATE TABLE products (
   id             BIGSERIAL PRIMARY KEY,
   uid            TEXT UNIQUE NOT NULL DEFAULT tf_short_uid(),
   name           TEXT,
-  affiliate_url  TEXT NOT NULL,
+  affiliate_url  TEXT NOT NULL,            -- buyer/money link; redirector uses this for commission tracking
+  product_url    TEXT,                     -- optional plain Shopee URL for enrichment only, never buyer redirects
   description    TEXT,                     -- product description; the ONLY raw material when
                                            -- no images are supplied, so intake demands more of it
-  notes          TEXT,                     -- your free-text hints ("buat ibu-ibu, 89rb")
+  notes          TEXT,                     -- your free-text hints ("buat ibu-ibu, RM39")
   media_mode     TEXT NOT NULL DEFAULT 'text'
                  CHECK (media_mode IN ('images','text')),
   enrichment     JSONB DEFAULT '{}',       -- {price, rating, sold, reviews:[...], category}

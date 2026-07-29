@@ -95,36 +95,47 @@ export const putImage = (buf, key, ct) =>
 // ─────────────────────────────────────────── enrichment
 
 /**
- * Enrichment is best-effort. When Shopee Open API keys are configured, price + commission come
- * from productOfferV2 (authoritative, no scraper, no cost). Otherwise — or if the API call
- * fails — it falls back to the affiliate page's OpenGraph tags. Either way it must never block
- * the user.
+ * Enrichment is best-effort. `affiliateUrl` is always the money link used for buyer redirects.
+ * `productUrl`, when supplied, is the plain Shopee product URL used only to identify/enrich the
+ * product (short affiliate links often hide the item id). When Shopee Open API keys are
+ * configured, price + commission come from productOfferV2 (authoritative, no scraper, no cost).
+ * Otherwise — or if the API call fails — it falls back to OpenGraph tags. Either way it must
+ * never block the user.
  */
-export async function enrich({ affiliateUrl, name, priceIdr, notes, description = '', mediaMode = 'images' }) {
-  let og = {};
-  try {
-    const res = await fetch(affiliateUrl, {
-      redirect: 'follow',
-      headers: { 'user-agent': 'Mozilla/5.0 (compatible; ThreadsFlow/1.0)' },
-      signal: AbortSignal.timeout(12_000),
-    });
-    const html = (await res.text()).slice(0, 200_000);
-    const pick = p => html.match(new RegExp(`<meta[^>]+property=["']og:${p}["'][^>]+content=["']([^"']+)`, 'i'))?.[1];
-    og = { title: pick('title'), description: pick('description'), image: pick('image') };
-  } catch { /* Shopee blocks datacenter IPs routinely — expected, not an error */ }
+export async function enrich({ affiliateUrl, productUrl = '', name, priceIdr, notes, description = '', mediaMode = 'images' }) {
+  const lookupUrl = productUrl || affiliateUrl;
 
-  // Best-effort authoritative enrichment from the Shopee Affiliate Open API
-  // (price + commission). Overlays on top of the OG scrape; never blocks the user.
+  // Best-effort authoritative enrichment from the Shopee Affiliate Open API. Use the optional
+  // full product URL first because it exposes `/product/<shop>/<item>` or `/i.<shop>.<item>`;
+  // the affiliate short URL should remain untouched for buyer redirects and commission tracking.
   let shopee = null;
   try {
-    shopee = await enrichProductFromShopee(affiliateUrl, { name });
+    shopee = await enrichProductFromShopee(lookupUrl, { name });
   } catch { /* enrichment is optional — fall through to scraping/fallback */ }
 
+  let og = {};
+  const ogUrls = [...new Set([productUrl, affiliateUrl].filter(Boolean))];
+  for (const url of ogUrls) {
+    try {
+      const res = await fetch(url, {
+        redirect: 'follow',
+        headers: { 'user-agent': 'Mozilla/5.0 (compatible; ThreadsFlow/1.0)' },
+        signal: AbortSignal.timeout(12_000),
+      });
+      const html = (await res.text()).slice(0, 200_000);
+      const pick = p => html.match(new RegExp(`<meta[^>]+property=["']og:${p}["'][^>]+content=["']([^"']+)`, 'i'))?.[1];
+      og = { title: pick('title'), description: pick('description'), image: pick('image'), source_url: url };
+      if (og.title || og.description || og.image) break;
+    } catch { /* Shopee blocks datacenter IPs routinely — expected, not an error */ }
+  }
+
   const base = {
-    name: name || og.title || shopee?.name || null,
+    name: name || shopee?.name || og.title || null,
     price_myr: priceIdr ? Number(priceIdr) : (shopee?.price_min ?? null),
     og_description: og.description ?? null,
     media_mode: mediaMode,
+    product_url: productUrl || null,
+    enrichment_url: lookupUrl,
     // Shopee Open API enrichment fields (null unless the API is configured and matched)
     shopee_source: shopee?.ok ? 'shopee_openapi' : (og.title || og.description ? 'og' : 'none'),
     shopee_item_id: shopee?.item_id ?? null,
@@ -163,7 +174,8 @@ ${textOnly
     'support it, return an empty array and set detail_confidence="low".'
   : '- Photos exist and are described separately. Leave sensory_details empty.'}
 - Write in Malaysian Malay (tak, nak, dah, je, lah). Currency RM. Never Indonesian.`,
-      JSON.stringify({ url: affiliateUrl, og, user_name: name, user_price: priceIdr,
+      JSON.stringify({ affiliate_url: affiliateUrl, product_url: productUrl || null,
+                       enrichment_url: lookupUrl, og, user_name: name, user_price: priceIdr,
                        user_notes: notes, user_description: description,
                        shopee: shopee?.ok ? {
                          price_min: shopee.price_min, price_max: shopee.price_max,

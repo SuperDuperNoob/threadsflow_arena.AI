@@ -2,7 +2,8 @@
 
 **Self-improving Shopee-affiliate posting system for Threads. Malaysian Malay, RM, KL time.**
 
-**What you do:** paste a Shopee affiliate link, plus photos *or* a written description.
+**What you do:** paste a Shopee affiliate link, optionally the full product URL for enrichment,
+plus photos *or* a written description.
 **What it does:** writes posts in everyday Malay (a different style every time), posts 5×/day,
 puts the tracked link in the first comment, counts clicks and sales, and every 3 days shifts
 more posting slots to whatever actually made money. Runs until you stop it.
@@ -87,7 +88,9 @@ to `SHOPEE_API_APP_ID` / `SHOPEE_API_SECRET` (or the `settings` rows `shopee_app
 `shopee_app_secret`):
 
 - **Product enrichment** (`lib/shopee.js` → `productOfferV2`) overlays authoritative price +
-  commission on the OG-tag scrape. Absent keys → graceful fallback, product still works.
+  commission on the OG-tag scrape. If you provide the optional full `product_url`, enrichment
+  uses it to find the item ID while buyer redirects still use `affiliate_url`. Absent keys →
+  graceful fallback, product still works.
 - **Conversion sync** (`lib/shopee_conversions.js` → `conversionReport`) pulls orders and joins
   them to posts via the affiliate `sub_id` (= `post.uid`, set by the redirector). CLI:
   `node services/kb/bin/shopee.mjs check|sync|query`.

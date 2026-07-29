@@ -26,7 +26,7 @@ These words appear everywhere in this project. If you already know them, skip to
 
 ## 1. What this thing actually does
 
-You give it: **a Shopee affiliate link**, plus **photos or a written description** (either is fine).
+You give it: **a Shopee affiliate link**, optionally the normal full product URL for enrichment, plus **photos or a written description** (either is fine).
 
 It then does this forever, by itself:
 

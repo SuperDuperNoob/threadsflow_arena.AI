@@ -263,18 +263,36 @@ const imgUpload = multer({
  *   B) link + images + description
  *   C) link + description            ← no images at all
  *
- * The only universally required field is the affiliate URL. Beyond that the rule is simple:
- * the system needs SOMETHING concrete to write from. Images supply it visually (via the vision
- * pass); a description supplies it in words. With neither, every post would be invented, and
- * invented copy is exactly the generic slop this whole project exists to avoid.
+ * The only universally required field is the affiliate URL — the buyer/money link. The optional
+ * product_url is the plain Shopee product page used only for enrichment, because affiliate short
+ * links often hide the item id. Beyond that the rule is simple: the system needs SOMETHING
+ * concrete to write from. Images supply it visually (via the vision pass); a description supplies
+ * it in words. With neither, every post would be invented, and invented copy is exactly the
+ * generic slop this whole project exists to avoid.
  */
+function cleanHttpUrl(value) {
+  const s = String(value ?? '').trim();
+  if (!s) return '';
+  try {
+    const u = new URL(s);
+    return ['http:', 'https:'].includes(u.protocol) ? u.toString() : null;
+  } catch {
+    return null;
+  }
+}
+
 app.post('/api/products', requireAuth, imgUpload.array('images', 4), async (req, res) => {
-  const { affiliate_url, name, price_myr, notes, description } = req.body ?? {};
+  const { affiliate_url, product_url, name, price_myr, notes, description } = req.body ?? {};
   const files = req.files ?? [];
   const desc = (description ?? '').trim();
+  const affiliateUrl = cleanHttpUrl(affiliate_url);
+  const productUrl = cleanHttpUrl(product_url);
 
-  if (!affiliate_url || !/^https?:\/\//.test(affiliate_url)) {
-    return res.status(400).json({ error: 'A product link is required.' });
+  if (!affiliateUrl) {
+    return res.status(400).json({ error: 'A valid Shopee affiliate link is required.' });
+  }
+  if (productUrl === null) {
+    return res.status(400).json({ error: 'Product URL must be a valid http(s) URL, or blank.' });
   }
 
   // Exactly one image is fine (posts as a single IMAGE). Two or more may become a carousel.
@@ -302,9 +320,9 @@ app.post('/api/products', requireAuth, imgUpload.array('images', 4), async (req,
     await client.query('BEGIN');
     const uid = shortId(6);
     const { rows: [p] } = await client.query(
-      `INSERT INTO products (uid, name, affiliate_url, description, notes, media_mode)
-       VALUES ($1,$2,$3,$4,$5,$6) RETURNING id, uid`,
-      [uid, name || null, affiliate_url, desc || null, notes || null, mediaMode]);
+      `INSERT INTO products (uid, name, affiliate_url, product_url, description, notes, media_mode)
+       VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING id, uid`,
+      [uid, name || null, affiliateUrl, productUrl || null, desc || null, notes || null, mediaMode]);
 
     for (let i = 0; i < files.length; i++) {
       const f = files[i];
@@ -321,7 +339,7 @@ app.post('/api/products', requireAuth, imgUpload.array('images', 4), async (req,
     // already exists and is postable. Never let an external call block the user.
     (async () => {
       try {
-        const e = await enrich({ affiliateUrl: affiliate_url, name, priceIdr: price_myr,
+        const e = await enrich({ affiliateUrl, productUrl, name, priceIdr: price_myr,
                                  notes, description: desc, mediaMode });
         await pool.query(`UPDATE products SET name=COALESCE($2,name), enrichment=$3 WHERE id=$1`,
           [p.id, e.name ?? null, JSON.stringify(e)]);
@@ -339,7 +357,8 @@ app.post('/api/products', requireAuth, imgUpload.array('images', 4), async (req,
     })();
 
     res.json({ ok: true, product_uid: p.uid, product_id: p.id,
-               images: files.length, media_mode: mediaMode });
+               images: files.length, media_mode: mediaMode,
+               product_url: productUrl || null });
   } catch (e) {
     await client.query('ROLLBACK').catch(() => {});
     res.status(500).json({ error: e.message });
@@ -350,7 +369,7 @@ app.post('/api/products', requireAuth, imgUpload.array('images', 4), async (req,
 
 app.get('/api/products', requireAuth, async (_, res) => {
   const { rows } = await pool.query(`
-    SELECT p.id, p.uid, p.name, p.status, p.affiliate_url, p.created_at,
+    SELECT p.id, p.uid, p.name, p.status, p.affiliate_url, p.product_url, p.created_at,
            p.enrichment->>'price_myr' AS price_myr,
            jsonb_array_length(COALESCE(p.enrichment->'concrete_details','[]'::jsonb)) AS facts,
            p.media_mode,
