@@ -73,6 +73,53 @@ CREATE TABLE cta_variants (
   use_count INT DEFAULT 0
 );
 
+-- ─────────────────────────────────────────── persona corpus
+-- Optional Malaysian-Dataset / local-crawl style snippets. These teach cadence and register,
+-- not facts. Keep full datasets out of Git; ingest only small, attributed excerpts into DB.
+
+CREATE TABLE persona_sources (
+  id              BIGSERIAL PRIMARY KEY,
+  slug            TEXT UNIQUE NOT NULL,
+  dataset_name    TEXT NOT NULL DEFAULT 'malaysian-dataset',
+  source_url      TEXT NOT NULL,
+  source_domain   TEXT,
+  license_note    TEXT,
+  usage_allowed   BOOLEAN DEFAULT false, -- must be explicitly enabled after license review
+  enabled         BOOLEAN DEFAULT true,
+  imported_at     TIMESTAMPTZ DEFAULT now(),
+  meta            JSONB DEFAULT '{}'
+);
+
+CREATE TABLE persona_snippets (
+  id              BIGSERIAL PRIMARY KEY,
+  source_id       BIGINT REFERENCES persona_sources(id) ON DELETE CASCADE,
+  source_url      TEXT,
+  source_domain   TEXT,
+  title           TEXT,
+  lang            TEXT DEFAULT 'ms-MY',
+  register        TEXT DEFAULT 'neutral', -- reflective | conversational | informative | formal | neutral
+  tags            TEXT[] DEFAULT '{}',
+  text            TEXT NOT NULL,
+  text_sha256     TEXT UNIQUE NOT NULL,
+  char_count      INT,
+  usage_allowed   BOOLEAN DEFAULT false,
+  enabled         BOOLEAN DEFAULT true,
+  use_count       INT DEFAULT 0,
+  last_used_at    TIMESTAMPTZ,
+  created_at      TIMESTAMPTZ DEFAULT now()
+);
+CREATE INDEX ON persona_snippets (enabled, usage_allowed, register);
+CREATE INDEX ON persona_snippets USING gin (tags);
+CREATE INDEX ON persona_snippets (source_domain);
+
+CREATE VIEW v_persona_snippets_for_prompt AS
+SELECT id, source_domain AS domain, title, register, tags, text
+FROM persona_snippets
+WHERE enabled AND usage_allowed
+  AND char_count BETWEEN 120 AND 700
+ORDER BY random()
+LIMIT 80;
+
 -- ─────────────────────────────────────────── posts
 
 CREATE TABLE posts (
@@ -145,10 +192,15 @@ CREATE TABLE clicks (
   referer    TEXT,
   ip_hash    TEXT,
   country    TEXT,
-  is_bot     BOOLEAN DEFAULT false
+  is_bot     BOOLEAN DEFAULT false,
+  bot_reason TEXT,
+  fingerprint JSONB,
+  fingerprint_score INT,
+  pinged_at  TIMESTAMPTZ
 );
 CREATE INDEX ON clicks (post_uid, ts);
 CREATE INDEX ON clicks (ts);
+CREATE INDEX ON clicks (post_uid, ip_hash, ts DESC);
 
 CREATE TABLE conversions (           -- from Shopee affiliate report, joined on sub_id = post.uid
   id             BIGSERIAL PRIMARY KEY,
@@ -178,6 +230,42 @@ CREATE TABLE arm_stats (             -- marginal stats: one row per lever VALUE
   updated_at   TIMESTAMPTZ DEFAULT now(),
   UNIQUE (scope, lever_kind, lever_code)
 );
+
+CREATE TABLE context_weights (       -- contextual bandit stats: time bucket × lever value
+  id              BIGSERIAL PRIMARY KEY,
+  context_bucket  TEXT NOT NULL CHECK (context_bucket IN
+                  ('Work_Focus','Lunch_Scroll','Evening_Relax','Late_Night_Impulse')),
+  hour_start      SMALLINT NOT NULL CHECK (hour_start BETWEEN 0 AND 23),
+  hour_end        SMALLINT NOT NULL CHECK (hour_end BETWEEN 1 AND 24),
+  lever_kind      TEXT NOT NULL DEFAULT 'tone' CHECK (lever_kind IN
+                  ('format','angle','tone','sell_intensity','length_band','media_type')),
+  lever_code      TEXT NOT NULL,
+  n               NUMERIC DEFAULT 0,
+  reward_sum      NUMERIC DEFAULT 0,
+  alpha           NUMERIC DEFAULT 1,
+  beta            NUMERIC DEFAULT 1,
+  cooldown_until  TIMESTAMPTZ,
+  updated_at      TIMESTAMPTZ DEFAULT now(),
+  UNIQUE (context_bucket, lever_kind, lever_code)
+);
+CREATE INDEX ON context_weights (context_bucket, lever_kind);
+
+-- Cold-start priors for the 2026 contextual layer. These are intentionally weak; live data
+-- overwrites them through decay + Thompson updates.
+INSERT INTO context_weights (context_bucket, hour_start, hour_end, lever_kind, lever_code, alpha, beta) VALUES
+('Work_Focus', 6, 12, 'tone', 'minimal', 2.6, 1.4),
+('Work_Focus', 6, 12, 'tone', 'deadpan', 2.4, 1.5),
+('Work_Focus', 6, 12, 'tone', 'gaul', 1.2, 1.8),
+('Work_Focus', 6, 12, 'tone', 'chaotic', 1.0, 2.0),
+('Lunch_Scroll', 12, 15, 'tone', 'gaul', 2.0, 1.5),
+('Lunch_Scroll', 12, 15, 'tone', 'minimal', 1.8, 1.6),
+('Evening_Relax', 15, 22, 'tone', 'chaotic', 2.7, 1.3),
+('Evening_Relax', 15, 22, 'tone', 'gaul', 2.5, 1.4),
+('Evening_Relax', 15, 22, 'tone', 'enthusiast', 1.8, 1.6),
+('Late_Night_Impulse', 22, 6, 'tone', 'chaotic', 2.2, 1.5),
+('Late_Night_Impulse', 22, 6, 'tone', 'gaul', 2.0, 1.5),
+('Late_Night_Impulse', 22, 6, 'tone', 'deadpan', 1.7, 1.7)
+ON CONFLICT DO NOTHING;
 
 CREATE TABLE combo_stats (           -- full combination, only trusted when n >= 4
   id          BIGSERIAL PRIMARY KEY,

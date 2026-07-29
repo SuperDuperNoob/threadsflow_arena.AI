@@ -1,6 +1,6 @@
 # n8n workflows — node by node
 
-Five workflows. Keep them separate; call each other with **Execute Workflow** so you can rerun
+Six workflows. Keep them separate; call each other with **Execute Workflow** so you can rerun
 one piece without touching the rest.
 
 ```
@@ -10,6 +10,7 @@ wf2_generate        Cron 03:00     make tomorrow's 5 posts
 wf3_publish         Cron */5min    publish queue + CTA reply
 wf4_evaluate        Cron 3d 02:00  metrics → scores → bandit update → breeding
 wf5_conversions     Cron 12h       Shopee conversions → DB   (optional at first)
+wf6_karma           Cron 6h        no-link helpful comments for reach insurance
 ```
 
 Credentials to create in n8n: `Postgres threadsflow`, `HTTP Header Auth threads`
@@ -95,6 +96,9 @@ inventing. A wrong specific is worse than a missing one.
        2+ images -> TEXT | IMAGE | CAROUSEL
      Products WITH images still draw TEXT ~15% of the time. That is deliberate: it is
      the only way to learn whether the photo was helping.
+   ↓
+[Code: persona picker]                            → 1-3 Malaysian cadence snippets
+                                                    (code/persona_picker.js, optional corpus)
    ↓
 [Postgres: pick image(s)]  ORDER BY use_count ASC, last_used_at ASC NULLS FIRST
                            WHERE last_used_at IS NULL OR last_used_at < now() - interval '10 days'
@@ -222,7 +226,7 @@ HTTP node, and **Continue On Fail** on the publish node so the error branch can 
    ↓ (also re-pull day-7 metrics for posts published 7 days ago → long tail)
 [Postgres] aggregate clicks + conversions per post_uid
    ↓
-[Code: score]                     z-scores within cycle, shrinkage blend   (code/scoring.js)
+[Code: score]                     Bayesian shrinkage scoring              (code/scoring.js)
    ↓
 [Postgres: UPSERT post_scores]
    ↓
@@ -321,3 +325,11 @@ DB_TYPE=postgresdb                     # never SQLite for this
 ```
 Do **not** enable queue mode — you don't have the RAM for Redis + workers, and 5 posts/day
 doesn't need it.
+---
+
+## wf6_karma — no-link engagement loop
+
+Spec lives at `n8n/workflows/wf6_karma.spec.md`. It searches Threads every 6 hours for active
+product categories, filters out affiliate/link-bait threads, and posts at most small helpful
+one-sentence replies with **no link and no CTA**. This is reach insurance: the account participates
+like a human instead of only publishing affiliate posts.

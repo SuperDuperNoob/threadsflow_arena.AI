@@ -1,96 +1,402 @@
 {
   "name": "wf4_evaluate",
   "nodes": [
-    { "parameters": { "rule": { "interval": [{ "field": "cronExpression", "expression": "0 2 */3 * *" }] } },
-      "id": "cron", "name": "Every 3 days 02:00", "type": "n8n-nodes-base.scheduleTrigger",
-      "typeVersion": 1.2, "position": [-1000, 300] },
-
-    { "parameters": { "operation": "executeQuery",
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 2 */3 * *"
+            }
+          ]
+        }
+      },
+      "id": "cron",
+      "name": "Every 3 days 02:00",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        -1000,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
         "query": "INSERT INTO cycles (started_at, ended_at) VALUES (now() - interval '3 days', now()) RETURNING id;",
-        "options": {} },
-      "id": "cyc", "name": "Open cycle", "type": "n8n-nodes-base.postgres", "typeVersion": 2.5,
-      "position": [-780, 300], "credentials": { "postgres": { "id": "PG", "name": "Postgres threadsflow" } } },
-
-    { "parameters": { "operation": "executeQuery",
+        "options": {}
+      },
+      "id": "cyc",
+      "name": "Open cycle",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        -780,
+        300
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "PG",
+          "name": "Postgres threadsflow"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
         "query": "SELECT p.id, p.uid, p.threads_media_id, pr.uid AS product_uid,\n       (SELECT value->>'token' FROM settings WHERE key='threads_creds') AS token\n  FROM posts p JOIN products pr ON pr.id=p.product_id\n WHERE p.status='published' AND p.threads_media_id IS NOT NULL\n   AND (p.published_at > now() - interval '3 days'\n        OR p.published_at BETWEEN now() - interval '8 days' AND now() - interval '6 days');",
-        "options": {} },
-      "id": "posts", "name": "Posts to measure", "type": "n8n-nodes-base.postgres", "typeVersion": 2.5,
-      "position": [-560, 300], "credentials": { "postgres": { "id": "PG", "name": "Postgres threadsflow" } },
-      "notes": "3-day window for the current cycle plus a day-7 re-read for long-tail views." },
-
-    { "parameters": { "url": "=https://graph.threads.net/v1.0/{{ $json.threads_media_id }}/insights",
+        "options": {}
+      },
+      "id": "posts",
+      "name": "Posts to measure",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        -560,
+        300
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "PG",
+          "name": "Postgres threadsflow"
+        }
+      },
+      "notes": "3-day window for the current cycle plus a day-7 re-read for long-tail views."
+    },
+    {
+      "parameters": {
+        "url": "=https://graph.threads.net/v1.0/{{ $json.threads_media_id }}/insights",
         "sendQuery": true,
-        "queryParameters": { "parameters": [
-          { "name": "metric", "value": "views,likes,replies,reposts,quotes" },
-          { "name": "access_token", "value": "={{ $json.token }}" } ] },
-        "options": { "response": { "response": { "neverError": true } } } },
-      "id": "insights", "name": "Fetch insights", "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.2, "position": [-340, 300], "retryOnFail": true, "maxTries": 3,
-      "waitBetweenTries": 5000, "onError": "continueRegularOutput" },
-
-    { "parameters": { "jsCode": "// Flatten Meta's insights payload into columns.\nconst post = $('Posts to measure').item.json;\nconst m = {};\nfor (const d of ($json.data ?? [])) m[d.name] = d.values?.[0]?.value ?? d.total_value?.value ?? 0;\nreturn [{ json: { post_id: post.id, views: m.views ?? 0, likes: m.likes ?? 0,\n  replies: m.replies ?? 0, reposts: m.reposts ?? 0, quotes: m.quotes ?? 0 } }];" },
-      "id": "flat", "name": "Flatten metrics", "type": "n8n-nodes-base.code", "typeVersion": 2,
-      "position": [-120, 300] },
-
-    { "parameters": { "operation": "executeQuery",
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "metric",
+              "value": "views,likes,replies,reposts,quotes"
+            },
+            {
+              "name": "access_token",
+              "value": "={{ $json.token }}"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true
+            }
+          }
+        }
+      },
+      "id": "insights",
+      "name": "Fetch insights",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -340,
+        300
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000,
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Flatten Meta's insights payload into columns.\nconst post = $('Posts to measure').item.json;\nconst m = {};\nfor (const d of ($json.data ?? [])) m[d.name] = d.values?.[0]?.value ?? d.total_value?.value ?? 0;\nreturn [{ json: { post_id: post.id, views: m.views ?? 0, likes: m.likes ?? 0,\n  replies: m.replies ?? 0, reposts: m.reposts ?? 0, quotes: m.quotes ?? 0 } }];"
+      },
+      "id": "flat",
+      "name": "Flatten metrics",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -120,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
         "query": "INSERT INTO post_metrics (post_id, age_hours, views, likes, replies, reposts, quotes)\nSELECT $1, EXTRACT(EPOCH FROM (now()-published_at))/3600, $2,$3,$4,$5,$6\n  FROM posts WHERE id=$1;",
-        "options": { "queryReplacement": "={{ $json.post_id }},={{ $json.views }},={{ $json.likes }},={{ $json.replies }},={{ $json.reposts }},={{ $json.quotes }}" } },
-      "id": "savem", "name": "Save metrics", "type": "n8n-nodes-base.postgres", "typeVersion": 2.5,
-      "position": [100, 300], "credentials": { "postgres": { "id": "PG", "name": "Postgres threadsflow" } } },
-
-    { "parameters": { "operation": "executeQuery",
-        "query": "SELECT jsonb_build_object(\n  'posts', (SELECT jsonb_agg(to_jsonb(v)) FROM v_post_performance v\n              WHERE v.published_at > now() - interval '3 days'),\n  'settings', jsonb_build_object(\n     'scoring', (SELECT value FROM settings WHERE key='scoring'),\n     'bandit',  (SELECT value FROM settings WHERE key='bandit'),\n     'posting', (SELECT value FROM settings WHERE key='posting')),\n  'lifetime_orders', (SELECT count(*) FROM conversions WHERE status<>'cancelled'),\n  'prev_arm_stats', (SELECT jsonb_agg(to_jsonb(a)) FROM arm_stats a),\n  'prev_techniques', (SELECT jsonb_agg(to_jsonb(t)) FROM techniques t),\n  'usage', (SELECT jsonb_agg(to_jsonb(u)) FROM technique_usage u)\n) AS payload;",
-        "options": {} },
-      "id": "agg", "name": "Aggregate for scoring", "type": "n8n-nodes-base.postgres",
-      "typeVersion": 2.5, "position": [320, 300],
-      "credentials": { "postgres": { "id": "PG", "name": "Postgres threadsflow" } } },
-
-    { "parameters": { "jsCode": "// ── paste n8n/code/scoring.js here ──\n// z-scored EPM/CTR/ENG blend with money shrinkage; emits scores + lever_report + hour_report.\nreturn [{ json: $json.payload }];" },
-      "id": "score", "name": "Score cycle", "type": "n8n-nodes-base.code", "typeVersion": 2,
-      "position": [540, 300] },
-
-    { "parameters": { "jsCode": "// ── paste n8n/code/bandit.js (update + plan halves) here ──\n// Folds cycle rewards into arm_stats alpha/beta with decay, cools losers,\n// and emits next_cycle_plan (60% breed from winners / 40% explore).\nreturn [{ json: $json }];" },
-      "id": "upd", "name": "Update arms + plan", "type": "n8n-nodes-base.code", "typeVersion": 2,
-      "position": [760, 300] },
-
-    { "parameters": { "jsCode": "// ── paste n8n/code/technique_picker.js (update half) here ──\n// Same alpha/beta fold for techniques; requires n>=6 before judging one.\nreturn [{ json: $json }];" },
-      "id": "updt", "name": "Update techniques", "type": "n8n-nodes-base.code", "typeVersion": 2,
-      "position": [980, 300] },
-
-    { "parameters": { "operation": "executeQuery",
+        "options": {
+          "queryReplacement": "={{ $json.post_id }},={{ $json.views }},={{ $json.likes }},={{ $json.replies }},={{ $json.reposts }},={{ $json.quotes }}"
+        }
+      },
+      "id": "savem",
+      "name": "Save metrics",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        100,
+        300
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "PG",
+          "name": "Postgres threadsflow"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT jsonb_build_object(\n  'posts', (SELECT jsonb_agg(to_jsonb(v)) FROM v_post_performance v\n              WHERE v.published_at > now() - interval '3 days'),\n  'settings', jsonb_build_object(\n     'scoring', (SELECT value FROM settings WHERE key='scoring'),\n     'bandit',  (SELECT value FROM settings WHERE key='bandit'),\n     'posting', (SELECT value FROM settings WHERE key='posting')),\n  'lifetime_orders', (SELECT count(*) FROM conversions WHERE status<>'cancelled'),\n  'prev_arm_stats', (SELECT jsonb_agg(to_jsonb(a)) FROM arm_stats a),\n  'prev_context_weights', (SELECT jsonb_agg(to_jsonb(cw)) FROM context_weights cw),\n  'prev_techniques', (SELECT jsonb_agg(to_jsonb(t)) FROM techniques t),\n  'usage', (SELECT jsonb_agg(to_jsonb(u)) FROM technique_usage u)\n) AS payload;",
+        "options": {}
+      },
+      "id": "agg",
+      "name": "Aggregate for scoring",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        320,
+        300
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "PG",
+          "name": "Postgres threadsflow"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// ── paste n8n/code/scoring.js here ──\n// Bayesian-shrunk EPM/CTR/ENG blend; emits scores + lever_report + hour_report.\nreturn [{ json: $json.payload }];"
+      },
+      "id": "score",
+      "name": "Score cycle",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        540,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// ── paste n8n/code/bandit.js (update + plan halves) here ──\n// Folds cycle rewards into arm_stats alpha/beta with decay, cools losers,\n// and emits next_cycle_plan (60% breed from winners / 40% explore).\nreturn [{ json: $json }];"
+      },
+      "id": "upd",
+      "name": "Update arms + plan",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        760,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// ── paste n8n/code/technique_picker.js (update half) here ──\n// Same alpha/beta fold for techniques; requires n>=6 before judging one.\nreturn [{ json: $json }];"
+      },
+      "id": "updt",
+      "name": "Update techniques",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        980,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
         "query": "-- persist scores\nINSERT INTO post_scores (post_id, cycle_id, ctr, eng, cvr, epm, z_ctr, z_eng, z_epm,\n                         money_score, eng_score, final_score, verdict)\nSELECT (x->>'post_id')::bigint, $2, (x->>'ctr')::numeric, (x->>'eng')::numeric,\n       (x->>'cvr')::numeric, (x->>'epm')::numeric, (x->>'z_ctr')::numeric,\n       (x->>'z_eng')::numeric, (x->>'z_epm')::numeric, (x->>'money_score')::numeric,\n       (x->>'eng_score')::numeric, (x->>'final_score')::numeric, x->>'verdict'\n  FROM jsonb_array_elements($1::jsonb) x\nON CONFLICT (post_id) DO UPDATE SET final_score=EXCLUDED.final_score, verdict=EXCLUDED.verdict;",
-        "options": { "queryReplacement": "={{ JSON.stringify($json.scores) }},={{ $('Open cycle').first().json.id }}" } },
-      "id": "saves", "name": "Save scores", "type": "n8n-nodes-base.postgres", "typeVersion": 2.5,
-      "position": [1200, 220], "credentials": { "postgres": { "id": "PG", "name": "Postgres threadsflow" } } },
-
-    { "parameters": { "operation": "executeQuery",
-        "query": "-- arms\nINSERT INTO arm_stats (scope, lever_kind, lever_code, n, reward_sum, alpha, beta, cooldown_until, updated_at)\nSELECT x->>'scope', x->>'lever_kind', x->>'lever_code', (x->>'n')::numeric,\n       (x->>'reward_sum')::numeric, (x->>'alpha')::numeric, (x->>'beta')::numeric,\n       NULLIF(x->>'cooldown_until','')::timestamptz, now()\n  FROM jsonb_array_elements($1::jsonb) x\nON CONFLICT (scope, lever_kind, lever_code) DO UPDATE SET\n  n=EXCLUDED.n, reward_sum=EXCLUDED.reward_sum, alpha=EXCLUDED.alpha,\n  beta=EXCLUDED.beta, cooldown_until=EXCLUDED.cooldown_until, updated_at=now();\n\n-- techniques\nUPDATE techniques t SET n=(x->>'n')::numeric, reward_sum=(x->>'reward_sum')::numeric,\n       alpha=(x->>'alpha')::numeric, beta=(x->>'beta')::numeric,\n       cooldown_until=NULLIF(x->>'cooldown_until','')::timestamptz, updated_at=now()\n  FROM jsonb_array_elements($2::jsonb) x\n WHERE t.id=(x->>'id')::bigint;\n\n-- next cycle plan\nINSERT INTO settings (key, value) VALUES ('next_cycle_plan', $3::jsonb)\nON CONFLICT (key) DO UPDATE SET value=EXCLUDED.value;\n\n-- rest products with no clicks over two cycles\nUPDATE products SET status='resting', rest_until=now()+interval '14 days'\n WHERE status='active' AND id IN (\n   SELECT p.product_id FROM posts p\n    JOIN v_post_performance v ON v.id=p.id\n   WHERE p.published_at > now()-interval '6 days'\n   GROUP BY p.product_id HAVING sum(v.clicks)=0 AND count(*)>=4);",
-        "options": { "queryReplacement": "={{ JSON.stringify($json.arms) }},={{ JSON.stringify($json.techniques) }},={{ JSON.stringify($json.plan) }}" } },
-      "id": "savea", "name": "Save arms + plan", "type": "n8n-nodes-base.postgres", "typeVersion": 2.5,
-      "position": [1200, 380], "credentials": { "postgres": { "id": "PG", "name": "Postgres threadsflow" } } },
-
-    { "parameters": { "operation": "executeQuery",
+        "options": {
+          "queryReplacement": "={{ JSON.stringify($json.scores) }},={{ $('Open cycle').first().json.id }}"
+        }
+      },
+      "id": "saves",
+      "name": "Save scores",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        1200,
+        220
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "PG",
+          "name": "Postgres threadsflow"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "-- arms\nINSERT INTO arm_stats (scope, lever_kind, lever_code, n, reward_sum, alpha, beta, cooldown_until, updated_at)\nSELECT x->>'scope', x->>'lever_kind', x->>'lever_code', (x->>'n')::numeric,\n       (x->>'reward_sum')::numeric, (x->>'alpha')::numeric, (x->>'beta')::numeric,\n       NULLIF(x->>'cooldown_until','')::timestamptz, now()\n  FROM jsonb_array_elements($1::jsonb) x\nON CONFLICT (scope, lever_kind, lever_code) DO UPDATE SET\n  n=EXCLUDED.n, reward_sum=EXCLUDED.reward_sum, alpha=EXCLUDED.alpha,\n  beta=EXCLUDED.beta, cooldown_until=EXCLUDED.cooldown_until, updated_at=now();\n\n-- techniques\nUPDATE techniques t SET n=(x->>'n')::numeric, reward_sum=(x->>'reward_sum')::numeric,\n       alpha=(x->>'alpha')::numeric, beta=(x->>'beta')::numeric,\n       cooldown_until=NULLIF(x->>'cooldown_until','')::timestamptz, updated_at=now()\n  FROM jsonb_array_elements($2::jsonb) x\n WHERE t.id=(x->>'id')::bigint;\n\n-- context weights\nINSERT INTO context_weights (context_bucket, hour_start, hour_end, lever_kind, lever_code,\n                             n, reward_sum, alpha, beta, cooldown_until, updated_at)\nSELECT x->>'context_bucket',\n       CASE x->>'context_bucket'\n         WHEN 'Work_Focus' THEN 6 WHEN 'Lunch_Scroll' THEN 12\n         WHEN 'Evening_Relax' THEN 15 ELSE 22 END,\n       CASE x->>'context_bucket'\n         WHEN 'Work_Focus' THEN 12 WHEN 'Lunch_Scroll' THEN 15\n         WHEN 'Evening_Relax' THEN 22 ELSE 6 END,\n       COALESCE(x->>'lever_kind','tone'), x->>'lever_code',\n       (x->>'n')::numeric, (x->>'reward_sum')::numeric, (x->>'alpha')::numeric, (x->>'beta')::numeric,\n       NULLIF(x->>'cooldown_until','')::timestamptz, now()\n  FROM jsonb_array_elements($4::jsonb) x\nON CONFLICT (context_bucket, lever_kind, lever_code) DO UPDATE SET\n  n=EXCLUDED.n, reward_sum=EXCLUDED.reward_sum, alpha=EXCLUDED.alpha, beta=EXCLUDED.beta,\n  cooldown_until=EXCLUDED.cooldown_until, updated_at=now();\n\n-- next cycle plan\nINSERT INTO settings (key, value) VALUES ('next_cycle_plan', $3::jsonb)\nON CONFLICT (key) DO UPDATE SET value=EXCLUDED.value;\n\n-- rest products with no clicks over two cycles\nUPDATE products SET status='resting', rest_until=now()+interval '14 days'\n WHERE status='active' AND id IN (\n   SELECT p.product_id FROM posts p\n    JOIN v_post_performance v ON v.id=p.id\n   WHERE p.published_at > now()-interval '6 days'\n   GROUP BY p.product_id HAVING sum(v.clicks)=0 AND count(*)>=4);",
+        "options": {
+          "queryReplacement": "={{ JSON.stringify($json.arms) }},={{ JSON.stringify($json.techniques) }},={{ JSON.stringify($json.plan) }},={{ JSON.stringify($json.context_weights ?? []) }}"
+        }
+      },
+      "id": "savea",
+      "name": "Save arms + plan",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        1200,
+        380
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "PG",
+          "name": "Postgres threadsflow"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
         "query": "UPDATE cycles SET ended_at=now(), posts_count=$2, total_views=$3, total_clicks=$4,\n       total_orders=$5, total_commission_idr=$6, w_money=$7, digest=$8::jsonb\n WHERE id=$1;",
-        "options": { "queryReplacement": "={{ $('Open cycle').first().json.id }},={{ $json.scores.length }},={{ $json.totals.views }},={{ $json.totals.clicks }},={{ $json.totals.orders }},={{ $json.totals.commission }},={{ $json.w_money }},={{ JSON.stringify({lever_report:$json.lever_report, hour_report:$json.hour_report}) }}" } },
-      "id": "close", "name": "Close cycle + digest", "type": "n8n-nodes-base.postgres",
-      "typeVersion": 2.5, "position": [1420, 300],
-      "credentials": { "postgres": { "id": "PG", "name": "Postgres threadsflow" } } }
+        "options": {
+          "queryReplacement": "={{ $('Open cycle').first().json.id }},={{ $json.scores.length }},={{ $json.totals.views }},={{ $json.totals.clicks }},={{ $json.totals.orders }},={{ $json.totals.commission }},={{ $json.w_money }},={{ JSON.stringify({lever_report:$json.lever_report, hour_report:$json.hour_report}) }}"
+        }
+      },
+      "id": "close",
+      "name": "Close cycle + digest",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        1420,
+        300
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "PG",
+          "name": "Postgres threadsflow"
+        }
+      }
+    }
   ],
   "connections": {
-    "Every 3 days 02:00": { "main": [[{ "node": "Open cycle", "type": "main", "index": 0 }]] },
-    "Open cycle": { "main": [[{ "node": "Posts to measure", "type": "main", "index": 0 }]] },
-    "Posts to measure": { "main": [[{ "node": "Fetch insights", "type": "main", "index": 0 }]] },
-    "Fetch insights": { "main": [[{ "node": "Flatten metrics", "type": "main", "index": 0 }]] },
-    "Flatten metrics": { "main": [[{ "node": "Save metrics", "type": "main", "index": 0 }]] },
-    "Save metrics": { "main": [[{ "node": "Aggregate for scoring", "type": "main", "index": 0 }]] },
-    "Aggregate for scoring": { "main": [[{ "node": "Score cycle", "type": "main", "index": 0 }]] },
-    "Score cycle": { "main": [[{ "node": "Update arms + plan", "type": "main", "index": 0 }]] },
-    "Update arms + plan": { "main": [[{ "node": "Update techniques", "type": "main", "index": 0 }]] },
-    "Update techniques": { "main": [[
-      { "node": "Save scores", "type": "main", "index": 0 },
-      { "node": "Save arms + plan", "type": "main", "index": 0 },
-      { "node": "Close cycle + digest", "type": "main", "index": 0 }]] }
+    "Every 3 days 02:00": {
+      "main": [
+        [
+          {
+            "node": "Open cycle",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Open cycle": {
+      "main": [
+        [
+          {
+            "node": "Posts to measure",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Posts to measure": {
+      "main": [
+        [
+          {
+            "node": "Fetch insights",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch insights": {
+      "main": [
+        [
+          {
+            "node": "Flatten metrics",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Flatten metrics": {
+      "main": [
+        [
+          {
+            "node": "Save metrics",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Save metrics": {
+      "main": [
+        [
+          {
+            "node": "Aggregate for scoring",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Aggregate for scoring": {
+      "main": [
+        [
+          {
+            "node": "Score cycle",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Score cycle": {
+      "main": [
+        [
+          {
+            "node": "Update arms + plan",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update arms + plan": {
+      "main": [
+        [
+          {
+            "node": "Update techniques",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update techniques": {
+      "main": [
+        [
+          {
+            "node": "Save scores",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Save arms + plan",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Close cycle + digest",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
   },
-  "settings": { "executionOrder": "v1", "timezone": "Asia/Kuala_Lumpur", "saveDataSuccessExecution": "none" },
-  "tags": [{ "name": "threadsflow" }]
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "Asia/Kuala_Lumpur",
+    "saveDataSuccessExecution": "none"
+  },
+  "tags": [
+    {
+      "name": "threadsflow"
+    }
+  ]
 }

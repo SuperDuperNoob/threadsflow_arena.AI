@@ -4,10 +4,12 @@
  *
  * Input for SELECT mode:
  *   $json.levers      : [{kind, code, brief, enabled}]
- *   $json.arm_stats   : [{scope, lever_kind, lever_code, alpha, beta, cooldown_until}]
- *   $json.products    : [{id, uid, name, ...}]
- *   $json.settings    : bandit settings object
- *   $json.plan        : optional {mode:'breed', parent_post_id, keep:[], mutate:''}
+ *   $json.arm_stats      : [{scope, lever_kind, lever_code, alpha, beta, cooldown_until}]
+ *   $json.context_weights: [{context_bucket, lever_kind, lever_code, alpha, beta, ...}]
+ *   $json.products       : [{id, uid, name, ...}]
+ *   $json.settings       : bandit settings object
+ *   $json.scheduled_at   : optional slot timestamp; mapped to Work/Lunch/Evening/Late bucket
+ *   $json.plan           : optional {mode:'breed', parent_post_id, keep:[], mutate:''}
  */
 
 // ───────────────────────────── helpers
@@ -36,6 +38,111 @@ function betaSample(a, b) {
   return x / (x + y);
 }
 
+
+// ───────────────────────────── context helpers (2026 Threads)
+
+const CONTEXT_BUCKETS = [
+  { code: 'Late_Night_Impulse', start: 22, end: 6 },  // 22:00-05:59 (wraps midnight)
+  { code: 'Work_Focus',         start: 6, end: 12 },  // 06:00-11:59
+  { code: 'Lunch_Scroll',       start: 12, end: 15 }, // 12:00-14:59
+  { code: 'Evening_Relax',      start: 15, end: 22 }, // 15:00-21:59
+];
+
+const DEFAULT_CONTEXT_TONE_PRIORS = {
+  Work_Focus: {
+    // Office/commute mode: compressed attention, lower tolerance for loud selling.
+    minimal: { alpha: 2.6, beta: 1.4 },
+    deadpan: { alpha: 2.4, beta: 1.5 },
+    gaul: { alpha: 1.2, beta: 1.8 },
+    chaotic: { alpha: 1.0, beta: 2.0 },
+  },
+  Lunch_Scroll: {
+    gaul: { alpha: 2.0, beta: 1.5 },
+    minimal: { alpha: 1.8, beta: 1.6 },
+    deadpan: { alpha: 1.6, beta: 1.7 },
+  },
+  Evening_Relax: {
+    // After work, Threads rewards personality and conversational mess more often.
+    chaotic: { alpha: 2.7, beta: 1.3 },
+    gaul: { alpha: 2.5, beta: 1.4 },
+    enthusiast: { alpha: 1.8, beta: 1.6 },
+    minimal: { alpha: 1.2, beta: 1.9 },
+    deadpan: { alpha: 1.3, beta: 1.8 },
+  },
+  Late_Night_Impulse: {
+    chaotic: { alpha: 2.2, beta: 1.5 },
+    gaul: { alpha: 2.0, beta: 1.5 },
+    deadpan: { alpha: 1.7, beta: 1.7 },
+  },
+};
+
+function hourInTimezone(date, timezone) {
+  const d = date ? new Date(date) : new Date();
+  if (!Number.isFinite(d.getTime())) return new Date().getHours();
+  if (!timezone) return d.getHours();
+  try {
+    const parts = new Intl.DateTimeFormat('en-US', { hour: '2-digit', hour12: false, timeZone: timezone }).formatToParts(d);
+    return Number(parts.find(p => p.type === 'hour')?.value ?? d.getHours()) % 24;
+  } catch {
+    return d.getHours();
+  }
+}
+
+function contextBucketForHour(hour) {
+  const h = ((Number(hour) % 24) + 24) % 24;
+  return CONTEXT_BUCKETS.find(b => (
+    b.start < b.end ? (h >= b.start && h < b.end) : (h >= b.start || h < b.end)
+  ))?.code ?? 'Late_Night_Impulse';
+}
+
+function contextBucketForSlot({ scheduled_at, published_at, timezone } = {}) {
+  return contextBucketForHour(hourInTimezone(scheduled_at ?? published_at, timezone));
+}
+
+function normalizeInput(input) {
+  // n8n wf2 carries loaded config under cfg; standalone Code-node tests often pass top-level.
+  const cfg = input.cfg ?? {};
+  const settings = input.settings ?? {
+    posting: cfg.posting ?? {},
+    bandit: cfg.bandit ?? {},
+    scoring: cfg.scoring ?? {},
+    qa: cfg.qa ?? {},
+    llm: cfg.llm ?? {},
+  };
+  return {
+    ...cfg,
+    ...input,
+    levers: input.levers ?? cfg.levers ?? [],
+    armStats: input.armStats ?? input.arm_stats ?? cfg.armStats ?? cfg.arm_stats ?? [],
+    productStats: input.productStats ?? input.product_stats ?? cfg.productStats ?? cfg.product_stats ?? [],
+    contextWeights: input.contextWeights ?? input.context_weights ?? cfg.contextWeights ?? cfg.context_weights ?? [],
+    prevStats: input.prevStats ?? input.prev_arm_stats ?? input.armStats ?? input.arm_stats ?? cfg.prevStats ?? cfg.prev_arm_stats ?? [],
+    prevContextWeights: input.prevContextWeights ?? input.prev_context_weights ?? input.contextWeights ?? input.context_weights ?? cfg.prevContextWeights ?? cfg.prev_context_weights ?? [],
+    products: input.products ?? cfg.products ?? [],
+    settings,
+    plan: input.plan ?? cfg.plan ?? null,
+    scheduled_at: input.scheduled_at ?? input.slot?.scheduled_at ?? null,
+    timezone: input.timezone ?? input.slot?.timezone ?? settings.posting?.timezone ?? cfg.posting?.timezone,
+  };
+}
+
+function contextStatKey(bucket, kind, code) {
+  return `${bucket}|${kind}|${code}`;
+}
+
+function buildContextMap(contextWeights = []) {
+  return new Map((contextWeights ?? []).map(w => [
+    contextStatKey(w.context_bucket ?? w.bucket, w.lever_kind ?? 'tone', w.lever_code), w,
+  ]));
+}
+
+function getContextPrior(contextMap, bucket, kind, code) {
+  const stored = contextMap.get(contextStatKey(bucket, kind, code));
+  if (stored) return { alpha: Number(stored.alpha) || 1, beta: Number(stored.beta) || 1, n: Number(stored.n) || 0 };
+  if (kind === 'tone') return DEFAULT_CONTEXT_TONE_PRIORS[bucket]?.[code] ?? { alpha: 1, beta: 1, n: 0 };
+  return { alpha: 1, beta: 1, n: 0 };
+}
+
 // ───────────────────────────── SELECT: pick one arm
 
 /**
@@ -46,12 +153,14 @@ function betaSample(a, b) {
  * combo space never converges. Marginal levers converge in ~5 cycles. Combos are only used
  * as a tie-breaker once combo_stats.n >= min_n_for_combo.
  */
-function pickArm({ levers, armStats, productUid, settings, plan }) {
-  const eps = settings.epsilon ?? 0.25;
+function pickArm({ levers, armStats, contextWeights, productUid, settings, plan, scheduled_at, timezone, force_sell_intensity }) {
+  const eps = settings.bandit?.epsilon ?? settings.epsilon ?? 0.25;
   const now = Date.now();
+  const context_bucket = contextBucketForSlot({ scheduled_at, timezone: timezone ?? settings.posting?.timezone });
 
   const statKey = (scope, kind, code) => `${scope}|${kind}|${code}`;
-  const stats = new Map(armStats.map(s => [statKey(s.scope, s.lever_kind, s.lever_code), s]));
+  const stats = new Map((armStats ?? []).map(s => [statKey(s.scope, s.lever_kind, s.lever_code), s]));
+  const contextMap = buildContextMap(contextWeights ?? []);
 
   // media_type is a real lever, but it is CONSTRAINED by what the product actually has.
   // A text-only product can never draw IMAGE; a product with images can still draw TEXT,
@@ -81,6 +190,8 @@ function pickArm({ levers, armStats, productUid, settings, plan }) {
       }
     }
 
+    if (!options.length) throw new Error(`bandit select: no enabled options for ${kind}`);
+
     // drop arms in cooldown, unless that would leave nothing
     const live = options.filter(o => {
       const g = stats.get(statKey('global', kind, o.code));
@@ -93,18 +204,29 @@ function pickArm({ levers, armStats, productUid, settings, plan }) {
       options.sort((a, b) => {
         const na = stats.get(statKey('global', kind, a.code))?.alpha ?? 1;
         const nb = stats.get(statKey('global', kind, b.code))?.alpha ?? 1;
-        return (na + Math.random() * 3) - (nb + Math.random() * 3);
+        const ca = getContextPrior(contextMap, context_bucket, kind, a.code);
+        const cb = getContextPrior(contextMap, context_bucket, kind, b.code);
+        const biasA = kind === 'tone' ? (Number(ca.alpha) / (Number(ca.alpha) + Number(ca.beta))) : 0.5;
+        const biasB = kind === 'tone' ? (Number(cb.alpha) / (Number(cb.alpha) + Number(cb.beta))) : 0.5;
+        return (na - biasA + Math.random() * 3) - (nb - biasB + Math.random() * 3);
       });
       chosen[kind] = options[0].code;
     } else {
-      // EXPLOIT: Thompson sample. Product-scoped evidence weighted 0.6, global 0.4,
-      // so a product can develop its own voice without ignoring what works site-wide.
+      // EXPLOIT: Thompson sample. Product-scoped evidence still matters most, but tone
+      // also gets a time-of-day context prior so the account does not speak the same way
+      // during office focus and evening doomscroll windows.
       let best = null, bestDraw = -1;
       for (const o of options) {
         const g = stats.get(statKey('global', kind, o.code)) ?? { alpha: 1, beta: 1 };
         const p = stats.get(statKey(`product:${productUid}`, kind, o.code)) ?? { alpha: 1, beta: 1 };
-        const a = 0.4 * Number(g.alpha) + 0.6 * Number(p.alpha);
-        const b = 0.4 * Number(g.beta) + 0.6 * Number(p.beta);
+        const c = getContextPrior(contextMap, context_bucket, kind, o.code);
+        const hasContext = kind === 'tone';
+        const a = hasContext
+          ? 0.30 * Number(g.alpha) + 0.45 * Number(p.alpha) + 0.25 * Number(c.alpha)
+          : 0.40 * Number(g.alpha) + 0.60 * Number(p.alpha);
+        const b = hasContext
+          ? 0.30 * Number(g.beta) + 0.45 * Number(p.beta) + 0.25 * Number(c.beta)
+          : 0.40 * Number(g.beta) + 0.60 * Number(p.beta);
         const draw = betaSample(Math.max(a, 0.05), Math.max(b, 0.05));
         if (draw > bestDraw) { bestDraw = draw; best = o.code; }
       }
@@ -128,7 +250,12 @@ function pickArm({ levers, armStats, productUid, settings, plan }) {
   if (chosen.media_type === 'TEXT' && chosen.length_band === 'micro') {
     chosen.length_band = 'mid';
   }
+  // 5. Slot planner can force a no-link post for account health. Never let the bandit override it.
+  if (force_sell_intensity !== undefined && force_sell_intensity !== null && force_sell_intensity !== '') {
+    chosen.sell_intensity = String(force_sell_intensity);
+  }
 
+  chosen.context_bucket = context_bucket;
   chosen.combo_key = [chosen.format, chosen.angle, chosen.tone,
                       chosen.sell_intensity, chosen.length_band, chosen.media_type].join('|');
   return chosen;
@@ -136,6 +263,9 @@ function pickArm({ levers, armStats, productUid, settings, plan }) {
 
 /** Product choice: Thompson over product-level reward, with forced rotation for new products. */
 function pickProduct({ products, productStats, settings }) {
+  products = products ?? [];
+  productStats = productStats ?? [];
+  if (!products.length) throw new Error('bandit select: no active products supplied');
   const fresh = products.filter(p => (p.posts_count ?? 0) < 3);
   if (fresh.length && Math.random() < 0.5) {
     // new products get guaranteed airtime before the bandit is allowed to judge them
@@ -158,6 +288,7 @@ function pickProduct({ products, productStats, settings }) {
  * Old evidence decays so the model tracks what the algorithm rewards *this month*.
  */
 function updateArms({ scores, prevStats, settings }) {
+  settings = settings.bandit ?? settings;
   const decay = settings.decay ?? 0.9;
   const key = (scope, kind, code) => `${scope}|${kind}|${code}`;
   const out = new Map();
@@ -211,8 +342,60 @@ function updateArms({ scores, prevStats, settings }) {
   return [...out.values()];
 }
 
+
+/** Contextual tone stats: one row per time bucket × tone. */
+function updateContextWeights({ scores, prevContextWeights, settings }) {
+  const banditSettings = settings.bandit ?? settings;
+  const postingSettings = settings.posting ?? {};
+  const decay = banditSettings.decay ?? 0.9;
+  const out = new Map();
+
+  for (const s of (prevContextWeights ?? [])) {
+    const bucket = s.context_bucket ?? s.bucket;
+    const kind = s.lever_kind ?? 'tone';
+    const code = s.lever_code;
+    if (!bucket || !code) continue;
+    out.set(contextStatKey(bucket, kind, code), {
+      context_bucket: bucket,
+      lever_kind: kind,
+      lever_code: code,
+      n: Number(s.n) * decay,
+      reward_sum: Number(s.reward_sum) * decay,
+      alpha: 1 + (Number(s.alpha) - 1) * decay,
+      beta: 1 + (Number(s.beta) - 1) * decay,
+      cooldown_until: s.cooldown_until ?? null,
+    });
+  }
+
+  const vals = (scores ?? []).map(s => s.final_score);
+  const min = Math.min(...vals), max = Math.max(...vals);
+  const norm = v => (max === min ? 0.5 : (v - min) / (max - min));
+
+  for (const s of (scores ?? [])) {
+    const code = String(s.post?.tone ?? '');
+    if (!code) continue;
+    const bucket = s.post?.context_bucket ?? contextBucketForSlot({
+      published_at: s.post?.published_at,
+      scheduled_at: s.post?.scheduled_at,
+      timezone: s.post?.timezone ?? postingSettings.timezone,
+    });
+    const k = contextStatKey(bucket, 'tone', code);
+    const r = norm(s.final_score);
+    const cur = out.get(k) ?? { context_bucket: bucket, lever_kind: 'tone', lever_code: code,
+                                n: 0, reward_sum: 0, alpha: 1, beta: 1, cooldown_until: null };
+    cur.n += 1;
+    cur.reward_sum += r;
+    cur.alpha += r;
+    cur.beta += (1 - r);
+    out.set(k, cur);
+  }
+
+  return [...out.values()];
+}
+
 /** Choose which winning posts to breed from next cycle. */
 function planNextCycle({ scores, settings }) {
+  settings = settings.bandit ? { ...settings.posting, ...settings.bandit } : settings;
   const sorted = [...scores].sort((a, b) => b.final_score - a.final_score);
   const nWin = Math.max(1, Math.ceil(sorted.length * (settings.winner_top_pct ?? 0.2)));
   const winners = sorted.slice(0, nWin);
@@ -241,12 +424,20 @@ function planNextCycle({ scores, settings }) {
 }
 
 // ───────────────────────────── n8n entry point
-// Set MODE via the node: 'select' | 'update' | 'plan'
-const MODE = $json.mode ?? 'select';
+// Set MODE via the node: 'select' | 'update' | 'plan'. If omitted, infer from payload shape.
+const input = normalizeInput($json);
+const MODE = $json.mode ?? (input.scores ? 'update' : 'select');
 if (MODE === 'select') {
-  const product = pickProduct($json);
-  const arm = pickArm({ ...$json, productUid: product.uid, plan: $json.plan });
-  return [{ json: { product, ...arm } }];
+  const product = pickProduct(input);
+  const arm = pickArm({ ...input, productUid: product.uid, plan: input.plan });
+  return [{ json: { ...$json, product, ...arm } }];
 }
-if (MODE === 'update') return [{ json: { arms: updateArms($json) } }];
-return [{ json: { plan: planNextCycle($json) } }];
+if (MODE === 'update') {
+  return [{ json: {
+    ...$json,
+    arms: updateArms(input),
+    context_weights: updateContextWeights(input),
+    plan: planNextCycle(input),
+  } }];
+}
+return [{ json: { ...$json, plan: planNextCycle(input) } }];

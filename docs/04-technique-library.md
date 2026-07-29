@@ -189,8 +189,8 @@ Two rules keep this from collapsing back into templates:
 2. **`compatible_with` gating.** A technique tagged `["deadpan","minimal"]` never fires on an
    `enthusiast` post. Mismatched device + tone is the #1 source of copy that feels "off".
 
-Then `technique_usage` records which devices were in which post, and the same z-scored cycle
-scoring that rates your tones also rates your techniques. After ~6 cycles you'll see rows like:
+Then `technique_usage` records which devices were in which post, and the same Bayesian-shrunk
+cycle scoring that rates your tones also rates your techniques. After ~6 cycles you'll see rows like:
 
 ```
 technique                              n    mean_reward   lift

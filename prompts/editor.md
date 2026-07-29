@@ -24,6 +24,13 @@ What you delete on sight:
 - Any transition word a person wouldn't say out loud (selain itu, dengan demikian, oleh itu,
   tambahan pula, justeru).
 - Emoji used as punctuation.
+- Dead 2024/2025 Threads/TikTok shapes: "POV:", "no one:", "this is your sign", "I was today
+  years old", "tell me why", "rent free", "main character", "girl math", "louder for people at
+  the back", "did not disappoint", "obsessed is an understatement".
+- 2026 cringe slang unless the draft genuinely came with it: slay, rizz, delulu, skibidi, sigma,
+  ate, era, coded, core, vibes-only, sus. Malaysian casual is fine; imported meme sludge is not.
+- AI-commerce words: game-changer, must-have, unlock, elevate, seamless, curated, revolutionary,
+  viral find, hidden gem. They make an affiliate post smell like a funnel.
 
 What you keep or add:
 - One specific, slightly boring detail. Boring specifics are what make text feel true.
