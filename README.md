@@ -45,7 +45,7 @@ docs/
   03-setup-runbook.md        empty VPS → first automated post (click-by-click)
   04-technique-library.md    how the technique system works
   05-books.md                what was mined from your 26 PDFs
-  06-malaysian-dataset-persona.md optional Malaysian-Dataset cadence corpus
+  07-l4-reply-loop.md        on-post user comment engagement loop
 
 db/                          PostgreSQL: schema, seeds, migrations, queries
 
@@ -64,7 +64,7 @@ infra/
 prompts/                     the three LLM prompts (writer, editor, CTA)
 ```
 
-## The four loops
+## The five loops
 
 | Loop | Runs | What it does |
 |---|---|---|
@@ -72,6 +72,7 @@ prompts/                     the three LLM prompts (writer, editor, CTA)
 | L1 generate | 03:00 daily | pick levers → write → edit → QA → queue 5 posts |
 | L2 publish | every 5 min | publish queued post → wait → CTA reply with tracked link |
 | L3 learn | every 3 days | insights + clicks + orders → score → update arms → breed winners |
+| L4 reply | every 4-6 hours | answer user comments on your own posts with persona calibration |
 
 ## Build order (do not do it all at once)
 

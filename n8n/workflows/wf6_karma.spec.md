@@ -1,4 +1,14 @@
-# wf6_karma — Threads Karma Engagement Loop
+# wf6_karma — Threads Karma Engagement Loop (PROJECT DRAFT)
+
+> **STATUS: PROJECT DRAFT / FUTURE FEATURE (ON HOLD)**
+> 
+> **Prerequisite:** Meta currently restricts the official Threads API to managing comments on your own posts (`/v1.0/{media_id}/replies`) and does not expose a global public search API (`/v1.0/search`) or public third-party commenting.
+> 
+> This specification and its draft template (`n8n/workflows/wf6_karma_draft.json`) are preserved as a **project draft** for future activation when Meta adds public search and third-party commenting APIs.
+> 
+> *In the meantime, active engagement is handled safely on your own posts via **Loop L4 On-Post Engagement** (`docs/07-l4-reply-loop.md`).*
+
+---
 
 Purpose: stop the account behaving like a post-only affiliate bot. Every 6 hours it performs small, useful, no-link participation around the same product categories the account already posts about.
 
@@ -7,6 +17,7 @@ Purpose: stop the account behaving like a post-only affiliate bot. Every 6 hours
 - **No affiliate links. No tracked links. No Shopee URL. No CTA.**
 - Max 6 comments/day by default.
 - Comment only where the account can be helpful from the product/category context.
+- Uses Malaysian persona dataset calibration snippets (`persona_snippets` / `dataset-1.json`) for natural Malay phrasing.
 - Never imply ownership if the product data does not support it.
 - Avoid medical, financial, legal, or safety claims.
 - Skip angry/political/NSFW threads.
@@ -25,14 +36,15 @@ Timezone: Asia/Kuala_Lumpur
 ## Workflow shape
 
 ```text
-[Schedule: every 6h]
+[Schedule: every 6h (Disabled)]
   → [Postgres: pick 3 product/category seeds]
-  → [HTTP: Threads Search API]
+  → [HTTP: Threads Search API (PLACEHOLDER)]
   → [Code: filter/rank candidate threads]
   → [Split in Batches: top 2 per product]
+  → [Persona Calibration: load Malaysian cadence snippets]
   → [LLM: write 1-sentence helpful comment]
   → [Code: no-link/no-spam QA]
-  → [HTTP: publish Threads reply/comment]
+  → [HTTP: publish Threads reply/comment (PLACEHOLDER)]
   → [Postgres: run_log audit]
 ```
 
@@ -58,9 +70,9 @@ Search query builder examples:
 - `{{category_hint}} recommendation Malaysia`
 - Product-specific: `{{name}} guna macam mana` if the name is generic enough.
 
-## 2) Threads Search API
+## 2) Threads Search API (Pending Meta Release)
 
-HTTP Request node (placeholder; update version/path to the current Threads API account permission):
+HTTP Request node (placeholder; update version/path when Meta releases the Threads public Search API):
 
 ```http
 GET https://graph.threads.net/v1.0/search
@@ -90,7 +102,7 @@ score = (reply_count * 3) + like_count + (repost_count * 4) - urlPenalty - affil
 
 Select top **2 non-affiliate threads per product seed**.
 
-## 4) LLM comment prompt
+## 4) LLM comment prompt (Persona-Calibrated)
 
 System:
 
@@ -111,6 +123,8 @@ Product/category context:
 
 Thread text:
 {{thread.text}}
+
+{{persona_fragment}}
 
 Write a useful 1-sentence comment. It may start with:
 - "Yang ni biasanya..."
@@ -148,7 +162,7 @@ Reject if:
 - Contains a claim not supported by product notes/category.
 - Sounds like customer service or a seller.
 
-## 6) Publish
+## 6) Publish (Pending Meta Release)
 
 HTTP Request node (reply/comment endpoint placeholder):
 

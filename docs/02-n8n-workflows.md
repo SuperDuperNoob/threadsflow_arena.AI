@@ -10,7 +10,7 @@ wf2_generate        Cron 03:00     make tomorrow's 5 posts
 wf3_publish         Cron */5min    publish queue + CTA reply
 wf4_evaluate        Cron 3d 02:00  metrics → scores → bandit update → breeding
 wf5_conversions     Cron 12h       Shopee conversions → DB   (optional at first)
-wf6_karma           Cron 6h        no-link helpful comments for reach insurance
+wf6_karma           DRAFT (Cron 6h) no-link helpful comments for reach insurance (on hold for Meta public search API)
 ```
 
 Credentials to create in n8n: `Postgres threadsflow`, `HTTP Header Auth threads`
@@ -327,9 +327,8 @@ Do **not** enable queue mode — you don't have the RAM for Redis + workers, and
 doesn't need it.
 ---
 
-## wf6_karma — no-link engagement loop
+## wf6_karma — no-link engagement loop (Project Draft)
 
-Spec lives at `n8n/workflows/wf6_karma.spec.md`. It searches Threads every 6 hours for active
+Spec lives at `n8n/workflows/wf6_karma.spec.md` and draft template at `n8n/workflows/wf6_karma_draft.json`. It searches Threads every 6 hours for active
 product categories, filters out affiliate/link-bait threads, and posts at most small helpful
-one-sentence replies with **no link and no CTA**. This is reach insurance: the account participates
-like a human instead of only publishing affiliate posts.
+one-sentence replies with **no link and no CTA**. This workflow is preserved as a **project draft / future feature** on hold until Meta exposes public search (`GET /v1.0/search`) and third-party reply posting endpoints. Active engagement is handled via **Loop L4 On-Post Engagement** (`docs/07-l4-reply-loop.md`).

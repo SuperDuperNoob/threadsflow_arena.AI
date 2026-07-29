@@ -1,0 +1,143 @@
+{
+  "name": "wf6_karma (DRAFT - Pending Meta API Public Search)",
+  "active": false,
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 */6 * * *"
+            }
+          ]
+        }
+      },
+      "id": "cron",
+      "name": "Every 6 Hours (Draft Trigger)",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [-600, 300],
+      "notes": "DRAFT WORKFLOW: On hold until Meta releases public search API endpoints for Threads."
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT id, uid, name, COALESCE(enrichment->>'category', notes, name) AS category_hint, notes, enrichment FROM products WHERE status='active' ORDER BY random() LIMIT 3;",
+        "options": {}
+      },
+      "id": "pick_seeds",
+      "name": "Pick 3 Product Seeds",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [-380, 300],
+      "credentials": {
+        "postgres": {
+          "id": "PG",
+          "name": "Postgres threadsflow"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "url": "https://graph.threads.net/v1.0/search",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "q",
+              "value": "={{ $json.category_hint }} tips"
+            },
+            {
+              "name": "media_type",
+              "value": "TEXT"
+            },
+            {
+              "name": "limit",
+              "value": "10"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true
+            }
+          }
+        }
+      },
+      "id": "search_placeholder",
+      "name": "Threads Search API (PLACEHOLDER)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [-160, 300],
+      "notes": "Meta currently does not provide public search endpoints. Update endpoint when available."
+    },
+    {
+      "parameters": {
+        "url": "https://graph.threads.net/v1.0/{{ $json.thread_id }}/replies",
+        "method": "POST",
+        "options": {}
+      },
+      "id": "publish_placeholder",
+      "name": "Publish Reply API (PLACEHOLDER)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [280, 300],
+      "notes": "Meta currently restricts reply posting to user-owned posts only."
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO run_log (workflow, level, message, meta) VALUES ('wf6_karma', 'draft_info', 'posted draft karma comment', $1::jsonb);",
+        "options": {
+          "queryReplacement": "={{ JSON.stringify($json) }}"
+        }
+      },
+      "id": "audit_log",
+      "name": "Audit Log",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [500, 300],
+      "credentials": {
+        "postgres": {
+          "id": "PG",
+          "name": "Postgres threadsflow"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Every 6 Hours (Draft Trigger)": {
+      "main": [
+        [
+          {
+            "node": "Pick 3 Product Seeds",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Pick 3 Product Seeds": {
+      "main": [
+        [
+          {
+            "node": "Threads Search API (PLACEHOLDER)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "Asia/Kuala_Lumpur"
+  },
+  "tags": [
+    {
+      "name": "threadsflow_draft"
+    }
+  ]
+}
