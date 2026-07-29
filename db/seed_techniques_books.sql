@@ -33,7 +33,9 @@ INSERT INTO technique_sources (title, author, notes) VALUES
 ('Books/ (Malay copywriting library)', 'various Malaysian authors',
  '19 Malay ebooks on copywriting, headlines and close-sale. Mechanisms extracted; hard-sell surface style deliberately rejected.'),
 ('Books/ (English storytelling library)', 'Kindra Hall, Carmine Gallo, Ekaterina Walter, Jessica Gioglio',
- 'The Storyteller''s Secret, The Laws of Brand Storytelling, The Power of Visual Storytelling, Infographics.')
+ 'The Storyteller''s Secret, The Laws of Brand Storytelling, The Power of Visual Storytelling, Infographics.'),
+('Books/ (Threads Mastery Bonus Series)', 'various (Threads Profit/Mastery)',
+ 'Modern 2024-2026 strategies specifically for Threads affiliate marketing and Shopee Malaysia.')
 ON CONFLICT DO NOTHING;
 
 INSERT INTO techniques
@@ -228,7 +230,66 @@ SELECT v.* FROM (VALUES
  'Seperti yang anda lihat dalam gambar, spatula ini berwarna hitam.',
  '{}','{}','{0,1,2}','{IMAGE,CAROUSEL}',
  false,null,
- (SELECT id FROM technique_sources WHERE title LIKE 'Books/ (English%'),1,'approved')
+ (SELECT id FROM technique_sources WHERE title LIKE 'Books/ (English%'),1,'approved'),
+
+-- ══════════════════════════════════════════════════════════════════════
+-- FROM: Bonus 1 - 30 Formula Hook Berhantu
+-- ══════════════════════════════════════════════════════════════════════
+('hook_berhantu_ghost_curiosity','Ghostly Curiosity Hook','hook',
+ 'Open with a statement that implies a hidden truth about a common household item, without naming the item in the first line.',
+ 'Product reviews and myth-busting posts.',
+ 'The "Ghost Hook" mechanism creates a high-tension curiosity gap by withholding the subject for exactly one line.',
+ 'Benda ni nampak biasa je, tapi dia dah jimatkan bil elektrik saya RM40 sebulan.',
+ 'Saya beli plug pintar ni kat Shopee dan dia sangat bagus untuk jimat elektrik.',
+ '{question_hook,one_liner,myth_bust}','{gaul,deadpan,chaotic}','{0,1}','{}',
+ false,null,
+ (SELECT id FROM technique_sources WHERE title = 'Books/ (Threads Mastery Bonus Series)'),1,'approved'),
+
+('hyper_local_slang_pattern','Hyper-local Malaysian Slang','voice',
+ 'Use at least two hyper-local Malaysian slang words (e.g., "mantap", "padu", "racun", "ngam") to signal authenticity.',
+ 'Conversational posts for a younger audience.',
+ 'Signaling: using current local slang proves the post is from a real person, not a corporate bot or a generic translation.',
+ 'Barang ni memang padu, rugi tak grab awal-awal.',
+ 'Produk ini sangat berkualiti tinggi dan anda patut membelinya.',
+ '{}','{gaul,chaotic}','{0,1,2}','{}',
+ false,null,
+ (SELECT id FROM technique_sources WHERE title = 'Books/ (Threads Mastery Bonus Series)'),2,'approved'),
+
+-- ══════════════════════════════════════════════════════════════════════
+-- FROM: Threads Profit Machine / Threads Income Mastery
+-- ══════════════════════════════════════════════════════════════════════
+('low_friction_cta_replies','The Invisible Link (Reply-to-Self)','cta',
+ 'Write the main post as a value-only piece, and explicitly mention "link in comments" or "details below".',
+ 'High-reach posts where a direct link would trigger the reach penalty.',
+ 'Algorithm gaming: Threads favors posts without external links. Moving the link to the first comment keeps the main post clean for the algorithm.',
+ 'Link ada kat komen pertama, check out cepat.',
+ 'Boleh beli kat sini: https://shope.ee/link',
+ '{}','{}','{0,1,2}','{}',
+ false,null,
+ (SELECT id FROM technique_sources WHERE title = 'Books/ (Threads Mastery Bonus Series)'),3,'approved'),
+
+('stacked_value_thread','The Value-Stack Thread','structure',
+ 'Provide three distinct benefits or use cases for the product before asking for any action.',
+ 'Listicles and comparison posts.',
+ 'Reciprocity: by giving three pieces of value or "tips" first, the reader is more likely to click the affiliate link as a thank you.',
+ '1. Boleh guna kat dapur.\n2. Boleh bawa travel.\n3. Senang cuci.\n\nMemang berbaloi.',
+ 'Spatula ni bagus gila, cepat beli.',
+ '{list_of_three,pov}','{warm_sibling,minimal}','{1,2}','{}',
+ false,null,
+ (SELECT id FROM technique_sources WHERE title = 'Books/ (Threads Mastery Bonus Series)'),1,'approved'),
+
+-- ══════════════════════════════════════════════════════════════════════
+-- FROM: Threads Content Machine Playbook
+-- ══════════════════════════════════════════════════════════════════════
+('pattern_interrupt_gaul','The "Gaul" Pattern Interrupt','hook',
+ 'Start the post with a very short, punchy slang word followed by a long pause (new line).',
+ 'Breaking the scroll on a busy feed.',
+ 'Visual disruption: a single word on its own line forces the eye to stop and read the next line.',
+ 'Adoi.\n\nKenapa la baru sekarang aku tahu pasal benda ni.',
+ 'Saya baru sahaja menemui sebuah produk yang sangat menarik di Shopee.',
+ '{one_liner,confession}','{gaul,chaotic}','{0,1}','{}',
+ false,null,
+ (SELECT id FROM technique_sources WHERE title = 'Books/ (Threads Mastery Bonus Series)'),1,'approved')
 
 ) AS v(code,name,type,instruction,when_to_use,mechanism,example_do,example_dont,
        compatible_formats,compatible_tones,compatible_intensity,compatible_media,

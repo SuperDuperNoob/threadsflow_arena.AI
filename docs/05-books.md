@@ -8,10 +8,10 @@ You pushed 26 copywriting PDFs. Here's what happened to them.
 
 | | Count | Notes |
 |---|---|---|
-| Malay ebooks | 19 | headlines, ayat jualan, close-sale, social content |
+| Malay ebooks | 25 | headlines, ayat jualan, social content, Threads mastery |
 | English books | 4 | storytelling and visual storytelling |
 | **Scanned (no text layer)** | **3** | cannot be read — see below |
-| Total pages | ~2,100 | |
+| Total | **32** | |
 
 **These 3 are images, not text**, so nothing can be extracted from them:
 
@@ -80,7 +80,7 @@ exactly what Malaysian hard-sell looks like, which is precisely what must never 
 
 ## 4. What's now in the database
 
-**17 techniques** in `db/seed_techniques_books.sql`, on top of the 43 built-in ones (60 total).
+**22 techniques** in `db/seed_techniques_books.sql`, on top of the 43 built-in ones (65 total).
 
 Useful mechanisms extracted:
 
@@ -97,6 +97,11 @@ Useful mechanisms extracted:
 | `data_plus_one_person` | The Storyteller's Secret | A statistic needs a face |
 | `customer_is_hero` | Laws of Brand Storytelling | Reader is the subject, never the product |
 | `show_dont_narrate_image` | Power of Visual Storytelling | Caption says what the photo can't |
+| `hook_berhantu_ghost_curiosity` | 30 Formula Hook Berhantu | High-tension mystery opening |
+| `hyper_local_slang_pattern` | Threads Mastery | Signaling authenticity with slang |
+| `low_friction_cta_replies` | Threads Profit Machine | Algorithm-safe link placement |
+| `stacked_value_thread` | Threads Mastery | Reciprocity before the offer |
+| `pattern_interrupt_gaul` | Content Machine | Visual disruption for busy feeds |
 
 Rejected as harmful, now **blocked automatically**:
 
