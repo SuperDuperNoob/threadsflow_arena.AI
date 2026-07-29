@@ -28,28 +28,32 @@ wf0 can rotate it.
 (`services/kb/server.js` → `POST /api/products`, form at `/product.html`). It is already
 written, tested, and deployed by `docker compose up`. Nothing to import.
 
-It accepts three shapes; only the affiliate link is universally required:
+It accepts three shapes; only the affiliate link is universally required. The optional
+`product_url` can be added to any shape for enrichment only:
 
 | Shape | `media_mode` | Notes |
 |---|---|---|
-| link + images (1–4) | `images` | vision pass runs per image |
-| link + images + description | `images` | richest input |
-| link + description (≥80 chars) | `text` | no images anywhere in the pipeline |
-| link alone | — | **rejected**, with a message explaining what to add |
+| affiliate link + images (1–4) | `images` | vision pass runs per image |
+| affiliate link + images + description | `images` | richest input |
+| affiliate link + description (≥80 chars) | `text` | no images anywhere in the pipeline |
+| affiliate link alone | — | **rejected**, with a message explaining what to add |
 
 What it does internally:
 
 ```
 POST /api/products (multipart)
    ↓
-validate            link required; description >= 80 chars ONLY when no images
+validate            affiliate link required; optional product_url must be http(s);
+                    description >= 80 chars ONLY when no images
    ↓
-INSERT products     uid, media_mode, description, notes     ← transaction commits HERE
+INSERT products     uid, affiliate_url, product_url, media_mode, description, notes
+                    ← transaction commits HERE
    ↓
 upload images       0-4 files -> Cloudflare R2 -> product_images   (skipped if none)
    ↓  (everything below is post-commit and allowed to fail)
-enrich              Shopee Open API (productOfferV2) when keys are set, else
-                    OG tags of the affiliate URL + your description + notes
+enrich              Shopee Open API (productOfferV2) when keys are set, using product_url
+                    first when present; OG tags from product_url/affiliate_url + your
+                    description + notes
                     -> {concrete_details[], sensory_details[], detail_confidence, price, persona}
    ↓
 vision pass         images only -> product_images.vision_desc

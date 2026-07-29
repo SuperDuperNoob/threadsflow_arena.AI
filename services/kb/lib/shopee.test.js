@@ -32,6 +32,7 @@ test('buildAuthorization produces the exact SHA256 header Shopee expects', () =>
 });
 
 test('parseItemIdFromUrl handles the common Shopee URL shapes', () => {
+  assert.equal(parseItemIdFromUrl('https://shopee.com.my/product/43768/18938427295'), 18938427295);
   assert.equal(parseItemIdFromUrl('https://shopee.com.my/product/38003654/1589295236'), 1589295236);
   assert.equal(parseItemIdFromUrl('https://shopee.com.my/i.38003654.1589295236'), 1589295236);
   assert.equal(parseItemIdFromUrl('https://shopee.com.my/My-Shop.38003654.1589295236'), 1589295236);
