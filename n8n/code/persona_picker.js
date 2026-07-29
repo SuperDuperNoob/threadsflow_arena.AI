@@ -4,6 +4,7 @@
  * Input:
  *   $json.cfg.persona_snippets : [{id, domain, title, register, tags, text}]
  *   $json.tone                 : selected tone code from bandit
+ *   $json.product              : product object with category_hint / enrichment
  *
  * Output:
  *   Adds persona_snippets + persona_fragment for the writer prompt.
@@ -36,13 +37,44 @@ function clean(s) {
   return String(s ?? '').replace(/\s+/g, ' ').trim();
 }
 
+function categoryScore(snippet, product) {
+  if (!product) return 0;
+  const categoryText = String(
+    product.category_hint || product.enrichment?.category || product.name || ''
+  ).toLowerCase();
+
+  const domain = String(snippet.domain || snippet.source_domain || '').toLowerCase();
+  const text = String(snippet.text || '').toLowerCase();
+
+  const techKeywords = ['tech', 'gadget', 'phone', 'laptop', 'wireless', 'usb', 'charger', 'audio', 'sound', 'camera', 'peranti', 'skrin', 'bateri', 'moniter', 'keyboard'];
+  const lifestyleKeywords = ['rumah', 'dapur', 'baju', 'kasut', 'skin', 'beauty', 'mask', 'kain', 'makanan', 'decor', 'bilik', 'budak', 'anak', 'beg'];
+
+  const isTechProduct = techKeywords.some(k => categoryText.includes(k));
+  const isLifestyleProduct = lifestyleKeywords.some(k => categoryText.includes(k));
+
+  if (isTechProduct && (domain.includes('amanz') || text.includes('peranti') || text.includes('spesifikasi'))) {
+    return 3;
+  }
+  if (isLifestyleProduct && (domain.includes('iium') || domain.includes('facebook') || snippet.register === 'reflective')) {
+    return 3;
+  }
+  return 0;
+}
+
 function pickPersonaSnippets(input) {
   const all = input.persona_snippets ?? input.cfg?.persona_snippets ?? [];
   if (!Array.isArray(all) || !all.length) return { persona_snippets: [], persona_fragment: '' };
 
   const preferred = toneRegisters(input.tone);
+  const product = input.product || input.product_data || {};
+
   const ranked = all
-    .map(s => ({ ...s, text: clean(s.text), score: preferred.includes(s.register) ? 2 : 0 }))
+    .map(s => {
+      const cleanedText = clean(s.text);
+      let score = preferred.includes(s.register) ? 2 : 0;
+      score += categoryScore(s, product);
+      return { ...s, text: cleanedText, score };
+    })
     .filter(s => s.text.length >= 80 && s.text.length <= 750)
     .sort((a, b) => b.score - a.score || Math.random() - 0.5);
 
@@ -50,7 +82,7 @@ function pickPersonaSnippets(input) {
   if (!picked.length) return { persona_snippets: [], persona_fragment: '' };
 
   const lines = picked.map((s, i) => {
-    const label = [s.register, s.domain].filter(Boolean).join(' · ');
+    const label = [s.register, s.domain || s.source_domain].filter(Boolean).join(' · ');
     return `${i + 1}. (${label}) ${s.text.slice(0, 520)}`;
   });
 
@@ -60,5 +92,11 @@ function pickPersonaSnippets(input) {
   };
 }
 
-const picked = pickPersonaSnippets($json);
-return [{ json: { ...$json, ...picked } }];
+if (typeof $json !== 'undefined') {
+  const picked = pickPersonaSnippets($json);
+  return [{ json: { ...$json, ...picked } }];
+}
+
+if (typeof module !== 'undefined') {
+  module.exports = { pickPersonaSnippets, toneRegisters, categoryScore };
+}
