@@ -429,8 +429,10 @@ const input = normalizeInput($json);
 const MODE = $json.mode ?? (input.scores ? 'update' : 'select');
 if (MODE === 'select') {
   const product = pickProduct(input);
-  const arm = pickArm({ ...input, productUid: product.uid, plan: input.plan });
-  return [{ json: { ...$json, product, ...arm } }];
+  const imageCount = Number(product.image_count ?? product.images ?? 0) || 0;
+  const plan = { ...(input.plan ?? {}), imageCount };
+  const arm = pickArm({ ...input, productUid: product.uid, plan });
+  return [{ json: { ...$json, product, plan, ...arm } }];
 }
 if (MODE === 'update') {
   return [{ json: {

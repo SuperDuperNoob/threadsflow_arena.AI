@@ -94,7 +94,8 @@ INSERT INTO settings (key, value) VALUES
   "carousel_probability": 0.4,
   "reply_delay_range_sec": [45, 120],
   "daily_zero_sell_posts": 1,
-  "image_cooldown_days": 10
+  "image_cooldown_days": 10,
+  "redirect_base_url": "https://r.yourdomain.com"
 }'),
 ('bandit', '{
   "epsilon": 0.25,
@@ -109,4 +110,7 @@ INSERT INTO settings (key, value) VALUES
 ('scoring', '{"w_epm": 0.55, "w_ctr": 0.25, "w_eng": 0.20,
   "eng_weights": {"likes":1, "replies":3, "reposts":5, "quotes":4}}'),
 ('qa', '{"max_similarity": 0.86, "similarity_lookback": 30, "max_retries": 3,
-  "max_chars": 480, "max_emoji": 2, "hashtag_probability": 0.4}');
+  "max_chars": 480, "max_emoji": 2, "hashtag_probability": 0.4}'),
+('llm', '{"base_url":"https://9router.archxry.space/v1", "api_key":"",
+  "model_write":"gemini-2.5-flash", "model_edit":"gpt-4.1-mini",
+  "model_embed":"text-embedding-3-small", "model_mine":"gemini-2.5-pro"}');

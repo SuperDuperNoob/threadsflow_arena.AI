@@ -49,39 +49,38 @@ sudo usermod -aG docker $USER
 
 Verify it works: `docker run hello-world` should print a friendly message.
 
-### 0.4 — 9router (LLM proxy) installed on the VPS
+### 0.4 — AI / LLM endpoint
 
-The system writes posts by calling AI models (GPT, Gemini, Claude). Instead of
-talking to three different AI companies directly, it talks to **9router** — a
-tiny proxy program that runs on your VPS and forwards requests to whichever
-model is cheapest or best for the task.
+The system writes posts by calling an OpenAI-compatible API. **9router is the default**, but it is
+no longer hard-coded: you can use hosted 9router, a 9router process on your VPS host, OpenAI
+directly, OpenRouter, or another compatible proxy.
 
-9router is a separate project. You install it once:
+Default hosted endpoint:
 
 ```bash
-# Install 9router on the VPS host. It listens on port 9000 by default.
-# Check the 9router docs for the latest install command:
-#   https://github.com/9router/9router
-#
-# After installing, configure it with at least one AI provider:
-#   9router config set-provider openai --key sk-...
-#   9router config set-provider google --key ...
-#
-# Start it:
-#   9router serve --port 9000
-#
-# Verify: curl http://localhost:9000/v1/models
+https://9router.archxry.space/v1
 ```
 
-> **What does 9router do?** It is a proxy. Your system sends a request like
-> "write a Malay product review" to `http://localhost:9000/v1/chat/completions`.
-> 9router reads the request, picks the right model, forwards it to OpenAI or
-> Google, gets the reply, and sends it back. You configure your AI provider
-> keys in 9router once; the system never sees them.
+Fast local-on-the-same-VPS option:
+
+```bash
+# 9router runs on the VPS host, outside Docker, listening on port 9000.
+9router serve --port 9000
+curl http://localhost:9000/v1/models
+
+# Containers must reach the host through host.docker.internal, not localhost:
+LLM_BASE_URL=http://host.docker.internal:9000/v1
+```
+
+> **Important Docker note:** `localhost` inside the n8n/kb containers means "this container", not
+> the VPS host. If 9router runs outside Docker, use `http://host.docker.internal:9000/v1`.
 >
-> If you prefer not to use 9router, you can point `LLM_BASE_URL` directly at
-> one provider (e.g. `https://api.openai.com/v1`). You lose automatic model
-> selection, but it still works.
+> **Which is faster?** `host.docker.internal` to a VPS-host 9router is usually faster than going
+> out to a public HTTPS domain, but hosted 9router is easier and works immediately. Both are still
+> proxying to hosted AI models; this project does not run a local LLM.
+>
+> If you prefer not to use 9router, point the base URL directly at one provider, for example
+> `https://api.openai.com/v1`, and set that provider's API key and model names.
 
 ### 0.5 — A Cloudflare Tunnel token
 
@@ -258,18 +257,17 @@ N8N_PASSWORD=pick_a_secure_password
 KB_PASSWORD=pick_a_secure_password
 
 # ═══ AI / LLM settings ═══
-# The address of 9router (or your direct AI provider).
-# host.docker.internal means "the VPS host, reached from inside Docker."
-LLM_BASE_URL=http://host.docker.internal:9000/v1
-
-# If 9router requires an API key, set it here. Otherwise leave blank.
+# Default hosted 9router. You can change this later in KB → LLM Settings.
+LLM_BASE_URL=https://9router.archxry.space/v1
 LLM_API_KEY=
-
-# Which model 9router should use for mining techniques from PDFs.
+LLM_MODEL_WRITE=gemini-2.5-flash
+LLM_MODEL_EDIT=gpt-4.1-mini
 LLM_MODEL_MINE=gemini-2.5-pro
-
-# Which model to use for text embeddings (similarity checks).
 LLM_MODEL_EMBED=text-embedding-3-small
+
+# Faster if 9router runs on the VPS host outside Docker:
+# LLM_BASE_URL=http://host.docker.internal:9000/v1
+# Do not use http://localhost:9000 from inside Docker containers.
 
 # ═══ Image hosting ═══
 # See Step 3b for detailed R2 setup instructions.
@@ -281,6 +279,8 @@ S3_SECRET=your_secret_access_key
 PUBLIC_IMAGE_BASE=https://cdn.yourdomain.com
 
 # ═══ Redirector ═══
+# Public URL for the redirector. CTA comments use this to create links like /p/<post_uid>.
+PUBLIC_REDIRECT_BASE=https://r.yourdomain.com
 # A random salt used to hash IP addresses (for privacy).
 # Use the openssl output from above.
 IP_SALT=...
@@ -333,11 +333,12 @@ Instead of running multiple sql scripts manually, we have provided an automated 
 ./scripts/init_db.sh
 ```
 
-This script automatically executes all schemas, seeds, and **all 7 migrations** in the correct numerical order:
+This script automatically executes all schemas, seeds, and **all 9 migrations** in the correct numerical order:
 1. **Core schemas** (`schema.sql`, `schema_techniques.sql`, `schema_kb.sql`)
 2. **Seeds** (`seed_levers_my.sql`, `seed_techniques_my.sql`, `mining_questions.sql`)
-3. **Migrations 001 through 007** (adding compatible media, localizations, contextual bandit weights, reply loops, and user comment intent definitions)
+3. **Migrations 001 through 009** (adding compatible media, localizations, contextual bandit weights, reply loops, user comment intent definitions, shared LLM config, and redirect base URL config)
 4. **Books techniques seed** (`seed_techniques_books.sql`)
+5. **LLM config sync** from `infra/.env` into `settings.llm`
 
 > **What does each file do?** Think of `schema.sql` as creating empty tables (like empty Excel sheets). The `seed_*.sql` files fill those tables with starting data — the levers (writing styles), the techniques (copywriting patterns), and the banned phrases. The migrations make updates and add improvements over time.
 
@@ -359,12 +360,17 @@ Then paste this, replacing the placeholder values:
 INSERT INTO settings (key, value) VALUES
 ('threads_creds', '{"token":"YOUR_LONG_TOKEN","user_id":"YOUR_USER_ID","expires_at":"2026-09-25"}');
 
--- LLM settings: where to find 9router and which models to use
+-- LLM settings: where to send OpenAI-compatible AI calls.
+-- You can also edit this later at https://kb.yourdomain.com/settings.html.
 INSERT INTO settings (key, value) VALUES
-('llm', '{"base_url":"http://host.docker.internal:9000/v1",
+('llm', '{"base_url":"https://9router.archxry.space/v1",
+          "api_key":"",
           "model_write":"gemini-2.5-flash",
           "model_edit":"gpt-4.1-mini",
-          "model_embed":"text-embedding-3-small"}');
+          "model_embed":"text-embedding-3-small",
+          "model_mine":"gemini-2.5-pro"}');
+-- If 9router runs on the VPS host outside Docker, use:
+--   "base_url":"http://host.docker.internal:9000/v1"
 
 -- Shopee Affiliate Open API: used by wf5 (conversion sync) and by product intake
 -- (authoritative price/commission). Get the App ID + API Key from the affiliate
@@ -387,6 +393,15 @@ INSERT INTO settings (key, value) VALUES
 \q
 ```
 
+> **Changing LLM later:** open `https://kb.yourdomain.com/settings.html` and edit Base URL,
+> API key, and models from the browser. Or run:
+>
+> ```bash
+> ./scripts/configure_llm.sh --base-url https://api.openai.com/v1 --api-key sk-... \
+>   --write-model gpt-4.1-mini --edit-model gpt-4.1-mini \
+>   --embed-model text-embedding-3-small --mine-model gpt-4.1
+> ```
+>
 > **How do these settings get used?** Each n8n workflow has a "Postgres" node
 > that reads from the `settings` table. When wf3_publish needs the token to
 > post, it queries `SELECT value FROM settings WHERE key='threads_creds'`,
@@ -784,19 +799,25 @@ Or you can manually copy and paste the contents into the respective n8n **Code**
 > in a proper editor. The `populate_workflows.js` script handles embedding them
 > into the workflow JSON templates for direct n8n import.
 
-### 4.4 — Configure the LLM HTTP nodes
+### 4.4 — Confirm the LLM HTTP nodes use shared config
 
-wf2_generate has HTTP Request nodes that call the AI to write and edit posts.
-These need to point at 9router:
+wf2_generate has HTTP Request nodes that call the AI to write, edit and embed. In the imported
+workflow templates these nodes already use expressions like:
 
-1. Find each **HTTP Request** node connected to the LLM calls
-2. Set the **URL** to `http://host.docker.internal:9000/v1/chat/completions`
-3. Set the **Authentication** to "None" (9router handles auth; you configured
-   your provider keys inside 9router)
+```text
+{{ $json.cfg.llm.base_url }}/chat/completions
+{{ $json.cfg.llm.base_url }}/embeddings
+Authorization: Bearer {{ $json.cfg.llm.api_key }}
+```
 
-If you are NOT using 9router and are calling a provider directly:
-- URL: `https://api.openai.com/v1/chat/completions` (or your provider's URL)
-- Authentication: "Header Auth" with `Authorization: Bearer sk-...`
+So you normally do **not** edit the HTTP nodes one by one. Change the endpoint in one place:
+
+- Browser: `https://kb.yourdomain.com/settings.html`
+- CLI: `./scripts/configure_llm.sh --local-9router` or `./scripts/configure_llm.sh --base-url ...`
+- SQL: update the `settings` row where `key='llm'`
+
+If you imported an older workflow, re-import `n8n/workflows/wf2_generate.json` or manually change
+its LLM HTTP nodes to read from `cfg.llm` instead of hard-coded URLs.
 
 ### 4.5 — Assign credentials to each workflow
 

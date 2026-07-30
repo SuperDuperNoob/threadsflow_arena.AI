@@ -17,19 +17,26 @@ import { startWorker } from './lib/worker.js';
 import { putImage, enrich, describeImage, shortId } from './lib/products.js';
 import { registerShopeePool, isConfigured } from './lib/shopee.js';
 import { upsertConversionRows } from './lib/shopee_conversions.js';
+import { clearLlmConfigCache, getLlmConfig, normalizeLlmConfig, registerLlmPool } from './lib/llm.js';
 
 const {
   DATABASE_URL,
   PORT = 8082,
   IMAGE_DIR = '/data/images',
   KB_PASSWORD = '',
+  KB_ALLOW_NO_PASSWORD = '',
   STORAGE_DIR = '/data/pdfs',
   MAX_UPLOAD_MB = 60,
 } = process.env;
 
+if (!KB_PASSWORD && KB_ALLOW_NO_PASSWORD !== 'true') {
+  throw new Error('KB_PASSWORD is required. Set KB_ALLOW_NO_PASSWORD=true only for local development.');
+}
+
 const pool = new pg.Pool({ connectionString: DATABASE_URL, max: 6 });
-// Let the Shopee Open API client read app_id/secret from the `settings` table (repo convention).
+// Let the Shopee and LLM clients read shared config from the `settings` table (repo convention).
 registerShopeePool(pool);
+registerLlmPool(pool);
 const app = express();
 app.use(express.json({ limit: '1mb' }));
 app.disable('x-powered-by');
@@ -146,6 +153,108 @@ app.get('/api/stats', requireAuth, async (_, res) => {
              queue: queue.pending, needs_review: perf.review });
 });
 
+// ─────────────────────────────────────────── LLM settings
+// One place to change the OpenAI-compatible endpoint used by n8n generation and KB mining.
+
+const LLM_PRESETS = [
+  {
+    id: '9router_hosted',
+    name: '9router hosted (default)',
+    base_url: 'https://9router.archxry.space/v1',
+    note: 'Works from Docker without exposing a local port. Usually simplest.',
+  },
+  {
+    id: '9router_on_vps_host',
+    name: '9router on this VPS host',
+    base_url: 'http://host.docker.internal:9000/v1',
+    note: 'Fastest if 9router runs on the VPS outside Docker. Do not use localhost inside containers.',
+  },
+  {
+    id: 'openai_direct',
+    name: 'OpenAI direct',
+    base_url: 'https://api.openai.com/v1',
+    note: 'Use your OpenAI API key and OpenAI model names.',
+  },
+  {
+    id: 'openrouter_direct',
+    name: 'OpenRouter direct',
+    base_url: 'https://openrouter.ai/api/v1',
+    note: 'Chat is OpenAI-compatible; choose an embeddings endpoint/model that supports /embeddings.',
+  },
+];
+
+function publicLlmConfig(cfg) {
+  const { api_key: apiKey, ...safe } = normalizeLlmConfig(cfg);
+  return { ...safe, api_key_set: Boolean(apiKey) };
+}
+
+function validateLlmInput(body = {}, current = {}) {
+  const next = normalizeLlmConfig({ ...current, ...body });
+  const errors = [];
+  try {
+    const u = new URL(next.base_url);
+    if (!['http:', 'https:'].includes(u.protocol)) errors.push('base_url must start with http:// or https://');
+  } catch {
+    errors.push('base_url is not a valid URL');
+  }
+  for (const k of ['model_write', 'model_edit', 'model_embed', 'model_mine']) {
+    if (!next[k] || next[k].length > 200) errors.push(`${k} is required and must be under 200 characters`);
+  }
+  if (errors.length) {
+    const e = new Error(errors.join('; '));
+    e.status = 400;
+    throw e;
+  }
+
+  if (body.clear_api_key) next.api_key = '';
+  else if (typeof body.api_key === 'string' && body.api_key.trim()) next.api_key = body.api_key.trim();
+  else next.api_key = current.api_key ?? next.api_key ?? '';
+
+  return next;
+}
+
+async function llmConfigFromRequest(body = {}) {
+  const current = await getLlmConfig();
+  return validateLlmInput(body, current);
+}
+
+app.get('/api/config/llm', requireAuth, async (_req, res) => {
+  const cfg = await getLlmConfig();
+  const { rows } = await pool.query("SELECT 1 FROM settings WHERE key='llm'");
+  res.json({ ...publicLlmConfig(cfg), source: rows.length ? 'settings.llm' : 'env/default', presets: LLM_PRESETS });
+});
+
+app.put('/api/config/llm', requireAuth, async (req, res) => {
+  try {
+    const cfg = await llmConfigFromRequest(req.body ?? {});
+    await pool.query(
+      `INSERT INTO settings (key, value) VALUES ('llm', $1::jsonb)
+       ON CONFLICT (key) DO UPDATE SET value=EXCLUDED.value`,
+      [JSON.stringify(cfg)]);
+    clearLlmConfigCache();
+    res.json({ ok: true, ...publicLlmConfig(cfg), presets: LLM_PRESETS });
+  } catch (e) {
+    res.status(e.status || 500).json({ error: e.message });
+  }
+});
+
+app.post('/api/config/llm/test', requireAuth, async (req, res) => {
+  try {
+    const cfg = await llmConfigFromRequest(req.body ?? {});
+    const r = await fetch(`${cfg.base_url.replace(/\/+$/, '')}/models`, {
+      headers: cfg.api_key ? { authorization: `Bearer ${cfg.api_key}` } : {},
+      signal: AbortSignal.timeout(15_000),
+    });
+    const text = await r.text();
+    if (!r.ok) return res.status(400).json({ ok: false, error: `HTTP ${r.status}: ${text.slice(0, 500)}` });
+    let count = null;
+    try { count = JSON.parse(text).data?.length ?? null; } catch { /* provider returned non-JSON */ }
+    res.json({ ok: true, model_count: count });
+  } catch (e) {
+    res.status(400).json({ ok: false, error: e.message });
+  }
+});
+
 app.get('/api/techniques', requireAuth, async (req, res) => {
   const { type, q, enabled } = req.query;
   const where = [], params = [];
@@ -233,18 +342,22 @@ app.delete('/api/documents/:id', requireAuth, async (req, res) => {
 
 app.get('/api/kb/techniques-for-generation', async (req, res) => {
   const { format, tone, sell_intensity } = req.query;
+  let context = {};
+  if (req.query.context) {
+    try { context = JSON.parse(String(req.query.context)); } catch { context = {}; }
+  }
   const { rows } = await pool.query(`
     SELECT id, code, name, type, instruction, example_do, example_dont,
            compatible_formats, compatible_tones, compatible_intensity,
-           contested, corroboration, n, alpha, beta, cooldown_until
+           compatible_media, contested, corroboration, n, alpha, beta, cooldown_until
       FROM techniques
      WHERE enabled AND review_state <> 'rejected' AND type <> 'anti_pattern'
        AND (cooldown_until IS NULL OR cooldown_until < now())
        AND (cardinality(compatible_formats)=0 OR $1 = ANY(compatible_formats))
        AND (cardinality(compatible_tones)=0   OR $2 = ANY(compatible_tones))
        AND (cardinality(compatible_intensity)=0 OR $3::smallint = ANY(compatible_intensity))`,
-    [format ?? '', tone ?? '', Number(sell_intensity ?? 1)]);
-  res.json(rows);
+    [format ?? context.format ?? '', tone ?? context.tone ?? '', Number(sell_intensity ?? context.sell_intensity ?? 1)]);
+  res.json({ ...context, techniques: rows });
 });
 
 

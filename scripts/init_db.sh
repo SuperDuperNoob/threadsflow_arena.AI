@@ -43,4 +43,7 @@ done
 echo "Seeding PDF books copywriting techniques..."
 docker compose -f infra/docker-compose.yml exec -T postgres psql -v ON_ERROR_STOP=1 -U threadsflow -d threadsflow < db/seed_techniques_books.sql
 
+echo "Applying LLM settings from infra/.env (if present)..."
+./scripts/configure_llm.sh
+
 echo "Database initialization complete! 🚀"

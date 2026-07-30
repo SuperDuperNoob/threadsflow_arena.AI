@@ -1,0 +1,150 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>ThreadsFlow — LLM Settings</title>
+<style>
+  :root{--bg:#0d0f12;--panel:#15181d;--panel2:#1c2027;--line:#252a33;--txt:#e6e9ef;
+        --dim:#8b93a1;--acc:#4c9aff;--ok:#3fb950;--warn:#d29922;--bad:#f85149}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--txt);
+       font:14px/1.55 ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+  header{padding:18px 24px;border-bottom:1px solid var(--line);display:flex;gap:18px;align-items:baseline;flex-wrap:wrap}
+  h1{font-size:17px;margin:0;font-weight:600} h2{font-size:15px;margin:0 0 8px}
+  a{color:var(--acc);text-decoration:none;font-size:13px}
+  main{max-width:820px;margin:0 auto;padding:24px}
+  label{display:block;font-size:12px;color:var(--dim);margin:14px 0 5px}
+  input,select{width:100%;background:var(--panel2);color:var(--txt);border:1px solid var(--line);
+    border-radius:7px;padding:9px 11px;font-size:14px;font-family:inherit}
+  button{background:var(--acc);color:#04101f;border:0;border-radius:7px;padding:10px 16px;
+         font-weight:600;cursor:pointer;font-size:14px;margin-top:16px;margin-right:8px}
+  button.secondary{background:var(--panel2);color:var(--txt);border:1px solid var(--line)}
+  button.danger{background:transparent;color:var(--bad);border:1px solid var(--bad)}
+  .hint{color:var(--dim);font-size:12px;margin-top:4px}.box{background:var(--panel);border:1px solid var(--line);border-radius:9px;padding:16px;margin-top:18px}
+  .ok{border-color:var(--ok)}.bad{border-color:var(--bad)}.warn{border-color:var(--warn)}
+  .row{display:grid;grid-template-columns:1fr 1fr;gap:14px}@media(max-width:700px){.row{grid-template-columns:1fr}}
+  code{background:var(--panel2);padding:1px 5px;border-radius:4px;font-size:12px}.hide{display:none}
+  #login{max-width:320px;margin:100px auto;text-align:center}.pill{display:inline-block;padding:1px 8px;border-radius:20px;font-size:11px;background:#12203a;color:var(--acc)}
+</style>
+</head>
+<body>
+<div id="login" class="hide">
+  <h1>LLM Settings</h1>
+  <p class="hint">Enter KB password</p>
+  <input type="password" id="pw" style="margin-bottom:8px" onkeydown="if(event.key==='Enter')login()">
+  <button style="width:100%" onclick="login()">Unlock</button>
+</div>
+
+<div id="app" class="hide">
+<header>
+  <h1>LLM Settings</h1>
+  <a href="/">← Knowledge Base</a>
+  <a href="/product.html">Add Product</a>
+</header>
+<main>
+  <div class="box" style="margin-top:0">
+    <h2>OpenAI-compatible AI endpoint</h2>
+    <div class="hint">This controls both daily n8n generation and KB/PDF mining. 9router stays the default, but you can point it at OpenAI, OpenRouter, a local proxy, or any compatible <code>/v1/chat/completions</code> API.</div>
+  </div>
+
+  <label>Preset</label>
+  <select id="preset"></select>
+  <div class="hint" id="presetNote"></div>
+
+  <label>Base URL</label>
+  <input id="base" placeholder="https://9router.archxry.space/v1">
+  <div class="hint">If 9router runs on the VPS host outside Docker, use <code>http://host.docker.internal:9000/v1</code>. Do not use <code>localhost</code> from inside Docker containers.</div>
+
+  <label>API key</label>
+  <input id="key" type="password" autocomplete="off" placeholder="leave blank to keep existing key">
+  <div class="hint" id="keyHint">Loading…</div>
+
+  <div class="row">
+    <div><label>Write model</label><input id="write" placeholder="gemini-2.5-flash"></div>
+    <div><label>Edit model</label><input id="edit" placeholder="gpt-4.1-mini"></div>
+  </div>
+  <div class="row">
+    <div><label>Embedding model</label><input id="embed" placeholder="text-embedding-3-small"></div>
+    <div><label>PDF mining / enrichment model</label><input id="mine" placeholder="gemini-2.5-pro"></div>
+  </div>
+
+  <button onclick="save()">Save config</button>
+  <button class="secondary" onclick="testCfg()">Test /models</button>
+  <button class="danger" onclick="clearKey()">Clear saved API key</button>
+
+  <div id="out"></div>
+
+  <div class="box warn">
+    <b>Speed tip</b>
+    <div class="hint">Hosted <code>https://9router.archxry.space/v1</code> is easiest. A 9router process on the same VPS host can be faster, but containers must reach it via <code>host.docker.internal</code>, not <code>localhost</code>.</div>
+  </div>
+</main>
+</div>
+
+<script>
+const $=s=>document.querySelector(s);
+let presets=[];
+async function api(path,opts){
+  const r=await fetch('/api'+path,opts);
+  if(r.status===401){show('login');throw new Error('auth')}
+  const j=await r.json().catch(()=>({}));
+  if(!r.ok) throw new Error(j.error||'request failed');
+  return j;
+}
+function show(which){$('#login').classList.toggle('hide',which!=='login');$('#app').classList.toggle('hide',which==='login')}
+async function login(){
+  const r=await fetch('/api/login',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({password:$('#pw').value})});
+  if(r.ok){show('app');boot()}else alert('wrong password')
+}
+function cfg(extra={}){
+  return {
+    base_url: $('#base').value.trim(),
+    api_key: $('#key').value.trim(),
+    model_write: $('#write').value.trim(),
+    model_edit: $('#edit').value.trim(),
+    model_embed: $('#embed').value.trim(),
+    model_mine: $('#mine').value.trim(),
+    ...extra,
+  };
+}
+function renderPresetOptions(){
+  $('#preset').innerHTML='<option value="custom">Custom</option>'+presets.map(p=>`<option value="${p.id}">${p.name}</option>`).join('');
+}
+$('#preset').onchange=()=>{
+  const p=presets.find(x=>x.id===$('#preset').value);
+  if(!p) { $('#presetNote').textContent=''; return; }
+  $('#base').value=p.base_url; $('#presetNote').textContent=p.note||'';
+};
+async function boot(){
+  try{
+    const c=await api('/config/llm');
+    presets=c.presets||[]; renderPresetOptions();
+    $('#base').value=c.base_url; $('#write').value=c.model_write; $('#edit').value=c.model_edit;
+    $('#embed').value=c.model_embed; $('#mine').value=c.model_mine;
+    $('#keyHint').innerHTML=c.api_key_set?'An API key is available. Leave blank to keep it.':'No API key available. Add one if your endpoint requires it.';
+    $('#preset').value=(presets.find(p=>p.base_url===c.base_url)||{}).id||'custom';
+    $('#preset').onchange();
+    show('app');
+  }catch(e){ if(e.message!=='auth') $('#out').innerHTML=`<div class="box bad">${e.message}</div>`; }
+}
+async function save(extra={}){
+  $('#out').innerHTML='<div class="box">Saving…</div>';
+  try{
+    const c=await api('/config/llm',{method:'PUT',headers:{'content-type':'application/json'},body:JSON.stringify(cfg(extra))});
+    $('#key').value=''; $('#keyHint').innerHTML=c.api_key_set?'An API key is available. Leave blank to keep it.':'No API key available.';
+    $('#out').innerHTML='<div class="box ok"><b>Saved.</b> n8n generation and KB mining will use this config.</div>';
+  }catch(e){$('#out').innerHTML=`<div class="box bad"><b>Save failed.</b> ${e.message}</div>`}
+}
+async function testCfg(){
+  $('#out').innerHTML='<div class="box">Testing /models…</div>';
+  try{
+    const r=await api('/config/llm/test',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(cfg())});
+    $('#out').innerHTML=`<div class="box ok"><b>Connection OK.</b>${r.model_count!==null?` ${r.model_count} models visible.`:''}</div>`;
+  }catch(e){$('#out').innerHTML=`<div class="box bad"><b>Test failed.</b> ${e.message}</div>`}
+}
+function clearKey(){ if(confirm('Clear the saved API key?')) save({clear_api_key:true,api_key:''}); }
+boot();
+</script>
+</body>
+</html>
