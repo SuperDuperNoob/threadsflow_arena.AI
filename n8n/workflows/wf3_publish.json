@@ -24,7 +24,7 @@
     {
       "parameters": {
         "operation": "executeQuery",
-        "query": "WITH s AS (\n  SELECT value FROM settings WHERE key = 'threads_creds'\n)\nSELECT p.*, pr.affiliate_url, pr.uid AS product_uid, pr.media_mode,\n       (SELECT array_agg(pi.public_url ORDER BY pi.id)\n          FROM product_images pi WHERE pi.id = ANY(p.image_ids)) AS image_urls,\n       (SELECT value->>'token'   FROM s) AS token,\n       (SELECT value->>'user_id' FROM s) AS user_id\n  FROM posts p\n  JOIN products pr ON pr.id = p.product_id\n WHERE p.status = 'queued'\n   AND p.scheduled_at <= now()\n ORDER BY p.scheduled_at\n LIMIT 1;",
+        "query": "WITH s AS (\n  SELECT value FROM settings WHERE key = 'threads_creds'\n), due AS (\nSELECT p.*, pr.affiliate_url, pr.uid AS product_uid, pr.media_mode,\n       (SELECT array_agg(pi.public_url ORDER BY pi.id)\n          FROM product_images pi WHERE pi.id = ANY(p.image_ids)) AS image_urls,\n       (SELECT value->>'token'   FROM s) AS token,\n       (SELECT value->>'user_id' FROM s) AS user_id\n  FROM posts p\n  JOIN products pr ON pr.id = p.product_id\n WHERE p.status = 'queued'\n   AND p.scheduled_at <= now()\n ORDER BY p.scheduled_at\n LIMIT 1\n), ckpt AS (\n  INSERT INTO run_log (workflow, level, message, meta)\n  SELECT 'wf3_publish','debug','due post fetched',\n         jsonb_build_object('uid', due.uid, 'media_type', due.media_type,\n                            'scheduled_at', due.scheduled_at)\n  FROM due RETURNING 1\n)\nSELECT * FROM due;",
         "options": {}
       },
       "id": "fetch",
@@ -125,9 +125,9 @@
     {
       "parameters": {
         "operation": "executeQuery",
-        "query": "UPDATE posts SET status = 'publishing' WHERE id = $1 AND status = 'queued' RETURNING id;",
+        "query": "WITH locked AS (\n  UPDATE posts SET status = 'publishing' WHERE id = $1 AND status = 'queued' RETURNING id\n), ckpt AS (\n  INSERT INTO run_log (workflow, level, message, meta)\n  SELECT 'wf3_publish','debug','post locked: quota checked', $2::jsonb FROM locked RETURNING 1\n)\nSELECT id FROM locked;",
         "options": {
-          "queryReplacement": "={{ $json.id }}"
+          "queryReplacement": "={{ $json.id }},={{ JSON.stringify({uid: $json.uid, quota: $json.quota, media_type: $json.media_type, abort: $json.abort === true}) }}"
         }
       },
       "id": "lock",
@@ -236,7 +236,7 @@
     {
       "parameters": {
         "operation": "executeQuery",
-        "query": "UPDATE posts SET status='published', threads_media_id=$2, published_at=now() WHERE id=$1 RETURNING uid, sell_intensity, cta_text, tracked_url, reply_delay_sec, image_ids;",
+        "query": "WITH pub AS (\n  UPDATE posts SET status='published', threads_media_id=$2, published_at=now() WHERE id=$1\n  RETURNING uid, sell_intensity, cta_text, tracked_url, reply_delay_sec, image_ids, media_type, char_count\n), ckpt AS (\n  INSERT INTO run_log (workflow, level, message, meta)\n  SELECT 'wf3_publish','info','post published',\n         jsonb_build_object('uid', pub.uid, 'media_type', pub.media_type, 'char_count', pub.char_count)\n  FROM pub RETURNING 1\n)\nSELECT uid, sell_intensity, cta_text, tracked_url, reply_delay_sec, image_ids FROM pub;",
         "options": {
           "queryReplacement": "={{ $('Quota guard').first().json.id }},={{ $json.id }}"
         }
@@ -384,9 +384,9 @@
     {
       "parameters": {
         "operation": "executeQuery",
-        "query": "UPDATE posts SET threads_reply_id = $2 WHERE id = $1;\nUPDATE product_images SET use_count = use_count + 1, last_used_at = now()\n WHERE id = ANY((SELECT COALESCE(image_ids,'{}') FROM posts WHERE id = $1));",
+        "query": "UPDATE posts SET threads_reply_id = $2 WHERE id = $1;\nUPDATE product_images SET use_count = use_count + 1, last_used_at = now()\n WHERE id = ANY((SELECT COALESCE(image_ids,'{}') FROM posts WHERE id = $1));\nINSERT INTO run_log (workflow, level, message, meta)\nVALUES ('wf3_publish','info','CTA reply published', jsonb_build_object('uid', $3::text));",
         "options": {
-          "queryReplacement": "={{ $('Quota guard').first().json.id }},={{ $json.id }}"
+          "queryReplacement": "={{ $('Quota guard').first().json.id }},={{ $json.id }},={{ $('Mark published').first().json.uid }}"
         }
       },
       "id": "finalize",
@@ -407,9 +407,9 @@
     {
       "parameters": {
         "operation": "executeQuery",
-        "query": "UPDATE posts SET status='failed', fail_reason=$2 WHERE id=$1;\nINSERT INTO run_log (workflow, level, message, meta) VALUES ('wf3_publish','error',$2,'{}');",
+        "query": "UPDATE posts SET status='failed', fail_reason=$2 WHERE id=$1;\nINSERT INTO run_log (workflow, level, message, meta) VALUES ('wf3_publish','error','publish failed',$2::jsonb);",
         "options": {
-          "queryReplacement": "={{ $('Quota guard').first().json.id }},={{ JSON.stringify($json).slice(0,500) }}"
+          "queryReplacement": "={{ $('Quota guard').first().json.id }},={{ JSON.stringify({node: $prevNode.name, error: String(($json.error && ($json.error.message || $json.error.description)) || $json.message || 'unknown').slice(0, 300)}).slice(0, 500) }}"
         }
       },
       "id": "fail",
@@ -626,6 +626,54 @@
         1040,
         220
       ]
+    },
+    {
+      "id": "log_container",
+      "name": "Log container created",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        1150,
+        220
+      ],
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "WITH ckpt AS (\n  INSERT INTO run_log (workflow, level, message, meta)\n  VALUES ('wf3_publish','debug','container created', $1::jsonb) RETURNING 1\n)\nSELECT $2::text AS id;",
+        "options": {
+          "queryReplacement": "={{ JSON.stringify({uid: $('Quota guard').first().json.uid, media_type: $('Quota guard').first().json.media_type, container_id: String($json.id).slice(0, 80)}) }},={{ $json.id }}"
+        }
+      },
+      "credentials": {
+        "postgres": {
+          "id": "PG",
+          "name": "Postgres threadsflow"
+        }
+      },
+      "notes": "Canary checkpoint. Pass-through: re-emits the creation_id as `id` for Publish post."
+    },
+    {
+      "id": "log_cta_skip",
+      "name": "Log CTA skipped",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        2140,
+        320
+      ],
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO run_log (workflow, level, message, meta)\nVALUES ('wf3_publish','debug','CTA skipped (sell_intensity=0)', $1::jsonb);",
+        "options": {
+          "queryReplacement": "={{ JSON.stringify({uid: $json.uid}) }}"
+        }
+      },
+      "credentials": {
+        "postgres": {
+          "id": "PG",
+          "name": "Postgres threadsflow"
+        }
+      },
+      "notes": "Canary checkpoint."
     }
   ],
   "connections": {
@@ -734,7 +782,13 @@
             "index": 0
           }
         ],
-        []
+        [
+          {
+            "node": "Log CTA skipped",
+            "type": "main",
+            "index": 0
+          }
+        ]
       ]
     },
     "Wait 45-120s (human pause)": {
@@ -893,7 +947,7 @@
       "main": [
         [
           {
-            "node": "Wait for media processing",
+            "node": "Log container created",
             "type": "main",
             "index": 0
           }
@@ -905,6 +959,17 @@
         [
           {
             "node": "Publish post",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Log container created": {
+      "main": [
+        [
+          {
+            "node": "Wait for media processing",
             "type": "main",
             "index": 0
           }

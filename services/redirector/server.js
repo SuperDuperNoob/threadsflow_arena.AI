@@ -13,6 +13,7 @@
 import http from 'node:http';
 import crypto from 'node:crypto';
 import pg from 'pg';
+import { createLogger, hostOnly, snippet } from './logger.js';
 
 const {
   DATABASE_URL,
@@ -20,6 +21,8 @@ const {
   IP_SALT = 'change-me',
   FALLBACK_URL = 'https://shopee.com.my',
 } = process.env;
+
+const log = createLogger('redirector');
 
 const pool = new pg.Pool({ connectionString: DATABASE_URL, max: 4 });
 
@@ -210,6 +213,7 @@ const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, 'http://x');
 
   if (url.pathname === '/healthz') {
+    log.debug('healthz_hit', {});     // debug only — health probes would flood info logs
     res.writeHead(200, { 'content-type': 'text/plain' });
     return res.end('ok');
   }
@@ -217,6 +221,7 @@ const server = http.createServer(async (req, res) => {
   if (url.pathname === '/ping.js') {
     const uid = clampText(url.searchParams.get('uid'), 32);
     const n = clampText(url.searchParams.get('n'), 64);
+    log.debug('ping_js_served', { uid });
     res.writeHead(200, {
       'content-type': 'application/javascript; charset=utf-8',
       'cache-control': 'no-store, private',
@@ -245,6 +250,7 @@ const server = http.createServer(async (req, res) => {
       const ua = req.headers['user-agent'] ?? pendingHit?.ua ?? '';
 
       if (!uid || !n || !pendingHit || pendingHit.uid !== uid || pendingHit.ipHash !== ipHash) {
+        log.debug('ping_rejected', { uid, reason: 'stale_or_bad_nonce' });
         return json(res, 202, { ok: false, reason: 'stale_or_bad_nonce' });
       }
 
@@ -254,9 +260,16 @@ const server = http.createServer(async (req, res) => {
         isBot: verdict.is_bot, reason: verdict.reason, score: verdict.score, fp,
       });
       if (rowCount > 0) pending.delete(n);
+      // Verdict reason + score are safe; raw fingerprint only at debug, truncated + sanitized.
+      log.info('ping_verified', {
+        uid, verified: !verdict.is_bot, score: verdict.score,
+        reason: verdict.reason, click_updated: rowCount > 0,
+      });
+      log.debug('ping_fingerprint', { uid, fp_snippet: snippet(JSON.stringify(fp), 300) });
       return json(res, 202, { ok: true, verified: !verdict.is_bot });
     } catch (e) {
       console.error('ping failed', e.message);
+      log.warn('ping_failed', { reason: e.message });
       return json(res, 202, { ok: false });
     }
   }
@@ -284,8 +297,15 @@ const server = http.createServer(async (req, res) => {
   // a best-effort race: real browsers may fetch the probe while bots that only follow redirects
   // never see a JS challenge to wait on.
   let target = null;
-  try { target = await resolveLink(uid); } catch { /* fall through */ }
+  try { target = await resolveLink(uid); } catch (e) { log.warn('resolve_link_failed', { uid, reason: e.message }); }
   const location = target ? withSubId(target, uid) : FALLBACK_URL;
+
+  // Host only — the full affiliate URL carries SubIds/tracking params and stays out of logs.
+  log.info('redirect_hit', {
+    uid, found: Boolean(target), target_host: hostOnly(location),
+    first_pass: firstPassBot ? 'bot' : 'human', bot_reason: botReason,
+    country, dedupe: isDupe,
+  });
   const probe = `/ping.js?uid=${encodeURIComponent(uid)}&n=${encodeURIComponent(n)}`;
   const prefetch = `/ping?uid=${encodeURIComponent(uid)}&n=${encodeURIComponent(n)}&probe=1`;
 
@@ -311,6 +331,7 @@ const server = http.createServer(async (req, res) => {
   ).then(r => {
     const hit = pending.get(n);
     if (hit) hit.clickId = r.rows[0]?.id;
+    log.debug('click_insert_ok', { uid, click_id: r.rows[0]?.id ?? null });
   }).catch(async e => {
     if (/bot_reason/i.test(e.message)) {
       return pool.query(
@@ -320,13 +341,25 @@ const server = http.createServer(async (req, res) => {
       ).then(r => {
         const hit = pending.get(n);
         if (hit) hit.clickId = r.rows[0]?.id;
-      }).catch(e2 => console.error('click log failed', e2.message));
+        log.debug('click_insert_ok', { uid, click_id: r.rows[0]?.id ?? null, fallback: true });
+      }).catch(e2 => { console.error('click log failed', e2.message); log.error('click_insert_failed', { uid, reason: e2.message }); });
     }
     console.error('click log failed', e.message);
+    log.error('click_insert_failed', { uid, reason: e.message });
   });
 });
 
-server.listen(PORT, '0.0.0.0', () => console.log(`redirector on :${PORT}`));
+server.listen(PORT, '0.0.0.0', () => {
+  console.log(`redirector on :${PORT}`);
+  log.info('startup', {
+    port: Number(PORT),
+    fallback_host: hostOnly(FALLBACK_URL),
+    ip_salt_set: IP_SALT !== 'change-me',
+    debug_mode: log.debugActive(),
+    debug_until: process.env.DEBUG_UNTIL || null,
+    log_level: process.env.LOG_LEVEL || 'info',
+  });
+});
 
 for (const sig of ['SIGTERM', 'SIGINT']) {
   process.on(sig, () => server.close(() => pool.end().then(() => process.exit(0))));

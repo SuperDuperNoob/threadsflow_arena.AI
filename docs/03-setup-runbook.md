@@ -966,6 +966,32 @@ This one hour of reading is worth more than any prompt engineering.
 
 ---
 
+## Step 7b — First public deployment: 72-hour canary (recommended)
+
+For the first three days live, run the stack in **canary mode**: extra structured
+logging (with secret masking baked in) plus an observer script that snapshots stack
+health every 5 minutes. Full instructions, pass/fail criteria and cleanup:
+**[docs/08-72h-canary.md](08-72h-canary.md)**.
+
+The short version:
+
+```bash
+# infra/.env — turn on debug logging with a built-in expiry
+DEBUG_MODE=true
+DEBUG_UNTIL=<3 days from now, ISO — e.g. $(date -u -d '+3 days' +%Y-%m-%dT%H:%M:%SZ)>
+LOG_LEVEL=debug
+```
+
+```bash
+cd infra && docker compose up -d      # pick up the new env
+cd .. && ./scripts/observe_72h.sh     # writes snapshots to logs/observe_72h.log
+```
+
+After 72 hours (debug logging expires by itself once `DEBUG_UNTIL` passes), set
+`DEBUG_MODE=false`, `LOG_LEVEL=info`, and `docker compose up -d` again.
+
+---
+
 ## Step 8 — Weekly operating routine (15 minutes)
 
 | When | What |

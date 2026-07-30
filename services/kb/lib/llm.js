@@ -10,6 +10,10 @@
  * calls and you do not want 40 in flight on a 2 vCPU box.
  */
 
+import { createLogger, hostOnly } from './logger.js';
+
+const log = createLogger('kb');
+
 const HOSTED_9ROUTER_BASE_URL = 'https://9router.archxry.space/v1';
 
 function cleanBaseUrl(value) {
@@ -60,15 +64,19 @@ export function clearLlmConfigCache() {
   cachedAt = 0;
 }
 
+let lastLoggedConfigSig = '';
+
 export async function getLlmConfig() {
   // Short cache keeps PDF mining fast while still letting the Settings page take effect quickly.
   if (cachedConfig && Date.now() - cachedAt < 5_000) return cachedConfig;
 
   let rowConfig = {};
+  let source = 'env/default';
   if (settingsPool) {
     try {
       const { rows } = await settingsPool.query("SELECT value FROM settings WHERE key='llm'");
       rowConfig = rows[0]?.value ?? {};
+      if (rows.length) source = 'settings.llm';
     } catch {
       // Database not initialised yet; fall back to env/defaults. Startup should not crash.
       rowConfig = {};
@@ -77,6 +85,22 @@ export async function getLlmConfig() {
 
   cachedConfig = normalizeLlmConfig(rowConfig);
   cachedAt = Date.now();
+
+  // Log the effective config once per change — host + model names only, never the key.
+  const sig = [source, cachedConfig.base_url, cachedConfig.model_write, cachedConfig.model_edit,
+               cachedConfig.model_embed, cachedConfig.model_mine, Boolean(cachedConfig.api_key)].join('|');
+  if (sig !== lastLoggedConfigSig) {
+    lastLoggedConfigSig = sig;
+    log.info('llm_config_loaded', {
+      source,
+      base_url_host: hostOnly(cachedConfig.base_url),
+      model_write: cachedConfig.model_write,
+      model_edit: cachedConfig.model_edit,
+      model_embed: cachedConfig.model_embed,
+      model_mine: cachedConfig.model_mine,
+      api_key_set: Boolean(cachedConfig.api_key),
+    });
+  }
   return cachedConfig;
 }
 
@@ -88,8 +112,12 @@ async function post(path, body, { tries = 4, config } = {}) {
   let lastErr;
   const cfg = config ? normalizeLlmConfig(config) : await getLlmConfig();
   const url = `${cfg.base_url}${path.startsWith('/') ? path : `/${path}`}`;
+  const endpoint = path.startsWith('/') ? path : `/${path}`;
+  // Never log the full URL (query strings/keys); host + path + model is enough to debug.
+  const callMeta = { endpoint, host: hostOnly(url), model: body?.model ?? null };
 
   for (let i = 0; i < tries; i++) {
+    const t0 = Date.now();
     try {
       const res = await fetch(url, {
         method: 'POST',
@@ -99,13 +127,22 @@ async function post(path, body, { tries = 4, config } = {}) {
       });
       if (res.status === 429 || res.status >= 500) throw new Error(`HTTP ${res.status}`);
       if (!res.ok) throw Object.assign(new Error(`HTTP ${res.status}: ${await res.text()}`), { fatal: true });
+      log.debug('llm_call_ok', { ...callMeta, status: res.status, latency_ms: Date.now() - t0, attempt: i + 1 });
       return await res.json();
     } catch (e) {
       lastErr = e;
-      if (e.fatal) throw e;
+      if (e.fatal) {
+        log.error('llm_call_fatal', { ...callMeta, latency_ms: Date.now() - t0, attempt: i + 1, reason: e.message });
+        throw e;
+      }
+      log.warn('llm_call_retry', {
+        ...callMeta, latency_ms: Date.now() - t0,
+        attempt: i + 1, max_attempts: tries, reason: e.message,
+      });
       await new Promise(r => setTimeout(r, 1500 * 2 ** i + Math.random() * 800));
     }
   }
+  log.error('llm_call_failed', { ...callMeta, attempts: tries, reason: lastErr?.message ?? 'unknown' });
   throw lastErr;
 }
 
