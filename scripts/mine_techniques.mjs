@@ -12,7 +12,7 @@
  *   3. Review:  psql -c "SELECT code, type, instruction FROM techniques ORDER BY type"
  *   4. Prune anything you don't like BEFORE it starts consuming posting slots.
  *
- * Env: DATABASE_URL, LLM_BASE_URL, LLM_API_KEY, LLM_MODEL
+ * Env: DATABASE_URL, LLM_BASE_URL, LLM_API_KEY, LLM_MODEL or LLM_MODEL_MINE
  */
 
 import fs from 'node:fs';
@@ -26,9 +26,10 @@ const args = Object.fromEntries(
 
 const {
   DATABASE_URL,
-  LLM_BASE_URL = 'http://localhost:9000/v1',
+  LLM_BASE_URL = 'https://9router.archxry.space/v1',
   LLM_API_KEY = '',
-  LLM_MODEL = 'gemini-2.5-pro',
+  LLM_MODEL,
+  LLM_MODEL_MINE = LLM_MODEL || 'gemini-2.5-pro',
 } = process.env;
 
 // ─────────────────────────────────────────── template
@@ -47,11 +48,12 @@ if (args.template) {
 // ─────────────────────────────────────────── llm
 
 async function llm(system, user) {
-  const res = await fetch(`${LLM_BASE_URL}/chat/completions`, {
+  const baseUrl = LLM_BASE_URL.replace(/\/+$/, '');
+  const res = await fetch(`${baseUrl}/chat/completions`, {
     method: 'POST',
-    headers: { 'content-type': 'application/json', authorization: `Bearer ${LLM_API_KEY}` },
+    headers: { 'content-type': 'application/json', ...(LLM_API_KEY ? { authorization: `Bearer ${LLM_API_KEY}` } : {}) },
     body: JSON.stringify({
-      model: LLM_MODEL,
+      model: LLM_MODEL_MINE,
       temperature: 0.3,
       messages: [{ role: 'system', content: system }, { role: 'user', content: user }],
       response_format: { type: 'json_object' },

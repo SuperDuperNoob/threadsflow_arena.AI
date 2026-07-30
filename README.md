@@ -108,8 +108,9 @@ as described in the runbook.
 
 n8n 1.4GB · Postgres 512MB · kb 640MB · redirector 128MB · cloudflared 96MB ·
 images → Cloudflare R2 (zero local RAM)
-≈ 2.8GB ceiling. No local LLM — AI calls go to hosted models via 9router
-(~$0.30/month at 5 posts/day).
+≈ 2.8GB ceiling. No local LLM — AI calls go to a configurable OpenAI-compatible endpoint.
+Hosted 9router (`https://9router.archxry.space/v1`) is the default; a VPS-host 9router uses
+`http://host.docker.internal:9000/v1` from Docker; direct providers like OpenAI also work.
 
 ## Honest expectations
 

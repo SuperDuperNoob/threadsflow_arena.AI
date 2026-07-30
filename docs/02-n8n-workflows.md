@@ -14,7 +14,7 @@ wf6_karma           DRAFT (Cron 6h) no-link helpful comments for reach insurance
 ```
 
 Credentials to create in n8n: `Postgres threadsflow`, `HTTP Header Auth threads`
-(not needed — token goes in query), `HTTP Request 9router`, `S3/R2`.
+(not needed — token goes in query), `HTTP Request LLM` (9router/default or any OpenAI-compatible endpoint), `S3/R2`.
 Shopee conversions come from the **Shopee Affiliate Open API**, not an n8n credential —
 supply `SHOPEE_API_APP_ID` / `SHOPEE_API_SECRET` (env, or the `settings` rows
 `shopee_app_id` / `shopee_app_secret`); the sync runs from code/CLI, see wf5 below.
@@ -112,11 +112,11 @@ inventing. A wrong specific is worse than a missing one.
 [Code: technique picker]   1-2 compatible devices, Thompson-sampled, 15% control group
                                                     (code/technique_picker.js)
    ↓
-[HTTP 9router: WRITE]      temp 1.0   → draft            (prompts/writer.md)
+[HTTP LLM: WRITE]          temp 1.0   → draft            (prompts/writer.md)
    ↓
-[HTTP 9router: EDIT]       temp 0.7   → human-pass       (prompts/editor.md)
+[HTTP LLM: EDIT]           temp 0.7   → human-pass       (prompts/editor.md)
    ↓
-[HTTP 9router: EMBED]      text-embedding-3-small → vector
+[HTTP LLM: EMBED]          text-embedding-3-small → vector
    ↓
 [Code: QA gate]            regex bans, length band, emoji cap, opener check,
                            cosine similarity < 0.86       (code/qa.js)

@@ -58,13 +58,14 @@ just *which post* worked.
              └─────────────┘              └─────────────┘
                     │
              ┌──────▼─────────────────────────────┐
-             │ LLM: 9router → (Gemini/GPT/Claude) │  ← cheap models, no local inference
+             │ LLM: OpenAI-compatible endpoint      │  ← default 9router → Gemini/GPT/Claude
              └────────────────────────────────────┘
 ```
 
 **RAM budget**: n8n 700MB–1GB, Postgres 400MB, UI 150MB, redirector 40MB,
 Caddy 30MB, cloudflared 40MB → ~2.1GB peak, leaves headroom. **Do not run a local LLM.**
-Use 9router to hit hosted models; a post costs fractions of a cent.
+Use the configurable OpenAI-compatible endpoint (9router by default, direct provider if preferred)
+to hit hosted models; a post costs fractions of a cent.
 
 > **Image hosting note (only matters if you upload images):** Threads fetches `image_url`
 > server-side, so images must be on a

@@ -55,4 +55,6 @@ if (slots.length === 0) {
                is_carousel: false, reply_delay_sec: 70, plan: { mode: 'explore' }, timezone: tz });
 }
 
-return slots.map(s => ({ json: { ...s, remaining_plan: plan } }));
+// Carry the loaded settings/config forward. n8n Code nodes replace the item JSON by default;
+// without spreading $json here, later nodes lose cfg.llm and cannot call the configured LLM.
+return slots.map(s => ({ json: { ...$json, ...s, remaining_plan: plan } }));

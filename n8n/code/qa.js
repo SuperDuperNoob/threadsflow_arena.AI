@@ -174,4 +174,28 @@ function qa(input) {
   };
 }
 
-return [{ json: qa($json) }];
+function n8nInput() {
+  // After HTTP LLM calls, the current item is only the embedding response. Pull the generation
+  // context and edited text back from earlier nodes when this runs inside n8n.
+  if (typeof $ !== 'function') return $json;
+  try {
+    const base = $('Pick devices').item.json;
+    const edited = $('LLM: human pass').item.json.choices?.[0]?.message?.content ?? '';
+    const embedding = $json.data?.[0]?.embedding ?? $json.embedding;
+    return {
+      ...base,
+      text: edited,
+      embedding,
+      recent: base.cfg?.recent ?? base.recent ?? [],
+      banned: base.cfg?.banned ?? base.banned ?? [],
+      settings: base.cfg?.qa ?? base.settings?.qa ?? base.qa ?? {},
+      product_name: base.product?.name ?? base.product?.enrichment?.name ?? '',
+    };
+  } catch {
+    return $json;
+  }
+}
+
+const input = n8nInput();
+const out = qa(input);
+return [{ json: { ...input, ...out } }];

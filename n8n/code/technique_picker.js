@@ -152,7 +152,81 @@ function updateTechniques({ scores, prev, settings }) {
   return arr;
 }
 
+function shortId(n = 10) {
+  const chars = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+  return Array.from({ length: n }, () => chars[Math.floor(Math.random() * chars.length)]).join('');
+}
+
+function lever(input, kind) {
+  const code = input[kind];
+  return (input.cfg?.levers ?? input.levers ?? []).find(l => l.kind === kind && l.code === code) ??
+    { kind, code, label: code, brief: '' };
+}
+
+function lines(xs, fallback = '- tiada') {
+  return (xs ?? []).filter(Boolean).length ? xs.filter(Boolean).map(x => `- ${x}`).join('\n') : fallback;
+}
+
+function targetRange(lengthBand) {
+  return ({ micro: [1, 120], mid: [110, 270], long: [250, 480] })[lengthBand] ?? [1, 480];
+}
+
+function buildGenerationContext(input, devicesOut) {
+  const product = input.product ?? {};
+  const enrichment = product.enrichment ?? {};
+  const images = input.images ?? [];
+  const hasImage = input.media_type !== 'TEXT' && images.length > 0;
+  const imageIds = hasImage ? images.map(i => i.id).filter(Boolean) : [];
+  const envRedirect = (typeof process !== 'undefined' ? process.env?.PUBLIC_REDIRECT_BASE : '') || '';
+  const redirectBase = String(input.cfg?.posting?.redirect_base_url ?? input.settings?.posting?.redirect_base_url ?? envRedirect ?? 'https://r.yourdomain.com').replace(/\/+$/, '');
+  const postUid = `p${shortId(9)}`;
+  const trackedUrl = `${redirectBase}/p/${postUid}`;
+  const ctaPool = [
+    'link dia kat sini {{link}}', 'yang tanya tadi, ni dia {{link}}',
+    'untuk yang nak tengok harga {{link}}', 'detail penuh kat sini {{link}}',
+    'saya beli kat sini {{link}}', 'ni {{link}}'
+  ];
+  const ctaTemplate = ctaPool[Math.floor(Math.random() * ctaPool.length)];
+  const ctaText = String(input.sell_intensity) === '0' ? null : ctaTemplate.replace('{{link}}', trackedUrl);
+
+  const banned = (input.cfg?.banned ?? input.banned ?? []).map(b => b.pattern).slice(0, 40).join(', ');
+  const recent = (input.cfg?.recent ?? input.recent ?? []).slice(0, 20);
+  const recentLines = recent.map(r => String(r.body ?? '').split('\n')[0].slice(0, 160));
+  const openers = recentLines.map(t => t.split(/\s+/).slice(0, 5).join(' ')).filter(Boolean).join(' | ');
+  const lev = Object.fromEntries(['format','angle','tone','sell_intensity','length_band','media_type'].map(k => [k, lever(input, k)]));
+  const [targetMin, targetMax] = targetRange(input.length_band);
+  const imageText = hasImage
+    ? `### The image this post will carry\n${images.map(i => i.vision_desc).filter(Boolean).join('\n') || 'Product image attached; keep the copy consistent with it.'}\nDo not describe what is already visible. Say what the photo cannot show.`
+    : `### No image — this is a text-only post\nThere is no photo. The first line must do the work a picture would do. Use at least one physical product detail.`;
+
+  const writerSystem = `You are a specific person posting on Threads from your phone in Malaysia. Write casual Malaysian Malay, not Indonesian and not formal Dewan Bahasa. Use tak, nak, dah, je, kot, lah, kan, boleh, jom, tengok, letak, guna. Rojak English is normal.\n\nHard rules:\n1. Never use Indonesian slang: banget, nggak, gak, aja, udah, bikin, gimana, kalian, doang, cowok, cewek, gue, deh, dong, sih. Never use bisa/butuh/pusing wrongly. Currency is RM.\n2. Never open with a generic rhetorical question. Never start with the product name.\n3. Never use these banned patterns/phrases: ${banned || '(none)'}\n4. Include at least one concrete, checkable product detail. No vague adjectives.\n5. Output ONLY the post text. No quotes, no preamble, no options.`;
+
+  const writerUser = `### Product facts\nName: ${product.name ?? enrichment.name ?? ''}\nPrice: RM ${enrichment.price_myr ?? ''}\nCommission/rating/sales: ${enrichment.shopee_commission_rate ?? ''} · ${enrichment.shopee_rating ?? ''} · ${enrichment.shopee_sales ?? ''}\nCategory: ${enrichment.category ?? ''}\nWho it is for: ${enrichment.target_persona ?? ''}\nConcrete details:\n${lines(enrichment.concrete_details)}\nReal buyer quotes you may paraphrase only if listed:\n${lines(enrichment.top_reviews, '- none supplied')}\nPhysical details:\n${lines(enrichment.sensory_details, '- none supplied')}\nProduct description: ${product.description ?? ''}\nMy notes: ${product.notes ?? ''}\n\n${imageText}\n\n### Assignment\n- Format: ${lev.format.label} — ${lev.format.brief}\n- Persuasion angle: ${lev.angle.label} — ${lev.angle.brief}\n- Tone: ${lev.tone.label} — ${lev.tone.brief}\n- Selling intensity: ${lev.sell_intensity.label} — ${lev.sell_intensity.brief}\n- Length: ${lev.length_band.label} — ${lev.length_band.brief}\n- Media: ${lev.media_type.label} — ${lev.media_type.brief}\n\n### Do not resemble these recent openings\n${lines(recentLines, '- none yet')}\n\nOpenings already used recently: ${openers || 'none yet'}\n${input.persona_fragment ?? ''}\n${devicesOut.fragment ?? ''}\n\nBefore writing, silently pick one mundane, specific moment this product touches. Write from inside that moment.\nWrite the post now.`;
+
+  const editorSystem = `You are a skeptical Malaysian editor. Make the text stop sounding like AI or brand copy. Replace Indonesian with Malaysian Malay. Delete generic adjectives, symmetrical sentence pairs, funnel words, emoji-as-punctuation, tidy endings, and imported meme slang. Keep the same meaning and persuasion angle. Output ONLY the edited post.`;
+  const editorUserPrefix = `Intended tone: ${lev.tone.label} — ${lev.tone.brief}\nIntended length: ${targetMin}-${targetMax} characters.\nRewrite it so it reads like someone typed it on their phone and hit post without re-reading. Draft:\n`;
+
+  return {
+    post_uid: postUid,
+    tracked_url: trackedUrl,
+    cta_text: ctaText,
+    image_ids: imageIds,
+    media_type: hasImage ? input.media_type : 'TEXT',
+    is_carousel: hasImage && input.media_type === 'CAROUSEL' && imageIds.length > 1,
+    writer_system: writerSystem,
+    writer_user: writerUser,
+    editor_system: editorSystem,
+    editor_user_prefix: editorUserPrefix,
+    product_details: [...(enrichment.concrete_details ?? []), ...(enrichment.sensory_details ?? [])],
+    target_min: targetMin,
+    target_max: targetMax,
+  };
+}
+
 const MODE = $json.mode ?? 'select';
-return MODE === 'select'
-  ? [{ json: selectDevices($json) }]
-  : [{ json: { techniques: updateTechniques($json) } }];
+if (MODE === 'select') {
+  const devicesOut = selectDevices($json);
+  const generation = buildGenerationContext($json, devicesOut);
+  return [{ json: { ...$json, ...devicesOut, ...generation } }];
+}
+return [{ json: { ...$json, techniques: updateTechniques($json) } }];
