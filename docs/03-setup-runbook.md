@@ -325,49 +325,21 @@ docker compose logs cloudflared
 
 ### 2.4 — Set up the database
 
-The database starts empty. You need to create the tables and fill them with
-initial data. Run these in order:
+The database starts empty. You need to create the tables, run migrations, and fill them with initial seeds.
+
+Instead of running multiple sql scripts manually, we have provided an automated database initialization script. Run this single command from the repository root:
 
 ```bash
-# ── 1. Core schema: tables for products, posts, clicks, etc.
-docker compose exec -T postgres psql -v ON_ERROR_STOP=1 -U threadsflow -d threadsflow < ../db/schema.sql
-
-# ── 2. Technique library schema: tables for the copywriting technique system
-docker compose exec -T postgres psql -v ON_ERROR_STOP=1 -U threadsflow -d threadsflow < ../db/schema_techniques.sql
-
-# ── 3. Knowledge Base schema: tables for PDF uploads and document processing
-docker compose exec -T postgres psql -v ON_ERROR_STOP=1 -U threadsflow -d threadsflow < ../db/schema_kb.sql
-
-# ── 4. Levers: the 12 formats, 9 angles, 7 tones, banned phrases, CTA text pool.
-#     "_my" = Malaysian Malay version. The non-_my files are Indonesian, kept for reference.
-docker compose exec -T postgres psql -v ON_ERROR_STOP=1 -U threadsflow -d threadsflow < ../db/seed_levers_my.sql
-
-# ── 5. Cold-start techniques: 43 copywriting patterns in Malay.
-#     These let the system write varied copy before you upload any PDFs.
-docker compose exec -T postgres psql -v ON_ERROR_STOP=1 -U threadsflow -d threadsflow < ../db/seed_techniques_my.sql
-
-# ── 6. Mining questions: 30 prompts used to extract techniques from uploaded PDFs.
-docker compose exec -T postgres psql -v ON_ERROR_STOP=1 -U threadsflow -d threadsflow < ../db/mining_questions.sql
-
-# ── 7. Migrations: schema changes that are safe to run multiple times.
-#     001 adds compatible_media column (so techniques can declare whether they
-#         work with TEXT, IMAGE, or CAROUSEL posts)
-#     002 fixes locale references
-#     003 adds optional product_url for enrichment while keeping affiliate_url as the money link
-for m in 001_optional_media.sql 002_localisation.sql 003_product_url.sql; do
-  docker compose exec -T postgres psql -v ON_ERROR_STOP=1 -U threadsflow -d threadsflow < ../db/migrations/$m
-done
-
-# ── 8. Books techniques: 17 extra techniques mined from your 26 PDFs.
-#     Goes LAST because it uses the compatible_media column added by migration 001.
-docker compose exec -T postgres psql -v ON_ERROR_STOP=1 -U threadsflow -d threadsflow < ../db/seed_techniques_books.sql
+./scripts/init_db.sh
 ```
 
-> **What does each file do?** Think of `schema.sql` as creating empty tables
-> (like empty Excel sheets). The `seed_*.sql` files fill those tables with
-> starting data — the levers (writing styles), the techniques (copywriting
-> patterns), and the banned phrases. The migrations make small fixes to tables
-> that already exist.
+This script automatically executes all schemas, seeds, and **all 7 migrations** in the correct numerical order:
+1. **Core schemas** (`schema.sql`, `schema_techniques.sql`, `schema_kb.sql`)
+2. **Seeds** (`seed_levers_my.sql`, `seed_techniques_my.sql`, `mining_questions.sql`)
+3. **Migrations 001 through 007** (adding compatible media, localizations, contextual bandit weights, reply loops, and user comment intent definitions)
+4. **Books techniques seed** (`seed_techniques_books.sql`)
+
+> **What does each file do?** Think of `schema.sql` as creating empty tables (like empty Excel sheets). The `seed_*.sql` files fill those tables with starting data — the levers (writing styles), the techniques (copywriting patterns), and the banned phrases. The migrations make updates and add improvements over time.
 
 ### 2.5 — Store your Threads token in the database
 
