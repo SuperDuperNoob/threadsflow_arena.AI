@@ -224,8 +224,8 @@ actually buy, and writing real specifics in the notes box.
 | Click tracking (the link shortener) | Yes — tested |
 | Posting automation (wf3_publish) | Yes — ready to import into n8n |
 | Key auto-renewal (wf0) | Yes — ready to import |
-| Writing automation (wf2_generate) | Needs 4 code blocks pasted in |
-| Learning automation (wf4_evaluate) | Needs 3 code blocks pasted in |
+| Writing automation (wf2_generate) | Yes — pre-populated with code blocks |
+| Learning automation (wf4_evaluate) | Yes — pre-populated with code blocks |
 | Shopee sales import (wf5) | Built — pulls from the Shopee Affiliate Open API (needs your keys) |
 
 **Not tested end-to-end:** the live connections to Threads and the **Shopee Affiliate Open API**,

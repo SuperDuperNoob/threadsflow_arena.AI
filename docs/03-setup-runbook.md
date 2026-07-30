@@ -772,27 +772,23 @@ Import these in order:
 |---|---|---|
 | `wf0_token_refresh.json` | Renews the Threads API token every 25 days | Yes, just set the credential |
 | `wf3_publish.json` | Publishes queued posts to Threads every 5 min | Yes |
-| `wf2_generate.json` | Writes 5 posts nightly at 3 AM | Needs 4 code blocks pasted |
-| `wf4_evaluate.json` | Scores posts and updates the bandit every 3 days | Needs 4 code blocks pasted |
+| `wf2_generate.json` | Writes 5 posts nightly at 3 AM | Yes — pre-populated with code blocks |
+| `wf4_evaluate.json` | Scores posts and updates the bandit every 3 days | Yes — pre-populated with code blocks |
 
 > **What is a "workflow"?** It is a recipe. wf3_publish says: "Every 5 minutes,
 > check the database for posts that are queued and due. If there is one, post
 > it to Threads, wait, then post the link comment." The n8n canvas shows this
 > as a chain of boxes: Cron → Postgres → HTTP Request → Wait → HTTP Request.
 
-### 4.3 — Paste in the code blocks
+### 4.3 — Code blocks are pre-populated!
 
-wf2_generate and wf4_evaluate have "Code" nodes — boxes where you paste
-JavaScript. These are the brains of the system: the bandit, the scorer,
-the QA gate, the slot planner, the technique picker.
+**Good news:** the workflow JSON files in `n8n/workflows/` are **already pre-populated** with the corresponding Javascript code blocks out of the box! You can skip this step entirely and proceed to §4.4.
 
-For each workflow with Code nodes:
-
-1. Open the workflow tab in n8n
-2. Find each **Code** node (it has a `</>` icon)
-3. Double-click it to open
-4. In the **Code** field, delete everything and paste the contents of the
-   matching file from the `n8n/code/` folder:
+However, if you ever customize the logic inside the `n8n/code/` folder and want to re-inject your changes into the workflow templates, you can run:
+```bash
+node scripts/populate_workflows.js
+```
+Or you can manually copy and paste the contents into the respective n8n **Code** nodes:
 
 | Workflow | Code node | Paste from |
 |---|---|---|
@@ -811,10 +807,10 @@ For each workflow with Code nodes:
 
 5. Click outside the node to save. n8n auto-saves.
 
-> **Why are these pasted instead of imported with the workflow?** The code is
-> about 600 lines across multiple files. Stuffing it into one JSON file would
-> make it unreadable and impossible to debug. Keeping it as separate `.js`
-> files means you can actually read and change the logic.
+> **Why are these separate files?** Keeping the JS logic as separate `.js`
+> files in the repository means you can read, unit-test, and update the logic
+> in a proper editor. The `populate_workflows.js` script handles embedding them
+> into the workflow JSON templates for direct n8n import.
 
 ### 4.4 — Configure the LLM HTTP nodes
 
