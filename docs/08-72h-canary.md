@@ -76,8 +76,24 @@ How the three knobs interact:
 | Variable | Effect |
 |---|---|
 | `LOG_LEVEL` | Minimum level emitted: `debug` / `info` / `warn` / `error`. Default `info`. |
-| `DEBUG_MODE` | Must be `true` for `debug`-level events to be emitted at all. |
+| `DEBUG_MODE` | Must be `true` for `debug`-level events to be emitted at all. Anything other than the literal string `true` (including `false`, empty, or unset) means debug off. |
 | `DEBUG_UNTIL` | Optional ISO timestamp. Once the clock passes it, debug events stop — live, no restart needed. Empty = no expiry. |
+
+The two states at a glance:
+
+| | Canary (first 72h) | Production (steady state) |
+|---|---|---|
+| `DEBUG_MODE` | `true` | `false` |
+| `DEBUG_UNTIL` | `<now + 3 days, ISO>` | *(empty)* |
+| `LOG_LEVEL` | `debug` | `info` |
+| debug events emitted | yes, until `DEBUG_UNTIL` passes | no |
+| info/warn/error events | yes | yes |
+| secret masking | always on | always on |
+| behavior of wf2/wf3/redirector | unchanged — real publishing | unchanged — real publishing |
+
+Note: `DEBUG_MODE=true` with `LOG_LEVEL=info` emits **no** debug events — the level
+filter runs first. For the canary you want both: `DEBUG_MODE=true` **and**
+`LOG_LEVEL=debug`.
 
 Then recreate the containers so they pick up the new environment:
 

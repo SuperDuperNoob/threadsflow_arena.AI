@@ -307,4 +307,5 @@ Built in, you do not need to do anything:
 - `docs/04-technique-library.md` — uploading copywriting PDFs
 - `docs/05-books.md` — what was extracted from your 26 books, and what was rejected
 - `docs/07-l4-reply-loop.md` — on-post user comment engagement loop
+- `docs/08-72h-canary.md` — extra logging + health watcher for your first 72 hours live
 - `db/queries.sql` — ready-made reports you can run

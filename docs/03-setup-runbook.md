@@ -289,6 +289,17 @@ IP_SALT=...
 # The token you copied in Step 0.5.
 CF_TUNNEL_TOKEN=eyJh...
 
+# ═══ Debug / canary logging (Step 7b, docs/08-72h-canary.md) ═══
+# Leave these at the defaults for now. You will flip DEBUG_MODE to true for the
+# first 72 hours live, then back to false.
+#   DEBUG_MODE=true   → extra structured debug logs in kb + redirector
+#   DEBUG_MODE=false  → normal quiet logging (production default)
+#   DEBUG_UNTIL       → optional ISO expiry; after it passes, debug turns itself off
+#   LOG_LEVEL         → minimum level emitted: debug | info | warn | error
+DEBUG_MODE=false
+DEBUG_UNTIL=
+LOG_LEVEL=info
+
 # ═══ You will set these later, after creating the R2 bucket ═══
 # Leave blank for now if you have not done Step 3b yet.
 ```
