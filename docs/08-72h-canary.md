@@ -5,6 +5,40 @@ mode turns on extra structured logs across the stack for a bounded window, plus 
 observer script that snapshots stack health every few minutes. It is designed to be safe:
 **no secrets in logs, no disk fill, and it turns itself off.**
 
+## Is this live or a mock?
+
+**Live. Real posts, real money.** Canary mode only adds *observability* — it changes
+zero behavior. During the 72 hours:
+
+- wf2 generates real posts and queues them nightly
+- wf3 actually publishes them to Threads via the Graph API
+- CTA replies go out with real affiliate links
+- Real buyers hit the redirector; real clicks and commissions are recorded
+
+Nothing "switches on" after 72 hours — the system was already doing real work. The only
+thing that changes is that debug logging expires (`DEBUG_UNTIL`) and you quiet the config
+back down (section 4).
+
+**Want a dry-run first?** Use the built-in draft mode from the runbook (Step 7): open
+`wf2_generate` in n8n, find the **Queue post** node, and change `'queued'` to `'draft'`
+in the INSERT. wf2 then writes full real posts every night but wf3 skips them (it only
+picks up `status='queued'`), so nothing reaches Threads. Read the drafts in the database,
+ban robotic phrases, then flip `'draft'` back to `'queued'` to go live.
+
+A sensible first-deployment sequence:
+
+| Phase | wf2 writes | Publishes to Threads? | Debug |
+|---|---|---|---|
+| Days 1–2 (optional dry-run) | `draft` | No | `DEBUG_MODE=true`, observer running |
+| Days 3–5 (72h canary) | `queued` | **Yes — real** | `DEBUG_MODE=true`, `DEBUG_UNTIL` set, observer running |
+| Steady state | `queued` | Yes | `DEBUG_MODE=false`, `LOG_LEVEL=info` |
+
+Before the canary counts as "live", the prerequisites from the runbook must be real:
+Threads token in `settings.threads_creds`, Cloudflare Tunnel hostnames, image hosting
+(R2), a reachable LLM endpoint, at least one product added via the KB, and the workflows
+toggled active in n8n. The canary is precisely what tells you within hours if any of
+those are misconfigured, instead of a week later.
+
 What it gives you:
 
 - Structured JSON logs (one line per event) from `kb` and `redirector` — service, level,

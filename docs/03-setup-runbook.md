@@ -973,6 +973,11 @@ logging (with secret masking baked in) plus an observer script that snapshots st
 health every 5 minutes. Full instructions, pass/fail criteria and cleanup:
 **[docs/08-72h-canary.md](08-72h-canary.md)**.
 
+> **Canary mode is LIVE, not a mock.** It only adds logging — wf2/wf3 publish real
+> posts to Threads with real affiliate links throughout. If you want a no-publish
+> dry-run first, use the `'draft'` trick from Step 7 above, review the drafts for a
+> day or two, then flip back to `'queued'` and start the 72-hour canary clock.
+
 The short version:
 
 ```bash
