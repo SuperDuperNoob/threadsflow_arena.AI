@@ -46,6 +46,7 @@ docs/
   04-technique-library.md    how the technique system works
   05-books.md                what was mined from your 26 PDFs
   07-l4-reply-loop.md        on-post user comment engagement loop
+  08-72h-canary.md           72-hour live debug / canary mode for first deployment
 
 db/                          PostgreSQL: schema, seeds, migrations, queries
 

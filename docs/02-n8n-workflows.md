@@ -208,6 +208,13 @@ Base URL: `https://graph.threads.net/v1.0` (Meta also serves `graph.threads.com`
 Always send the token as `access_token` query param. Enable **Retry On Fail** (3×, 5s) on every
 HTTP node, and **Continue On Fail** on the publish node so the error branch can record it.
 
+**Canary checkpoints (docs/08-72h-canary.md).** The shipped workflow JSONs also write
+`run_log` rows at key steps — wf2: slot built, LLM call failed, post queued; wf3: due post
+fetched, quota checked at lock, container created, post published, CTA skipped/published,
+publish failure. These are plain Postgres inserts (CTEs on existing nodes plus three small
+logging nodes), never n8n execution data, and they store only uids/statuses/error messages —
+no tokens, no full post bodies. `EXECUTIONS_DATA_SAVE_ON_SUCCESS=none` stays on in production.
+
 ---
 
 ## wf4_evaluate — Cron every 3 days, 02:00

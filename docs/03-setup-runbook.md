@@ -289,6 +289,17 @@ IP_SALT=...
 # The token you copied in Step 0.5.
 CF_TUNNEL_TOKEN=eyJh...
 
+# ═══ Debug / canary logging (Step 7b, docs/08-72h-canary.md) ═══
+# Leave these at the defaults for now. You will flip DEBUG_MODE to true for the
+# first 72 hours live, then back to false.
+#   DEBUG_MODE=true   → extra structured debug logs in kb + redirector
+#   DEBUG_MODE=false  → normal quiet logging (production default)
+#   DEBUG_UNTIL       → optional ISO expiry; after it passes, debug turns itself off
+#   LOG_LEVEL         → minimum level emitted: debug | info | warn | error
+DEBUG_MODE=false
+DEBUG_UNTIL=
+LOG_LEVEL=info
+
 # ═══ You will set these later, after creating the R2 bucket ═══
 # Leave blank for now if you have not done Step 3b yet.
 ```
@@ -963,6 +974,37 @@ VALUES ('phrase yang bunyi pelik', 'sounds like AI wrote it', 'all');
 ```
 
 This one hour of reading is worth more than any prompt engineering.
+
+---
+
+## Step 7b — First public deployment: 72-hour canary (recommended)
+
+For the first three days live, run the stack in **canary mode**: extra structured
+logging (with secret masking baked in) plus an observer script that snapshots stack
+health every 5 minutes. Full instructions, pass/fail criteria and cleanup:
+**[docs/08-72h-canary.md](08-72h-canary.md)**.
+
+> **Canary mode is LIVE, not a mock.** It only adds logging — wf2/wf3 publish real
+> posts to Threads with real affiliate links throughout. If you want a no-publish
+> dry-run first, use the `'draft'` trick from Step 7 above, review the drafts for a
+> day or two, then flip back to `'queued'` and start the 72-hour canary clock.
+
+The short version:
+
+```bash
+# infra/.env — turn on debug logging with a built-in expiry
+DEBUG_MODE=true
+DEBUG_UNTIL=<3 days from now, ISO — e.g. $(date -u -d '+3 days' +%Y-%m-%dT%H:%M:%SZ)>
+LOG_LEVEL=debug
+```
+
+```bash
+cd infra && docker compose up -d      # pick up the new env
+cd .. && ./scripts/observe_72h.sh     # writes snapshots to logs/observe_72h.log
+```
+
+After 72 hours (debug logging expires by itself once `DEBUG_UNTIL` passes), set
+`DEBUG_MODE=false`, `LOG_LEVEL=info`, and `docker compose up -d` again.
 
 ---
 

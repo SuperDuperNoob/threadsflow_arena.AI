@@ -9,6 +9,14 @@
 
 name: threadsflow
 
+# 72h canary: json-file rotation on every long-running service so debug logging can
+# never fill the disk (5 files x 10MB = max 50MB per container).
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "5"
+
 services:
   postgres:
     image: postgres:16-alpine
@@ -35,6 +43,7 @@ services:
   n8n:
     image: docker.n8n.io/n8nio/n8n:latest
     restart: unless-stopped
+    logging: *default-logging
     depends_on:
       postgres: { condition: service_healthy }
     environment:
@@ -84,6 +93,7 @@ services:
   redirector:
     build: ../services/redirector
     restart: unless-stopped
+    logging: *default-logging
     depends_on:
       postgres: { condition: service_healthy }
     environment:
@@ -91,6 +101,9 @@ services:
       IP_SALT: ${IP_SALT}
       FALLBACK_URL: https://shopee.com.my
       PORT: "8081"
+      DEBUG_MODE: ${DEBUG_MODE:-false}
+      DEBUG_UNTIL: ${DEBUG_UNTIL:-}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
     deploy:
       resources:
         limits: { memory: 128M }
@@ -99,6 +112,7 @@ services:
   kb:
     build: ../services/kb
     restart: unless-stopped
+    logging: *default-logging
     depends_on:
       postgres: { condition: service_healthy }
     environment:
@@ -126,6 +140,9 @@ services:
       SHOPEE_OPENAPI_URL: ${SHOPEE_OPENAPI_URL:-https://open-api.affiliate.shopee.com.my/graphql}
       MINE_CONCURRENCY: "2"
       MAX_CHUNKS_PER_DOC: "45"
+      DEBUG_MODE: ${DEBUG_MODE:-false}
+      DEBUG_UNTIL: ${DEBUG_UNTIL:-}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
       TZ: Asia/Kuala_Lumpur
     volumes:
       - kbdata:/data
@@ -142,6 +159,7 @@ services:
   shopee-sync:
     build: ../services/kb
     restart: unless-stopped
+    logging: *default-logging
     depends_on:
       postgres: { condition: service_healthy }
     command: ["node", "bin/shopee.mjs", "cron"]
@@ -152,6 +170,9 @@ services:
       SHOPEE_OPENAPI_URL: ${SHOPEE_OPENAPI_URL:-https://open-api.affiliate.shopee.com.my/graphql}
       SHOPEE_LOOKBACK_DAYS: ${SHOPEE_LOOKBACK_DAYS:-7}
       SHOPEE_VALIDATION_ID: ${SHOPEE_VALIDATION_ID:-}
+      DEBUG_MODE: ${DEBUG_MODE:-false}
+      DEBUG_UNTIL: ${DEBUG_UNTIL:-}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
       NODE_OPTIONS: --max-old-space-size=128
       TZ: Asia/Kuala_Lumpur
     deploy:
@@ -161,6 +182,7 @@ services:
   cloudflared:
     image: cloudflare/cloudflared:latest
     restart: unless-stopped
+    logging: *default-logging
     command: tunnel --no-autoupdate run --token ${CF_TUNNEL_TOKEN}
     depends_on: [n8n, redirector]
     deploy:

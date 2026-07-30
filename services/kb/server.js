@@ -18,6 +18,7 @@ import { putImage, enrich, describeImage, shortId } from './lib/products.js';
 import { registerShopeePool, isConfigured } from './lib/shopee.js';
 import { upsertConversionRows } from './lib/shopee_conversions.js';
 import { clearLlmConfigCache, getLlmConfig, normalizeLlmConfig, registerLlmPool } from './lib/llm.js';
+import { createLogger, hostOnly } from './lib/logger.js';
 
 const {
   DATABASE_URL,
@@ -28,6 +29,8 @@ const {
   STORAGE_DIR = '/data/pdfs',
   MAX_UPLOAD_MB = 60,
 } = process.env;
+
+const log = createLogger('kb');
 
 if (!KB_PASSWORD && KB_ALLOW_NO_PASSWORD !== 'true') {
   throw new Error('KB_PASSWORD is required. Set KB_ALLOW_NO_PASSWORD=true only for local development.');
@@ -66,7 +69,10 @@ app.post('/api/login', (req, res) => {
   res.status(401).json({ error: 'wrong password' });
 });
 
-app.get('/healthz', (_, res) => res.type('text').send('ok'));
+app.get('/healthz', (req, res) => {
+  log.debug('healthz_hit', { path: '/healthz' });
+  res.type('text').send('ok');
+});
 
 // ─────────────────────────────────────────── upload
 
@@ -232,6 +238,11 @@ app.put('/api/config/llm', requireAuth, async (req, res) => {
        ON CONFLICT (key) DO UPDATE SET value=EXCLUDED.value`,
       [JSON.stringify(cfg)]);
     clearLlmConfigCache();
+    log.info('llm_config_updated', {
+      base_url_host: hostOnly(cfg.base_url), model_write: cfg.model_write,
+      model_edit: cfg.model_edit, model_embed: cfg.model_embed, model_mine: cfg.model_mine,
+      api_key_set: Boolean(cfg.api_key),
+    });
     res.json({ ok: true, ...publicLlmConfig(cfg), presets: LLM_PRESETS });
   } catch (e) {
     res.status(e.status || 500).json({ error: e.message });
@@ -239,6 +250,7 @@ app.put('/api/config/llm', requireAuth, async (req, res) => {
 });
 
 app.post('/api/config/llm/test', requireAuth, async (req, res) => {
+  const t0 = Date.now();
   try {
     const cfg = await llmConfigFromRequest(req.body ?? {});
     const r = await fetch(`${cfg.base_url.replace(/\/+$/, '')}/models`, {
@@ -246,11 +258,17 @@ app.post('/api/config/llm/test', requireAuth, async (req, res) => {
       signal: AbortSignal.timeout(15_000),
     });
     const text = await r.text();
+    // host + status + latency only — the key must never appear in logs.
+    log.info('llm_config_test', {
+      endpoint: '/models', base_url_host: hostOnly(cfg.base_url),
+      status: r.status, ok: r.ok, latency_ms: Date.now() - t0, api_key_set: Boolean(cfg.api_key),
+    });
     if (!r.ok) return res.status(400).json({ ok: false, error: `HTTP ${r.status}: ${text.slice(0, 500)}` });
     let count = null;
     try { count = JSON.parse(text).data?.length ?? null; } catch { /* provider returned non-JSON */ }
     res.json({ ok: true, model_count: count });
   } catch (e) {
+    log.warn('llm_config_test_failed', { endpoint: '/models', latency_ms: Date.now() - t0, reason: e.message });
     res.status(400).json({ ok: false, error: e.message });
   }
 });
@@ -448,21 +466,36 @@ app.post('/api/products', requireAuth, imgUpload.array('images', 4), async (req,
     }
     await client.query('COMMIT');
 
+    log.info('product_added', {
+      product_uid: uid, image_count: files.length, media_mode: mediaMode,
+      has_description: desc.length > 0, affiliate_host: hostOnly(affiliateUrl),
+    });
+
     // Enrichment and vision run AFTER the commit and are allowed to fail — the product
     // already exists and is postable. Never let an external call block the user.
     (async () => {
       try {
+        log.debug('enrichment_started', { product_uid: uid });
+        const t0 = Date.now();
         const e = await enrich({ affiliateUrl, productUrl, name, priceIdr: price_myr,
                                  notes, description: desc, mediaMode });
         await pool.query(`UPDATE products SET name=COALESCE($2,name), enrichment=$3 WHERE id=$1`,
           [p.id, e.name ?? null, JSON.stringify(e)]);
+        log.info('enrichment_succeeded', {
+          product_uid: uid, latency_ms: Date.now() - t0, enriched: e.enriched === true,
+          source: e.shopee_source ?? null, facts: (e.concrete_details ?? []).length,
+          detail_confidence: e.detail_confidence ?? null,
+        });
         const { rows: imgs } = await pool.query(
           `SELECT id, public_url FROM product_images WHERE product_id=$1`, [p.id]);
         for (const im of imgs) {
           const d = await describeImage(im.public_url);
           if (d) await pool.query(`UPDATE product_images SET vision_desc=$2 WHERE id=$1`, [im.id, d]);
+          if (d) log.debug('vision_desc_succeeded', { product_uid: uid, image_id: im.id });
+          else log.warn('vision_desc_failed', { product_uid: uid, image_id: im.id });
         }
       } catch (err) {
+        log.warn('enrichment_failed', { product_uid: uid, reason: err.message });
         await pool.query(
           `INSERT INTO run_log (workflow, level, message) VALUES ('kb_intake','warn',$1)`,
           [`enrichment failed for product ${p.uid}: ${err.message}`.slice(0, 500)]).catch(() => {});
@@ -536,7 +569,24 @@ app.use('/img', express.static(IMAGE_DIR, {
 }));
 
 app.use(express.static('public'));
-app.listen(PORT, '0.0.0.0', () => console.log(`KB on :${PORT}`));
+app.listen(PORT, '0.0.0.0', async () => {
+  console.log(`KB on :${PORT}`);
+  // Startup config summary — booleans/hosts only, no secret values.
+  log.info('startup', {
+    port: Number(PORT),
+    image_backend: process.env.IMAGE_BACKEND ?? 'local',
+    public_image_base_host: hostOnly(process.env.PUBLIC_IMAGE_BASE),
+    s3_configured: Boolean(process.env.S3_KEY && process.env.S3_SECRET),
+    shopee_api_configured: Boolean(process.env.SHOPEE_API_APP_ID && process.env.SHOPEE_API_SECRET),
+    kb_password_set: Boolean(KB_PASSWORD),
+    debug_mode: log.debugActive(),
+    debug_until: process.env.DEBUG_UNTIL || null,
+    log_level: process.env.LOG_LEVEL || 'info',
+    node_env: process.env.NODE_ENV || null,
+  });
+  // Effective LLM config (host + models, never the key) — logged by getLlmConfig on change.
+  try { await getLlmConfig(); } catch { /* DB may not be ready yet; logged on first real call */ }
+});
 
 startWorker(pool).catch(e => console.error('worker crashed', e));
 

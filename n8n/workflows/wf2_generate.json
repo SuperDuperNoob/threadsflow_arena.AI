@@ -85,7 +85,7 @@
     {
       "parameters": {
         "operation": "executeQuery",
-        "query": "WITH input AS (\n  SELECT $1::jsonb AS ctx\n), picked AS (\n  SELECT pi.id, pi.public_url, pi.vision_desc\n    FROM product_images pi, input\n   WHERE pi.product_id = ((input.ctx->'product'->>'id')::bigint)\n     AND (pi.last_used_at IS NULL OR pi.last_used_at < now() - (((input.ctx->'cfg'->'posting'->>'image_cooldown_days')::int || ' days')::interval))\n   ORDER BY pi.use_count ASC, pi.last_used_at ASC NULLS FIRST\n   LIMIT CASE WHEN COALESCE((input.ctx->>'is_carousel')::boolean, false) THEN 4 ELSE 1 END\n)\nSELECT input.ctx || jsonb_build_object(\n  'images', COALESCE(jsonb_agg(to_jsonb(picked)) FILTER (WHERE picked.id IS NOT NULL), '[]'::jsonb),\n  'image_ids', COALESCE(jsonb_agg(picked.id) FILTER (WHERE picked.id IS NOT NULL), '[]'::jsonb),\n  'image_count', count(picked.id),\n  'has_image', count(picked.id) > 0\n) AS context\nFROM input\nLEFT JOIN picked ON true\nGROUP BY input.ctx;",
+        "query": "WITH input AS (\n  SELECT $1::jsonb AS ctx\n), ckpt AS (\n  INSERT INTO run_log (workflow, level, message, meta)\n  SELECT 'wf2_generate','debug','slot built: product + media type selected',\n         jsonb_build_object(\n           'slot_index',   input.ctx->>'slot_index',\n           'scheduled_at', input.ctx->>'scheduled_at',\n           'product_uid',  input.ctx->'product'->>'uid',\n           'media_type',   input.ctx->>'media_type',\n           'format',       input.ctx->>'format',\n           'combo_key',    input.ctx->>'combo_key')\n  FROM input RETURNING 1\n), picked AS (\n  SELECT pi.id, pi.public_url, pi.vision_desc\n    FROM product_images pi, input\n   WHERE pi.product_id = ((input.ctx->'product'->>'id')::bigint)\n     AND (pi.last_used_at IS NULL OR pi.last_used_at < now() - (((input.ctx->'cfg'->'posting'->>'image_cooldown_days')::int || ' days')::interval))\n   ORDER BY pi.use_count ASC, pi.last_used_at ASC NULLS FIRST\n   LIMIT CASE WHEN COALESCE((input.ctx->>'is_carousel')::boolean, false) THEN 4 ELSE 1 END\n)\nSELECT input.ctx || jsonb_build_object(\n  'images', COALESCE(jsonb_agg(to_jsonb(picked)) FILTER (WHERE picked.id IS NOT NULL), '[]'::jsonb),\n  'image_ids', COALESCE(jsonb_agg(picked.id) FILTER (WHERE picked.id IS NOT NULL), '[]'::jsonb),\n  'image_count', count(picked.id),\n  'has_image', count(picked.id) > 0\n) AS context\nFROM input\nLEFT JOIN picked ON true\nGROUP BY input.ctx;",
         "options": {
           "queryReplacement": "={{ JSON.stringify($json) }}"
         }
@@ -190,7 +190,8 @@
       ],
       "retryOnFail": true,
       "maxTries": 3,
-      "waitBetweenTries": 4000
+      "waitBetweenTries": 4000,
+      "onError": "continueErrorOutput"
     },
     {
       "parameters": {
@@ -219,7 +220,8 @@
         300
       ],
       "retryOnFail": true,
-      "maxTries": 3
+      "maxTries": 3,
+      "onError": "continueErrorOutput"
     },
     {
       "parameters": {
@@ -248,7 +250,8 @@
         300
       ],
       "retryOnFail": true,
-      "maxTries": 3
+      "maxTries": 3,
+      "onError": "continueErrorOutput"
     },
     {
       "parameters": {
@@ -296,7 +299,7 @@
     {
       "parameters": {
         "operation": "executeQuery",
-        "query": "WITH new_post AS (\n  INSERT INTO posts (uid, product_id, image_ids, media_type, format, angle, tone, sell_intensity,\n    length_band, is_carousel, body, cta_text, tracked_url, embedding, char_count,\n    emoji_count, hashtag_used, status, scheduled_at, reply_delay_sec, parent_post_id, generation)\n  VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,'queued',$18,$19,$20,$21)\n  RETURNING id\n)\nINSERT INTO technique_usage (post_id, technique_id)\nSELECT (SELECT id FROM new_post), unnest($22::bigint[])\nON CONFLICT DO NOTHING;",
+        "query": "WITH new_post AS (\n  INSERT INTO posts (uid, product_id, image_ids, media_type, format, angle, tone, sell_intensity,\n    length_band, is_carousel, body, cta_text, tracked_url, embedding, char_count,\n    emoji_count, hashtag_used, status, scheduled_at, reply_delay_sec, parent_post_id, generation)\n  VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,'queued',$18,$19,$20,$21)\n  RETURNING id\n), ckpt AS (\n  INSERT INTO run_log (workflow, level, message, meta)\n  VALUES ('wf2_generate','info','post queued',\n          jsonb_build_object('uid',$1,'status','queued','media_type',$4,\n                             'char_count',$15,'scheduled_at',$18,'qa','pass'))\n  RETURNING 1\n)\nINSERT INTO technique_usage (post_id, technique_id)\nSELECT (SELECT id FROM new_post), unnest($22::bigint[])\nON CONFLICT DO NOTHING;",
         "options": {
           "queryReplacement": "={{ $json.post_uid }},={{ $json.product.id }},={{ $json.image_ids || [] }},={{ $json.media_type }},={{ $json.format }},={{ $json.angle }},={{ $json.tone }},={{ $json.sell_intensity }},={{ $json.length_band }},={{ $json.is_carousel }},={{ $json.cleaned }},={{ $json.cta_text }},={{ $json.tracked_url }},={{ $json.embedding }},={{ $json.stats.chars }},={{ $json.stats.emoji }},={{ $json.stats.hashtag }},={{ $json.scheduled_at }},={{ $json.reply_delay_sec }},={{ $json.plan && $json.plan.parent_post_id || null }},={{ JSON.stringify({context_bucket: $json.context_bucket, combo_key: $json.combo_key, device_ids: $json.device_ids, plan: $json.plan}) }},={{ $json.device_ids || [] }}"
         }
@@ -339,6 +342,30 @@
         }
       },
       "notes": "Wire this back into 'LLM: write draft' for up to 3 retries before giving up on the slot."
+    },
+    {
+      "id": "log_llm_fail",
+      "name": "Log LLM failure",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        750,
+        560
+      ],
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO run_log (workflow, level, message, meta)\nVALUES ('wf2_generate','error','LLM call failed', $1::jsonb);",
+        "options": {
+          "queryReplacement": "={{ JSON.stringify({node: $prevNode.name, error: String(($json.error && ($json.error.message || $json.error.description)) || $json.message || 'unknown').slice(0, 300)}) }}"
+        }
+      },
+      "credentials": {
+        "postgres": {
+          "id": "PG",
+          "name": "Postgres threadsflow"
+        }
+      },
+      "notes": "Canary checkpoint. Logs only the error message - never the request/headers (they carry the API key)."
     }
   ],
   "connections": {
@@ -427,6 +454,13 @@
             "type": "main",
             "index": 0
           }
+        ],
+        [
+          {
+            "node": "Log LLM failure",
+            "type": "main",
+            "index": 0
+          }
         ]
       ]
     },
@@ -438,6 +472,13 @@
             "type": "main",
             "index": 0
           }
+        ],
+        [
+          {
+            "node": "Log LLM failure",
+            "type": "main",
+            "index": 0
+          }
         ]
       ]
     },
@@ -446,6 +487,13 @@
         [
           {
             "node": "QA gate",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Log LLM failure",
             "type": "main",
             "index": 0
           }
