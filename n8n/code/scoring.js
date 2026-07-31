@@ -194,4 +194,10 @@ function score(input) {
   };
 }
 
-return [{ json: score($json) }];
+if (typeof $json !== 'undefined') {
+  return [{ json: score($json) }];
+}
+
+if (typeof module !== 'undefined') {
+  module.exports = { score, bayesAverage, logLift, zscores };
+}

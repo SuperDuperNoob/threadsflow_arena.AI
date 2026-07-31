@@ -43,7 +43,7 @@ function shingleOverlap(a, b, n = 3) {
 }
 
 function qa(input) {
-  const cfg = input.settings;
+  const cfg = input.settings || {};
   const reasons = [];
   let text = (input.text || '').trim();
 
@@ -63,7 +63,7 @@ function qa(input) {
   }
 
   // 2. banned phrases
-  for (const b of input.banned) {
+  for (const b of (input.banned || [])) {
     if (b.scope !== 'all' && b.scope !== 'opener' && b.scope !== input.tone) continue;
     const target = b.scope === 'opener' ? text.slice(0, 60) : text;
     let re;
@@ -181,9 +181,7 @@ function qa(input) {
 }
 
 function n8nInput() {
-  // After HTTP LLM calls, the current item is only the embedding response. Pull the generation
-  // context and edited text back from earlier nodes when this runs inside n8n.
-  if (typeof $ !== 'function') return $json;
+  if (typeof $ !== 'function') return typeof $json !== 'undefined' ? $json : {};
   try {
     const base = $('Pick devices').item.json;
     const edited = $('LLM: human pass').item.json.choices?.[0]?.message?.content ?? '';
@@ -198,10 +196,16 @@ function n8nInput() {
       product_name: base.product?.name ?? base.product?.enrichment?.name ?? '',
     };
   } catch {
-    return $json;
+    return typeof $json !== 'undefined' ? $json : {};
   }
 }
 
-const input = n8nInput();
-const out = qa(input);
-return [{ json: { ...input, ...out } }];
+if (typeof $ !== 'undefined' || typeof $json !== 'undefined') {
+  const input = n8nInput();
+  const out = qa(input);
+  return [{ json: { ...input, ...out } }];
+}
+
+if (typeof module !== 'undefined') {
+  module.exports = { qa, shingleOverlap, cosine };
+}
