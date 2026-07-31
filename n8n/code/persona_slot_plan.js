@@ -1,7 +1,8 @@
 /**
  * n8n Code node — wf6 step 0: build today's persona posting slots.
  *
- * Output: one item per persona slot, with scheduled_at, length_band, tone, format.
+ * Output: one item per persona slot, with scheduled_at, length_band, tone, format,
+ *         time_of_day, psychology_techniques.
  *
  * Rules:
  *  - Slots are placed at persona_slot_hours (defaults [7, 11, 16, 21] Kuala Lumpur time).
@@ -13,11 +14,44 @@
  *  - Format is drawn from persona-appropriate formats (confession, one_liner, chat_narration,
  *    overheard, list_of_three, question_hook) — no honest_review/diary/myth_bast/product frames.
  *  - Media type is always TEXT for persona posts (no product photos to attach).
+ *  - Time-of-day affinity: morning slots prefer commute/breakfast topics, afternoon prefers
+ *    petua/household, evening prefers food/family/reflection.
+ *  - Psychology techniques: 1-2 techniques assigned per slot from the psychology seed pool,
+ *    weighted toward persona-appropriate techniques (reciprocity, belonging, participation).
  */
 
-const ALLOWED_TONES = ['deadpan', 'gaul', 'warm_sibling', 'chaotic', 'minimal'];
+const ALLOWED_TONES = ['deadpan', 'gaul', 'warm_sibling', 'chaotic', 'minimal', 'makcik'];
 const ALLOWED_FORMATS = ['confession', 'one_liner', 'chat_narration', 'overheard',
-                         'list_of_three', 'question_hook', 'pov'];
+                         'list_of_three', 'question_hook', 'pov', 'rant_bite', 'petua'];
+
+// Time-of-day mapping from slot hours
+const HOUR_TO_TIME_OF_DAY = {
+  7: 'morning',
+  11: 'midday',
+  16: 'afternoon',
+  21: 'evening',
+};
+
+// Psychology techniques suitable for persona posts (from seed_techniques_psychology.sql)
+const PERSONA_PSYCHOLOGY_TECHNIQUES = [
+  'reciprocity_first',       // give value before asking
+  'liking_through_specificity', // name one specific shared detail
+  'unity_shared_identity',   // name the group the reader belongs to
+  'punctuation_signals_tone', // period = serious, no period = casual
+  'clarity_over_cleverness', // one idea per sentence
+  'write_like_you_talk',     // BM pasar contractions
+  'cut_ruthlessly',          // every sentence must earn its place
+  'participation_loop',      // ask for specific input
+  'belonging_signal',        // "kita" for struggles, "saya" for wins
+];
+
+// Technique weights by time of day (some techniques work better at certain times)
+const TECHNIQUE_TIME_WEIGHTS = {
+  morning:   { reciprocity_first: 1.2, belonging_signal: 1.0, participation_loop: 0.8 },
+  midday:    { clarity_over_cleverness: 1.3, write_like_you_talk: 1.2, cut_ruthlessly: 1.1 },
+  afternoon: { reciprocity_first: 1.3, liking_through_specificity: 1.2, participation_loop: 1.1 },
+  evening:   { belonging_signal: 1.4, unity_shared_identity: 1.3, participation_loop: 1.2 },
+};
 
 const DEFAULT_SETTINGS = {
   persona_slot_hours: [7, 11, 16, 21],
@@ -96,12 +130,21 @@ function buildPersonaSlots(opts = {}) {
     const tone = ALLOWED_TONES[Math.floor(Math.random() * ALLOWED_TONES.length)];
     const format = ALLOWED_FORMATS[Math.floor(Math.random() * ALLOWED_FORMATS.length)];
 
+    // Time of day (from hour)
+    const time_of_day = HOUR_TO_TIME_OF_DAY[hours[i]] || 'afternoon';
+
+    // Psychology techniques (1-2 techniques, weighted by time of day)
+    const techniqueCount = Math.random() < 0.3 ? 2 : 1; // 30% chance of 2 techniques
+    const psychology_techniques = pickPersonaTechniques(time_of_day, techniqueCount);
+
     slots.push({
       slot_index: i,
       scheduled_at: t.toISOString(),
       length_band,
       tone,
       format,
+      time_of_day,
+      psychology_techniques,
       angle: 'utility',           // personas aren't selling; 'utility' is "one small useful/true thing"
       sell_intensity: '0',        // never any CTA
       media_type: 'TEXT',
@@ -119,11 +162,43 @@ function buildPersonaSlots(opts = {}) {
     slots.push({
       slot_index: 0, scheduled_at: t.toISOString(),
       length_band: 'mid', tone: 'gaul', format: 'one_liner',
+      time_of_day: 'evening',
+      psychology_techniques: pickPersonaTechniques('evening', 1),
       angle: 'utility', sell_intensity: '0', media_type: 'TEXT',
       is_carousel: false, reply_delay_sec: 0, purpose: 'persona', timezone: tz,
     });
   }
   return slots;
+}
+
+/**
+ * Pick 1-2 psychology techniques for a persona slot, weighted by time of day.
+ */
+function pickPersonaTechniques(timeOfDay, count = 1) {
+  const weights = TECHNIQUE_TIME_WEIGHTS[timeOfDay] || {};
+  const weighted = PERSONA_PSYCHOLOGY_TECHNIQUES.map(t => ({
+    name: t,
+    weight: weights[t] || 1.0,
+  }));
+
+  const selected = [];
+  const pool = [...weighted];
+
+  for (let i = 0; i < count && pool.length > 0; i++) {
+    const totalWeight = pool.reduce((sum, item) => sum + item.weight, 0);
+    let rand = Math.random() * totalWeight;
+
+    for (let j = 0; j < pool.length; j++) {
+      rand -= pool[j].weight;
+      if (rand <= 0) {
+        selected.push(pool[j].name);
+        pool.splice(j, 1);
+        break;
+      }
+    }
+  }
+
+  return selected;
 }
 
 // n8n entry point: receives $json with `settings` (or falls back to defaults).

@@ -2,12 +2,13 @@
  * n8n Code node — wf6 step 1: pick one persona topic via Thompson sampling.
  *
  * Mirrors bandit.js's SELECT logic, but over persona_topics rather than products/arms.
+ * Now includes time-of-day affinity: prefers topics tagged for the current slot's time.
  *
  * Input $json (set by the preceding Postgres "load persona_topics" node):
- *   topics    : [{id, uid, topic, angle_hint, niche_tags, alpha, beta, n, cooldown_until, context, pinned}]
+ *   topics    : [{id, uid, topic, angle_hint, niche_tags, alpha, beta, n, cooldown_until, context, pinned, time_of_day}]
  *   last_n_ids: array of topic ids used in the last 7 days (avoid repetition)
  *   settings  : { bandit: { epsilon, cooldown_days, ... } }
- *   scheduled_at, timezone
+ *   scheduled_at, timezone, time_of_day
  *
  * Output:
  *   Adds `{ topic: <chosen row>, purpose: 'persona' }` to the current item.
@@ -38,7 +39,7 @@ function betaSample(a, b) {
   return x / (x + y);
 }
 
-function pickTopic({ topics, lastNIds = [], settings = {} }) {
+function pickTopic({ topics, lastNIds = [], settings = {}, time_of_day = null }) {
   topics = Array.isArray(topics) ? topics : [];
   if (!topics.length) throw new Error('persona_topic_pick: no topics supplied');
   const now = Date.now();
@@ -65,23 +66,33 @@ function pickTopic({ topics, lastNIds = [], settings = {} }) {
     return pinned[Math.floor(Math.random() * pinned.length)];
   }
 
+  // Time-of-day affinity: boost topics that match the current time_of_day
+  const timeBoosted = pool.map(t => {
+    const topicTimes = t.time_of_day || [];
+    const matchesTime = !time_of_day || topicTimes.length === 0 || topicTimes.includes(time_of_day);
+    return { ...t, _timeBoost: matchesTime ? 1.3 : 0.7 };
+  });
+
   if (Math.random() < eps) {
     // EXPLORE: uniform random, biased toward least-sampled (alpha close to 1 = not yet sampled).
-    const shuffled = [...pool].sort((a, b) =>
-      (Number(a.alpha ?? 1) + Math.random() * 2) - (Number(b.alpha ?? 1) + Math.random() * 2));
+    const shuffled = [...timeBoosted].sort((a, b) =>
+      (Number(a.alpha ?? 1) * a._timeBoost + Math.random() * 2) -
+      (Number(b.alpha ?? 1) * b._timeBoost + Math.random() * 2));
     return shuffled[0];
   }
 
-  // EXPLOIT: Thompson-sample Beta(alpha,beta).
+  // EXPLOIT: Thompson-sample Beta(alpha,beta) with time-of-day boost.
   let best = null, bestDraw = -1;
-  for (const t of pool) {
+  for (const t of timeBoosted) {
     const a = Number(t.alpha ?? 1);
     const b = Number(t.beta ?? 1);
     // Cold-start boost for fresh topics so they get sampled at least once before the bandit
     // trusts the 0/0 prior — an (alpha=1,beta=1) draw can still land anywhere in [0,1], but
     // topics with n===0 get a tiny extra exploration push.
-    const draw = Number(t.n ?? 0) === 0 ? Math.max(betaSample(a, b), 0.3 + Math.random() * 0.4)
+    let draw = Number(t.n ?? 0) === 0 ? Math.max(betaSample(a, b), 0.3 + Math.random() * 0.4)
                                         : betaSample(a, b);
+    // Apply time-of-day boost
+    draw *= t._timeBoost;
     if (draw > bestDraw) { bestDraw = draw; best = t; }
   }
   return best ?? pool[0];
@@ -89,7 +100,10 @@ function pickTopic({ topics, lastNIds = [], settings = {} }) {
 
 // n8n entry point. n8n's Code node provides $json for the current item.
 if (typeof $ !== 'undefined' && typeof $json !== 'undefined') {
-  const picked = pickTopic($json);
+  const picked = pickTopic({
+    ...$json,
+    time_of_day: $json.time_of_day || null,
+  });
   return [{ json: { ...$json, topic: picked, purpose: 'persona' } }];
 }
 
