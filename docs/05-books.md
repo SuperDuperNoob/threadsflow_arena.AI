@@ -1,6 +1,6 @@
 # Your Books/ folder — what was extracted and what was deliberately rejected
 
-You pushed 32 PDFs plus 1 Markdown strategy note into `Books/`. Here is what happened to them.
+You pushed 40 PDFs plus 1 Markdown strategy note into `Books/`. Here is what happened to them.
 
 ---
 
@@ -11,10 +11,11 @@ You pushed 32 PDFs plus 1 Markdown strategy note into `Books/`. Here is what hap
 | Malay ebooks (classic FB/WhatsApp-era copywriting) | 15 | headlines, ayat jualan, social content |
 | 2026 Threads Mastery series (Hizami Radzi) | 5 | Threads Income Mastery v2, Content Machine Playbook, Profit Killer, Bonus 1–3 |
 | English books (storytelling / visual storytelling) | 3 | storytelling, brand storytelling, infographics |
+| **English books (psychology & communication)** | **7** | Cialdini, Voss, Dhawan, Handley, Carnegie (2), Bacon |
 | Headline-template packs (shallow) | 9 | bulk "800 headlines" lists — very low signal |
 | Strategy note (Markdown) | 1 | `Threads_Affiliate_Marketing_2026_Strategies.md` |
 | **Scanned (no text layer, needs OCR)** | **2** | see below |
-| Total | **33 files** | |
+| Total | **41 files** | |
 
 **Scanned / image-only PDFs** — these have no extractable text layer, so nothing can be mined from them until OCR is run:
 
@@ -31,6 +32,45 @@ ocrmypdf -l msa+eng "Books/TEKNIK COPYWRITING.pdf"  "Books/TEKNIK COPYWRITING.oc
 ```
 
 After OCR, upload the `.ocr.pdf` versions through the KB web page (see §6).
+
+---
+
+## 1b. New English Psychology & Communication Books (2026-07-31 audit)
+
+Seven English-language psychology and communication books were added and audited for persona warm-up mechanisms:
+
+| Book | Author | Key mechanisms extracted |
+|---|---|---|
+| `Influence, New and Expanded` | Robert Cialdini | Reciprocity (give first), liking through specificity, subtle social proof, unity/shared identity |
+| `Never Split the Difference` | Chris Voss | Tactical empathy (label emotions), mirroring (repeat last 1-3 words), calibrated questions ("macam mana" not "kenapa"), late-night FM DJ voice (calm, slow, periods not exclamation marks) |
+| `Digital Body Language` | Erica Dhawan | Punctuation signals tone (period = serious, no period = casual), clarity over cleverness (one idea per sentence) |
+| `Everybody Writes` | Ann Handley | Write like you talk (BM pasar contractions), cut ruthlessly (every sentence must earn its place) |
+| `How to Win Friends Digital Age` | Dale Carnegie Associates | Bury boomerangs (don't pivot back to yourself), listen longer (ask 2 questions before sharing), leave others better (one useful detail per reply) |
+| `How to Win Friends, Revised Edition` | Dale Carnegie | Core principles (affirm what's good, take interest in others' interests) — overlaps with Digital Age version |
+| `The Art of Community` | Jono Bacon | Participation loops (ask for specific input, not broad opinions), belonging signals ("kita" for struggles, "saya" for wins) |
+
+**Editorial decision for psychology books:** These books teach PRINCIPLES, not templates. The mechanisms extracted are **guardrails for the persona layer**, not fill-in-the-blank formulas. For example:
+
+- Cialdini's reciprocity principle → `reciprocity_first` technique (give value before asking)
+- Voss's mirroring → `mirror_last_three` technique (repeat their last 1-3 words as a question)
+- Dhawan's punctuation signals → `punctuation_signals_tone` technique (period = serious, no period = casual)
+
+**Manipulative surface tactics were banned:** The books also document harmful versions of these principles that get you flagged as an ad. These were added to `banned_phrases`:
+
+- Artificial scarcity ("stok terhad", "last chance") — the harmful version of Cialdini's scarcity principle
+- Manufactured social proof ("1000 orang dah beli") — the harmful version of `social_proof_subtle`
+- False authority ("pakar", "certified", "terbukti secara saintifik") — claiming expertise you don't have
+- Manipulative reciprocity ("ambil percuma", "claim sekarang") — offering "free" things to trigger obligation
+- Aggressive empathy scripts ("saya faham sangat masalah anda") — the harmful version of tactical empathy
+
+**Integration with persona warm-up:** These techniques are specifically designed for the `wf6_persona` workflow and the warm-up phase (first 14-16 days). They complement the existing 2026 Threads techniques:
+
+- `reciprocity_first` + `zero_sell_ratio` → persona posts build goodwill before any sell
+- `tactical_empathy_label` + `mirror_last_three` + `calibrated_question` → reply-marketing and L4 engagement
+- `late_night_dj_voice` + `punctuation_signals_tone` → trustworthy tone for sell posts
+- `write_like_you_talk` + `cut_ruthlessly` → conversational editing pass
+
+All 17 new techniques are marked `review_state='approved'` and ready for the bandit to test.
 
 ---
 
@@ -100,7 +140,8 @@ tensions are flagged `contested` so real engagement data decides.
 
 **22 techniques** from the original seed (`db/seed_techniques_books.sql`), plus **11 more** from
 the 2026 Threads series + classic BM copywriting books (`db/seed_techniques_2026_threads.sql`),
-on top of the 43 built-in ones (≈76 total after both seeds run).
+plus **17 more** from English psychology & communication books (`db/seed_techniques_psychology.sql`),
+on top of the 43 built-in ones (≈93 total after all seeds run).
 
 ### From the original Books/ batch (seed_techniques_books.sql)
 
@@ -140,6 +181,28 @@ on top of the 43 built-in ones (≈76 total after both seeds run).
 | `specific_dream` | 30-point copywriting, 2026 strategy note | Name a specific mundane 10-second after-state (e.g. "sempat bancuh teh sementara periuk rendam"), not "senang" / "jimat masa" |
 | `objection_preempt` | 30-point questions 21–24, Kurang 7 Saat | Answer the silent objection (price, fit, penat) on line 3 — don't wait for comments |
 
+### From psychology & communication theory (seed_techniques_psychology.sql)
+
+| Technique | From | What it does |
+|---|---|---|
+| `reciprocity_first` | Cialdini Influence | Give value in persona posts before any sell — builds goodwill bank |
+| `liking_through_specificity` | Cialdini Influence | Name one specific shared detail (place, time, struggle) to signal "I am like you" |
+| `social_proof_subtle` | Cialdini Influence | "Ramai tanya" not "ramai beli" — conversational social proof, not numerical |
+| `unity_shared_identity` | Cialdini Influence (expanded) | Name the group the reader belongs to before mentioning the product |
+| `tactical_empathy_label` | Voss Never Split the Difference | Label the commenter's emotion ("macam frustrated je") before answering |
+| `mirror_last_three` | Voss Never Split the Difference | Repeat their last 1-3 words as a question to invite elaboration |
+| `calibrated_question` | Voss Never Split the Difference | Ask "macam mana" not "kenapa" — invites context, not defensiveness |
+| `late_night_dj_voice` | Voss Never Split the Difference | Calm, slow, periods not exclamation marks — signals trustworthiness |
+| `punctuation_signals_tone` | Dhawan Digital Body Language | Period = serious/factual, no period = casual, never exclamation marks |
+| `clarity_over_cleverness` | Dhawan Digital Body Language | One idea per sentence — if it has "dan" or "tapi", split it |
+| `write_like_you_talk` | Handley Everybody Writes | BM pasar contractions, sentence fragments, start with "Dan"/"Tapi" |
+| `cut_ruthlessly` | Handley Everybody Writes | Every sentence must earn its place — delete "sangat bagus", "memang berbaloi" |
+| `bury_boomerangs` | Carnegie Win Friends Digital Age | Don't pivot back to yourself in replies — answer their question fully first |
+| `listen_longer` | Carnegie Win Friends Digital Age | Ask 2 questions before sharing your take — signals listening, not broadcasting |
+| `leave_better` | Carnegie Win Friends Digital Age | One useful detail per reply (timing, comparison, warning, tip) |
+| `participation_loop` | Bacon Art of Community | Ask for specific input ("korang guna yang mana?") not broad opinions |
+| `belonging_signal` | Bacon Art of Community | "Kita" for struggles, "saya" for wins — subtle unity signaling |
+
 ### Rejected as harmful — now blocked automatically
 
 | Blocked | Why |
@@ -150,6 +213,7 @@ on top of the 43 built-in ones (≈76 total after both seeds run).
 | 2026 anti-patterns (seed_techniques_2026_threads.sql) | "game changer", "wajib ada", "berbaloi sangat", "content creator / reach / viral" jargon, "jangan lepaskan / stok terhad" artificial urgency, "DM/PM/wasap saya" off-CTA |
 | Classic BM hard-sell (new seed) | RAHSIA / TERBONGKAR / AJAIB / TERBAIK DI DUNIA / SANGAT HEBAT / LUAR BIASA; "saya nak berkongsi…" opener; "Adakah anda / Tahukah anda / Korang tahu…" FB-ad question openers; "harga istimewa / tawaran terhad / slalu RM\d+ sekarang RM" price-discount framing |
 | Persona-opener bans (migration 010) | "Korang pernah tak…", "Siapa kat sini…", "Jom / Jangan lepaskan / Save dulu / Share", "Thread/Post kali ini", "Hai semua / Assalammualaikum semua / Hi korang" |
+| Psychology manipulative tactics (seed_techniques_psychology.sql) | Artificial scarcity ("stok terhad", "last chance", "cepat sebelum"), manufactured social proof ("1000 orang dah beli"), false authority ("pakar", "certified", "terbukti secara saintifik"), manipulative reciprocity ("ambil percuma", "claim sekarang"), aggressive empathy scripts ("saya faham sangat masalah anda") |
 
 ### Contested (bandit decides)
 
@@ -161,6 +225,8 @@ on top of the 43 built-in ones (≈76 total after both seeds run).
 - `niche_positioning` (from the 2026 seed) — Threads 2026 books argue hyper-specific
   person-targeting beats broad relatability; older storytelling books recommend universal
   relatability. Real engagement decides.
+- `social_proof_subtle` (from seed_techniques_psychology) — "ramai tanya" vs explicit sold_count_proof numbers. The soft conversational version may work better in warm-up; the hard numerical version may work better once there's real sales volume.
+- `belonging_signal` (from seed_techniques_psychology) — inclusive "kita" language vs hyper-specific niche_positioning. One says "we share this", the other says "you specifically". Different contexts may favor each.
 
 Check the verdicts after ~6 cycles:
 
@@ -252,3 +318,12 @@ the bandit can down-weight it.
 
 - Meta Threads API docs (rate limits, reply endpoints, content policies): https://developers.facebook.com/docs/threads
 - Meta creator-reach best practices (authentic conversation, engagement ranking): https://developers.facebook.com/docs/threads/overview
+
+**Psychology & communication theory (seed_techniques_psychology.sql)**
+
+- Cialdini, Robert. *Influence, New and Expanded: The Psychology of Persuasion* (2021). Seven principles: reciprocity, liking, social proof, authority, scarcity, commitment/consistency, unity.
+- Voss, Chris. *Never Split the Difference: Negotiating As If Your Life Depended On It* (2016). Tactical empathy, mirroring, calibrated questions, late-night FM DJ voice.
+- Dhawan, Erica. *Digital Body Language: How to Build Trust and Connection, No Matter the Distance* (2021). Punctuation as tone, response time as priority signal, clarity over cleverness.
+- Handley, Ann. *Everybody Writes: Your Go-To Guide to Creating Ridiculously Good Content* (2014, 2022). Conversational writing, one idea per sentence, cut ruthlessly.
+- Carnegie, Dale (Associates). *How to Win Friends and Influence People in the Digital Age* (2011). Bury boomerangs, listen longer, leave others better.
+- Bacon, Jono. *The Art of Community: Building the New Age of Participation* (2nd ed, 2014). Participation loops, belonging signals, community engagement patterns.

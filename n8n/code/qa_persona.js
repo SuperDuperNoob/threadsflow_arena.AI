@@ -10,6 +10,7 @@
  *     kedai, mamak, dapur, etc) — generic "relatable" platitudes are rejected
  *   - Questions are allowed, but question-sandwich (open with ? AND close with ?) is still banned
  *   - Same 500-char hard cap, same Indonesian word bans, same shouting cap
+ *   - Psychology technique validation: at least one assigned technique must be present
  *
  * Input $json:
  *   text            : candidate body from the editor/rewrite LLM pass
@@ -18,6 +19,7 @@
  *   banned          : [{pattern, scope}] from banned_phrases (persona_opener / persona_all are included)
  *   length_band     : 'micro'|'mid'|'long'
  *   tone            : lever code
+ *   psychology_techniques: string[] assigned techniques from slot planner
  *   settings        : qa settings
  */
 
@@ -59,6 +61,19 @@ const FALSE_FRIENDS = [
   [/\bbutuh\b/i, 'butuh = vulgar in BM; use perlu'],
   [/\bpusing\b(?!\s+(kiri|kanan|sana))/i, 'pusing = turn in BM; use pening/sakit kepala'],
 ];
+
+// Psychology technique markers — used to validate that the assigned technique is present
+const PSYCHOLOGY_TECHNIQUE_MARKERS = {
+  reciprocity_first: /\b(petua|tip|cara|boleh cuba|kalau|cuba)\b/i,  // gives value
+  liking_through_specificity: /\b(flat|ampang|shah alam|rapidKL|petronas|waze|grab|shopee)\b/i,  // specific shared detail
+  unity_shared_identity: /\b(ibu (bekerja|kerja)|fresh grad|anak rantau|student|guru|nurse|rider)\b/i,  // names group
+  punctuation_signals_tone: true,  // always passes (structural, not lexical)
+  clarity_over_cleverness: true,   // always passes (structural, not lexical)
+  write_like_you_talk: /\b(tak|nak|kat|je|lah|kan|kot)\b/i,  // BM pasar contractions
+  cut_ruthlessly: true,  // always passes (structural, not lexical)
+  participation_loop: /\b(korang (guna|ada|macam)|tempat korang|ada (petua|tip)|macam mana)\b.*\?/i,  // asks for input
+  belonging_signal: /\b(kita semua|kita pun|kita (tahu|faham))\b/i,  // uses "kita" for shared experience
+};
 
 function cosine(a, b) {
   if (!a || !b || a.length !== b.length) return 0;
@@ -156,12 +171,24 @@ function qaPersona(input) {
   const hasAnchor = ANCHOR_PATTERNS.some(rx => rx.test(text));
   if (!hasAnchor) reasons.push('persona post has no concrete anchor (time/place/sensation/object/person/number) — too generic');
 
-  // 11. Must NOT reference an image that does not exist (persona posts are text-only).
+  // 11. Psychology technique validation — at least one assigned technique should be present
+  const techniques = input.psychology_techniques ?? [];
+  if (techniques.length > 0) {
+    const hasTechnique = techniques.some(t => {
+      const marker = PSYCHOLOGY_TECHNIQUE_MARKERS[t];
+      return marker ? marker.test(text) : true;
+    });
+    if (!hasTechnique) {
+      reasons.push(`no assigned psychology technique detected: ${techniques.join(', ')}`);
+    }
+  }
+
+  // 12. Must NOT reference an image that does not exist (persona posts are text-only).
   if (/\b(gambar|foto|fotonya|gambarnya|di atas|liat nih|lihat gambar|swipe|geser)\b/i.test(text)) {
     reasons.push('text-only persona post references an image');
   }
 
-  // 12. Anti-repetition vs last 30 posts (cosine sim + 3-gram shingle overlap).
+  // 13. Anti-repetition vs last 30 posts (cosine sim + 3-gram shingle overlap).
   let maxSim = 0, maxShingle = 0;
   for (const r of input.recent ?? []) {
     maxSim = Math.max(maxSim, cosine(input.embedding, r.embedding));
@@ -170,7 +197,7 @@ function qaPersona(input) {
   if (maxSim > (cfg.max_similarity ?? 0.86)) reasons.push(`too similar to a recent post (cos ${maxSim.toFixed(3)})`);
   if (maxShingle > 0.18) reasons.push(`reuses phrasing skeleton (3-gram overlap ${maxShingle.toFixed(3)})`);
 
-  // 13. Opener uniqueness vs last 30 posts (same 5-word rule).
+  // 14. Opener uniqueness vs last 30 posts (same 5-word rule).
   const opener = t => t.toLowerCase().split(/\s+/).slice(0, 5).join(' ');
   if ((input.recent ?? []).some(r => opener(r.body) === opener(text))) reasons.push('duplicate opener');
 
@@ -208,6 +235,7 @@ function n8nInput() {
       settings: base.cfg?.qa ?? base.settings?.qa ?? base.qa ?? {},
       tone: base.tone,
       length_band: base.length_band,
+      psychology_techniques: base.psychology_techniques ?? base.slot?.psychology_techniques ?? [],
     };
   } catch {
     return $json;

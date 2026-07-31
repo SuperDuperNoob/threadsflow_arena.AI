@@ -46,6 +46,9 @@ docker compose -f infra/docker-compose.yml exec -T postgres psql -v ON_ERROR_STO
 echo "Seeding 2026 Threads mastery + classic BM copywriting techniques..."
 docker compose -f infra/docker-compose.yml exec -T postgres psql -v ON_ERROR_STOP=1 -U threadsflow -d threadsflow < db/seed_techniques_2026_threads.sql
 
+echo "Seeding psychology & communication theory techniques (Cialdini, Voss, Dhawan, Handley, Carnegie, Bacon)..."
+docker compose -f infra/docker-compose.yml exec -T postgres psql -v ON_ERROR_STOP=1 -U threadsflow -d threadsflow < db/seed_techniques_psychology.sql
+
 echo "Applying LLM settings from infra/.env (if present)..."
 ./scripts/configure_llm.sh
 

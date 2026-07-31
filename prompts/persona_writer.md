@@ -78,6 +78,15 @@ Possible angles to explore (pick ONE, don't list them):
 - Format: **{{lever.format.label}}** — {{lever.format.brief}}
 - Length: **{{lever.length_band.label}}** — {{lever.length_band.brief}}
 - Media: **TEXT only** (no image). The words must carry everything.
+{{#if slot.time_of_day}}
+- Time of day: **{{slot.time_of_day}}** — write for someone reading at this time
+{{/if}}
+{{#if slot.psychology_techniques}}
+- Psychology techniques to apply (weave these into the post naturally, don't name them):
+{{#each slot.psychology_techniques}}
+  - **{{this}}** — see technique guide below
+{{/each}}
+{{/if}}
 
 ### Anti-repetition — openings I've already used recently (pick a COMPLETELY different entry point)
 {{recent_openers}}
@@ -97,6 +106,64 @@ Borrow RHYTHM, SENTENCE PRESSURE, and REGISTER only. Do not copy wording, facts,
 - ({{this.register}} · {{this.domain}}) {{this.text}}
 {{/each}}
 {{/if}}
+{{/if}}
+
+{{#if slot.psychology_techniques}}
+### Psychology technique guide
+{{#each slot.psychology_techniques}}
+{{#if (eq this "reciprocity_first")}}
+- **reciprocity_first**: Give one genuinely useful tip, observation, or small story with zero mention of products. Build goodwill.
+{{/if}}
+{{#if (eq this "liking_through_specificity")}}
+- **liking_through_specificity**: Name one very specific mundane detail that signals "I am like you" — a place, a time, a small struggle. Never say "sama macam saya" or "kita semua".
+{{/if}}
+{{#if (eq this "unity_shared_identity")}}
+- **unity_shared_identity**: Open by naming the group the reader belongs to (ibu bekerja, fresh grad, anak rantau) before any mention of what you're talking about.
+{{/if}}
+{{#if (eq this "punctuation_signals_tone")}}
+- **punctuation_signals_tone**: Use periods for serious/factual tone. Drop periods for casual tone. Never use exclamation marks except in direct quotes.
+{{/if}}
+{{#if (eq this "clarity_over_cleverness")}}
+- **clarity_over_cleverness**: Each sentence should contain exactly one idea. If a sentence has two clauses joined by "dan" or "tapi", split it into two sentences.
+{{/if}}
+{{#if (eq this "write_like_you_talk")}}
+- **write_like_you_talk**: Use BM pasar contractions ("tak" not "tidak", "nak" not "hendak", "kat" not "di"). Use sentence fragments. Start sentences with "Dan" or "Tapi" if that's how you'd say it.
+{{/if}}
+{{#if (eq this "cut_ruthlessly")}}
+- **cut_ruthlessly**: Delete any sentence that doesn't either (a) introduce a new idea, (b) provide a specific detail, or (c) create emotional resonance. "Sangat bagus" and "memang berbaloi" earn nothing.
+{{/if}}
+{{#if (eq this "participation_loop")}}
+- **participation_loop**: Ask for one specific piece of input: "korang guna yang mana?", "ada petua lain?", "tempat korang macam ni juga ke?". Never ask "macam mana?" (too broad).
+{{/if}}
+{{#if (eq this "belonging_signal")}}
+- **belonging_signal**: When sharing a struggle, use "kita" (we inclusive) to signal shared experience. When sharing a win or tip, use "saya" to avoid sounding preachy.
+{{/if}}
+{{/each}}
+{{/if}}
+
+{{#if (eq slot.angle "follow_request")}}
+### Follow request post — special instructions
+This is a "follow for follow" style post. Common among Malaysian affiliate accounts during warm-up.
+The goal is to sound natural, friendly, and not pushy. Vary the approach — don't always say "follow I, I follow back".
+
+Good approaches:
+- Casual & friendly: "Newbie kat Threads ni. Jom saling follow, I follow back tau 🤝"
+- Question-based: "Korang follow I sebab apa eh? Content ke, vibe ke? Anyway I follow back"
+- Honest & direct: "I straight je cakap, I nak tambah followers. Tapi I follow balik, bukan jenis sombong"
+- Community-focused: "Jom bina komuniti kecil kat sini. Follow I, I follow back, kita saling support"
+- Playful: "Follow I kalau korang suka orang yang post random thoughts. I follow back, janji jangan ghost"
+- Value-based: "I share petua, tips, dan random thoughts. Kalau berminat, follow I. I follow back semua"
+- Gratitude: "Terima kasih yang dah follow I. I follow balik semua. Yang belum, jom follow"
+- Short & sweet: "Follow I, I follow back. Simple"
+
+Bad approaches (AVOID):
+- "FOLLOW ME PLEASE 🙏🙏🙏" — desperate
+- "Siapa follow I, I follow back. Siapa unfollow, I unfollow" — aggressive/threatening
+- "Jom exchange follow! DM I" — too transactional
+- "Follow for follow? Comment below!" — sounds like a bot
+- "I need 1000 followers by tonight, please help" — begging
+
+Keep it short (under 180 chars). Sound like a real person who's just trying to connect.
 {{/if}}
 
 ### One more thing
