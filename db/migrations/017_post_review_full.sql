@@ -1,63 +1,47 @@
--- Migration 016: Human-in-the-loop review layer, post_review table, views, and scoring weights
+-- Migration 017: Human-in-the-loop review layer full specification (posts.status expansion, post_review table, post_human_feedback view)
 
 BEGIN;
 
+-- 1. Expand posts table columns for review tracking if not already present
+ALTER TABLE posts ADD COLUMN IF NOT EXISTS review_timeout_at TIMESTAMPTZ;
+ALTER TABLE posts ADD COLUMN IF NOT EXISTS review_locked_until TIMESTAMPTZ;
+ALTER TABLE posts ADD COLUMN IF NOT EXISTS review_timeout_minutes INT DEFAULT 120;
+
+-- 2. Create append-only post_review table matching exact specification
 CREATE TABLE IF NOT EXISTS post_review (
-  id SERIAL PRIMARY KEY,
-  post_id INT NOT NULL REFERENCES posts(id) ON DELETE CASCADE UNIQUE,
-  status VARCHAR(32) NOT NULL DEFAULT 'pending_review', -- pending_review | approved | rejected | auto_published
-  reviewed_by VARCHAR(64),
-  reviewed_at TIMESTAMPTZ,
-  reason_code VARCHAR(32), -- off_tone | factual_error | too_salesy | banned_phrase_adjacent | other
+  id BIGSERIAL PRIMARY KEY,
+  post_id BIGINT NOT NULL REFERENCES posts(id) ON DELETE CASCADE,
+  decision VARCHAR(32) NOT NULL, -- pending_review | approved | rejected | edited | auto_published
+  reason_code VARCHAR(32),       -- off_tone | factual_error | too_salesy | banned_phrase_adjacent | other
+  reason_note TEXT,
   edited_body TEXT,
-  review_timeout_at TIMESTAMPTZ NOT NULL,
-  review_locked_until TIMESTAMPTZ,
-  is_exploration BOOLEAN DEFAULT false,
-  human_feedback NUMERIC DEFAULT 0, -- +1 approved/edited, -1 rejected, 0 default/timeout
-  was_probe BOOLEAN DEFAULT false,
+  reviewed_by VARCHAR(64) DEFAULT 'operator',
+  is_probe BOOLEAN DEFAULT false,
   created_at TIMESTAMPTZ DEFAULT now()
 );
 
-CREATE INDEX IF NOT EXISTS idx_post_review_status ON post_review(status);
-CREATE INDEX IF NOT EXISTS idx_post_review_timeout ON post_review(review_timeout_at) WHERE status = 'pending_review';
+CREATE INDEX IF NOT EXISTS idx_post_review_post_id ON post_review(post_id);
+CREATE INDEX IF NOT EXISTS idx_post_review_decision ON post_review(decision);
 
-CREATE TABLE IF NOT EXISTS post_review_audit (
-  id SERIAL PRIMARY KEY,
-  post_id INT NOT NULL,
-  decision_type VARCHAR(32) NOT NULL, -- human_approval | human_rejection | human_edit | timeout_auto_publish | qa_auto_reject
-  reason_code VARCHAR(32),
-  meta JSONB,
-  ts TIMESTAMPTZ DEFAULT now()
-);
-
--- View providing post_id, human_feedback, was_probe for scoring join
+-- 3. Create post_human_feedback view reducing review history to a single numeric signal per post
+-- Mapping: approved/edited = +1.0, rejected = -1.0, auto_published = 0.0, pending_review = 0.0
 CREATE OR REPLACE VIEW post_human_feedback AS
-SELECT post_id, human_feedback, was_probe
-FROM post_review;
+SELECT 
+  post_id,
+  CASE decision
+    WHEN 'approved' THEN 1.0
+    WHEN 'edited' THEN 1.0
+    WHEN 'rejected' THEN -1.0
+    ELSE 0.0
+  END AS human_feedback,
+  COALESCE(is_probe, false) AS was_probe
+FROM (
+  SELECT DISTINCT ON (post_id) post_id, decision, is_probe, created_at
+  FROM post_review
+  ORDER BY post_id, created_at DESC
+) latest;
 
--- Automatic trigger to initialize post_review when a post is inserted from wf2
-CREATE OR REPLACE FUNCTION init_post_review()
-RETURNS TRIGGER AS $$
-BEGIN
-  INSERT INTO post_review (post_id, review_timeout_at, is_exploration, was_probe)
-  VALUES (
-    NEW.id,
-    COALESCE(NEW.scheduled_at - INTERVAL '120 minutes', now() + INTERVAL '120 minutes'),
-    COALESCE((NEW.topic_context->>'is_exploration')::boolean, false),
-    COALESCE((NEW.topic_context->>'is_exploration')::boolean, false)
-  )
-  ON CONFLICT (post_id) DO NOTHING;
-  RETURN NEW;
-END;
-$$ LANGUAGE plpgsql;
-
-DROP TRIGGER IF EXISTS trg_init_post_review ON posts;
-CREATE TRIGGER trg_init_post_review
-  AFTER INSERT ON posts
-  FOR EACH ROW
-  EXECUTE FUNCTION init_post_review();
-
--- Recreate v_post_performance to include human_feedback and was_probe
+-- 4. Recreate v_post_performance to include human_feedback and was_probe
 DROP VIEW IF EXISTS v_contested_verdicts CASCADE;
 DROP VIEW IF EXISTS v_technique_performance CASCADE;
 DROP VIEW IF EXISTS v_media_performance CASCADE;
@@ -75,7 +59,7 @@ SELECT
   COALESCE(o.orders,0)      AS orders,
   COALESCE(o.commission,0)  AS commission_idr,
   ROUND(COALESCE(c.clicks,0)::numeric / NULLIF(m.views,0) * 100, 3) AS ctr_pct,
-  COALESCE(phf.human_feedback, 0) AS human_feedback,
+  COALESCE(phf.human_feedback, 0.0) AS human_feedback,
   COALESCE(phf.was_probe, false) AS was_probe
 FROM posts p
 JOIN products pr ON pr.id = p.product_id
@@ -134,7 +118,7 @@ SELECT media_type,
 FROM v_post_performance
 GROUP BY media_type ORDER BY avg_ctr_pct DESC NULLS LAST;
 
--- Update settings.scoring to include w_human
+-- 5. Ensure w_human exists in settings.scoring
 UPDATE settings
 SET value = jsonb_set(value, '{w_human}', '0.15', true)
 WHERE key = 'scoring';
@@ -142,5 +126,15 @@ WHERE key = 'scoring';
 INSERT INTO settings (key, value)
 VALUES ('scoring', '{"w_ctr":0.25,"w_eng":0.20,"w_epm":0.55,"w_human":0.15,"min_views":200,"bayesian_prior_clicks":50}')
 ON CONFLICT (key) DO NOTHING;
+
+-- 6. Backfill existing queued/published posts into post_review if not present
+INSERT INTO post_review (post_id, decision, reviewed_by, created_at)
+SELECT id, 
+       CASE WHEN status = 'published' THEN 'auto_published' ELSE 'pending_review' END,
+       'migration_backfill',
+       now()
+FROM posts
+WHERE id NOT IN (SELECT post_id FROM post_review)
+ON CONFLICT DO NOTHING;
 
 COMMIT;
