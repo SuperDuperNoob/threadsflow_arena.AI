@@ -3,34 +3,87 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>ThreadsFlow — LLM Settings</title>
+<title>ThreadsFlow — System Settings Control Board</title>
 <style>
-  :root{--bg:#0d0f12;--panel:#15181d;--panel2:#1c2027;--line:#252a33;--txt:#e6e9ef;
-        --dim:#8b93a1;--acc:#4c9aff;--ok:#3fb950;--warn:#d29922;--bad:#f85149}
+  :root{
+    --bg:#0d0f12; --panel:#15181d; --panel2:#1c2027; --line:#252a33; --txt:#e6e9ef;
+    --dim:#8b93a1; --acc:#4c9aff; --ok:#3fb950; --warn:#d29922; --bad:#f85149;
+    --tab-active:#0e6bd8; --tab-hover:#2a3242;
+  }
   *{box-sizing:border-box}
   body{margin:0;background:var(--bg);color:var(--txt);
        font:14px/1.55 ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
   header{padding:18px 24px;border-bottom:1px solid var(--line);display:flex;gap:18px;align-items:baseline;flex-wrap:wrap}
   h1{font-size:17px;margin:0;font-weight:600} h2{font-size:15px;margin:0 0 8px}
+  h3{font-size:13px;margin:0 0 6px;color:var(--dim);font-weight:600;text-transform:uppercase;letter-spacing:.5px}
   a{color:var(--acc);text-decoration:none;font-size:13px}
-  main{max-width:820px;margin:0 auto;padding:24px}
+  main{max-width:980px;margin:0 auto;padding:24px}
   label{display:block;font-size:12px;color:var(--dim);margin:14px 0 5px}
   input,select{width:100%;background:var(--panel2);color:var(--txt);border:1px solid var(--line);
     border-radius:7px;padding:9px 11px;font-size:14px;font-family:inherit}
+  input[type="range"]{appearance:none;width:100%;height:6px;background:var(--line);border-radius:3px;
+    margin-top:4px;cursor:pointer}
+  input[type="range"]::-webkit-slider-thumb{appearance:none;width:18px;height:18px;background:var(--acc);border-radius:50%;margin-top:-6px}
+  input[type="range"]::-moz-range-thumb{width:18px;height:18px;background:var(--acc);border:none;border-radius:50%}
+  input[type="checkbox"]{width:auto;height:auto;margin-right:8px;transform:scale(1.1);cursor:pointer}
+  .toggle{display:flex;align-items:center;gap:8px;cursor:pointer}
+  .toggle input{width:auto;height:auto;margin:0}
   button{background:var(--acc);color:#04101f;border:0;border-radius:7px;padding:10px 16px;
          font-weight:600;cursor:pointer;font-size:14px;margin-top:16px;margin-right:8px}
   button.secondary{background:var(--panel2);color:var(--txt);border:1px solid var(--line)}
   button.danger{background:transparent;color:var(--bad);border:1px solid var(--bad)}
-  .hint{color:var(--dim);font-size:12px;margin-top:4px}.box{background:var(--panel);border:1px solid var(--line);border-radius:9px;padding:16px;margin-top:18px}
-  .ok{border-color:var(--ok)}.bad{border-color:var(--bad)}.warn{border-color:var(--warn)}
+  .hint{color:var(--dim);font-size:12px;margin-top:4px}
+  .box{background:var(--panel);border:1px solid var(--line);border-radius:9px;padding:16px;margin-top:18px}
   .row{display:grid;grid-template-columns:1fr 1fr;gap:14px}@media(max-width:700px){.row{grid-template-columns:1fr}}
-  code{background:var(--panel2);padding:1px 5px;border-radius:4px;font-size:12px}.hide{display:none}
-  #login{max-width:320px;margin:100px auto;text-align:center}.pill{display:inline-block;padding:1px 8px;border-radius:20px;font-size:11px;background:#12203a;color:var(--acc)}
+  code{background:var(--panel2);padding:1px 5px;border-radius:4px;font-size:12px}
+  .hide{display:none}
+  #login{max-width:320px;margin:100px auto;text-align:center}
+  .pill{display:inline-block;padding:1px 8px;border-radius:20px;font-size:11px;background:#12203a;color:var(--acc)}
+  .badge{display:inline-block;padding:2px 8px;border-radius:20px;font-size:11px;font-weight:600;
+         background:var(--panel2);color:var(--acc);margin-left:8px}
+
+  /* Tab bar */
+  .tab-bar{display:flex;gap:4px;border-bottom:1px solid var(--line);margin-bottom:24px;overflow-x:auto;padding-bottom:1px}
+  .tab{background:transparent;border:none;color:var(--dim);padding:10px 16px;font-size:13px;
+       font-weight:600;cursor:pointer;border-radius:7px 7px 0 0;margin:0;position:relative;bottom:-1px}
+  .tab:hover{color:var(--txt);background:var(--tab-hover)}
+  .tab.active{color:var(--acc);background:var(--panel);border:1px solid var(--line);border-bottom-color:var(--panel)}
+  .tab .emoji{margin-right:6px}
+
+  /* Tab panels */
+  .tab-panel{display:none;animation:fade .15s ease}
+  .tab-panel.active{display:block}
+  @keyframes fade{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}
+
+  /* Slider value display */
+  .slider-row{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+  .slider-row input[type="range"]{flex:1;min-width:200px;max-width:400px}
+  .slider-badge{min-width:60px;text-align:right;font-weight:600;color:var(--acc);font-variant-numeric:tabular-nums}
+
+  /* Section grouping */
+  .section{margin-top:24px;padding-top:16px;border-top:1px dashed var(--line)}
+  .section:first-child{margin-top:0;padding-top:0;border-top:none}
+
+  /* Save feedback toast */
+  .toast{position:fixed;bottom:24px;right:24px;background:var(--ok);color:#04101f;
+         padding:12px 20px;border-radius:8px;font-weight:600;box-shadow:0 8px 24px rgba(0,0,0,.4);
+         transform:translateY(100px);opacity:0;transition:transform .3s,opacity .3s;z-index:1000}
+  .toast.show{transform:none;opacity:1}
+
+  /* LLM tab specifics */
+  .preset-note{color:var(--dim);font-size:12px;margin-top:4px}
+
+  /* Responsive */
+  @media(max-width:600px){
+    .tab{padding:10px 12px;font-size:12px}
+    .slider-row input[type="range"]{max-width:none}
+    main{padding:16px}
+  }
 </style>
 </head>
 <body>
 <div id="login" class="hide">
-  <h1>LLM Settings</h1>
+  <h1>System Settings Control Board</h1>
   <p class="hint">Enter KB password</p>
   <input type="password" id="pw" style="margin-bottom:8px" onkeydown="if(event.key==='Enter')login()">
   <button style="width:100%" onclick="login()">Unlock</button>
@@ -38,53 +91,310 @@
 
 <div id="app" class="hide">
 <header>
-  <h1>LLM Settings</h1>
+  <h1>System Settings Control Board</h1>
   <a href="/">← Knowledge Base</a>
   <a href="/product.html">Add Product</a>
+  <a href="/queue.html">Queue</a>
+  <a href="/review.html">Review</a>
 </header>
 <main>
-  <div class="box" style="margin-top:0">
-    <h2>OpenAI-compatible AI endpoint</h2>
-    <div class="hint">This controls both daily n8n generation and KB/PDF mining. 9router stays the default, but you can point it at OpenAI, OpenRouter, a local proxy, or any compatible <code>/v1/chat/completions</code> API.</div>
+  <div class="tab-bar" id="tabBar" role="tablist" aria-label="System settings sections">
+    <button class="tab active" data-tab="llm" role="tab" aria-selected="true">
+      <span class="emoji">🤖</span> AI Endpoints & Models
+    </button>
+    <button class="tab" data-tab="qa" role="tab" aria-selected="false">
+      <span class="emoji">🎯</span> Content & QA Rules
+    </button>
+    <button class="tab" data-tab="posting" role="tab" aria-selected="false">
+      <span class="emoji">📅</span> Posting Schedule
+    </button>
+    <button class="tab" data-tab="l4_reply" role="tab" aria-selected="false">
+      <span class="emoji">💬</span> Auto-Reply Loop
+    </button>
+    <button class="tab" data-tab="algo" role="tab" aria-selected="false">
+      <span class="emoji">🧠</span> AI Algorithm & Scoring
+    </button>
   </div>
 
-  <label>Preset</label>
-  <select id="preset"></select>
-  <div class="hint" id="presetNote"></div>
+  <!-- Tab 1: LLM -->
+  <div class="tab-panel active" id="panel-llm" role="tabpanel">
+    <div class="box" style="margin-top:0">
+      <h2>OpenAI-compatible AI endpoint</h2>
+      <div class="hint">This controls both daily n8n generation and KB/PDF mining. 9router stays the default, but you can point it at OpenAI, OpenRouter, a local proxy, or any compatible <code>/v1/chat/completions</code> API.</div>
+    </div>
 
-  <label>Base URL</label>
-  <input id="base" placeholder="https://9router.archxry.space/v1">
-  <div class="hint">If 9router runs on the VPS host outside Docker, use <code>http://host.docker.internal:9000/v1</code>. Do not use <code>localhost</code> from inside Docker containers.</div>
+    <label>Preset</label>
+    <select id="preset"></select>
+    <div class="hint preset-note" id="presetNote"></div>
 
-  <label>API key</label>
-  <input id="key" type="password" autocomplete="off" placeholder="leave blank to keep existing key">
-  <div class="hint" id="keyHint">Loading…</div>
+    <label>Base URL</label>
+    <input id="base" placeholder="https://9router.archxry.space/v1">
+    <div class="hint">If 9router runs on the VPS host outside Docker, use <code>http://host.docker.internal:9000/v1</code>. Do not use <code>localhost</code> from inside Docker containers.</div>
 
-  <div class="row">
-    <div><label>Write model</label><input id="write" placeholder="gemini-2.5-flash"></div>
-    <div><label>Edit model</label><input id="edit" placeholder="gpt-4.1-mini"></div>
+    <label>API key</label>
+    <input id="key" type="password" autocomplete="off" placeholder="leave blank to keep existing key">
+    <div class="hint" id="keyHint">Loading…</div>
+
+    <div class="row">
+      <div><label>Write model</label><input id="write" placeholder="gemini-2.5-flash"></div>
+      <div><label>Edit model</label><input id="edit" placeholder="gpt-4.1-mini"></div>
+    </div>
+    <div class="row">
+      <div><label>Embedding model</label><input id="embed" placeholder="text-embedding-3-small"></div>
+      <div><label>PDF mining / enrichment model</label><input id="mine" placeholder="gemini-2.5-pro"></div>
+    </div>
+
+    <button onclick="saveTab('llm')">Save AI Endpoints & Models</button>
+    <button class="secondary" onclick="testCfg()">Test /models</button>
+    <button class="danger" onclick="clearKey()">Clear saved API key</button>
+
+    <div id="llm-out"></div>
+
+    <div class="box warn">
+      <b>Speed tip</b>
+      <div class="hint">Hosted <code>https://9router.archxry.space/v1</code> is easiest. A 9router process on the same VPS host can be faster, but containers must reach it via <code>host.docker.internal</code>, not <code>localhost</code>.</div>
+    </div>
   </div>
-  <div class="row">
-    <div><label>Embedding model</label><input id="embed" placeholder="text-embedding-3-small"></div>
-    <div><label>PDF mining / enrichment model</label><input id="mine" placeholder="gemini-2.5-pro"></div>
+
+  <!-- Tab 2: QA -->
+  <div class="tab-panel" id="panel-qa" role="tabpanel">
+    <div class="section">
+      <h3>Topic Tags</h3>
+      <div class="slider-row">
+        <label style="flex:1;min-width:200px">Hashtag probability <span class="slider-badge" id="badge-hashtag_probability">40%</span></label>
+        <input type="range" id="hashtag_probability" min="0" max="100" step="5" value="40">
+      </div>
+      <div class="hint">Chance a generated post includes a topic hashtag. 0 = never, 100 = always.</div>
+    </div>
+
+    <div class="section">
+      <h3>Emoji & Length Limits</h3>
+      <div class="row">
+        <div>
+          <div class="slider-row">
+            <label style="flex:1">Max emojis <span class="slider-badge" id="badge-max_emoji">2 emojis</span></label>
+            <input type="range" id="max_emoji" min="0" max="10" step="1" value="2">
+          </div>
+        </div>
+        <div>
+          <div class="slider-row">
+            <label style="flex:1">Max characters <span class="slider-badge" id="badge-max_chars">480 chars</span></label>
+            <input type="range" id="max_chars" min="100" max="500" step="10" value="480">
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="section">
+      <h3>Similarity & Anti-Repetition</h3>
+      <div class="row">
+        <div>
+          <div class="slider-row">
+            <label style="flex:1">Max similarity <span class="slider-badge" id="badge-max_similarity">86%</span></label>
+            <input type="range" id="max_similarity" min="70" max="99" step="1" value="86">
+          </div>
+          <div class="hint">Cosine similarity threshold vs last 30 posts. Lower = stricter.</div>
+        </div>
+        <div>
+          <div class="slider-row">
+            <label style="flex:1">Lookback window <span class="slider-badge" id="badge-similarity_lookback">30 posts</span></label>
+            <input type="range" id="similarity_lookback" min="10" max="100" step="5" value="30">
+          </div>
+          <div class="hint">How many recent posts to compare against.</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="section">
+      <h3>Regeneration</h3>
+      <div class="slider-row">
+        <label style="flex:1;min-width:200px">Max retries <span class="slider-badge" id="badge-max_retries">3 attempts</span></label>
+        <input type="range" id="max_retries" min="1" max="5" step="1" value="3">
+      </div>
+      <div class="hint">How many times to re-ask the LLM if QA fails before giving up.</div>
+    </div>
+
+    <button onclick="saveTab('qa')">Save Content & QA Rules</button>
+    <div id="qa-out"></div>
   </div>
 
-  <button onclick="save()">Save config</button>
-  <button class="secondary" onclick="testCfg()">Test /models</button>
-  <button class="danger" onclick="clearKey()">Clear saved API key</button>
+  <!-- Tab 3: Posting Schedule -->
+  <div class="tab-panel" id="panel-posting" role="tabpanel">
+    <div class="section">
+      <h3>Daily Cadence</h3>
+      <div class="row">
+        <div>
+          <div class="slider-row">
+            <label style="flex:1">Posts per day <span class="slider-badge" id="badge-posts_per_day">5</span></label>
+            <input type="range" id="posts_per_day" min="1" max="10" step="1" value="5">
+          </div>
+        </div>
+        <div>
+          <div class="slider-row">
+            <label style="flex:1">Jitter minutes <span class="slider-badge" id="badge-jitter_minutes">18 min</span></label>
+            <input type="range" id="jitter_minutes" min="0" max="45" step="1" value="18">
+          </div>
+        </div>
+      </div>
+      <div class="hint">±random minutes applied to each scheduled slot to avoid rigid patterns.</div>
+    </div>
 
-  <div id="out"></div>
+    <div class="section">
+      <h3>Content Mix</h3>
+      <div class="row">
+        <div>
+          <div class="slider-row">
+            <label style="flex:1">Skip probability <span class="slider-badge" id="badge-skip_probability">8%</span></label>
+            <input type="range" id="skip_probability" min="0" max="30" step="1" value="8">
+          </div>
+          <div class="hint">Chance a scheduled slot emits nothing. 0–30 mapped to 0.0–0.3.</div>
+        </div>
+        <div>
+          <div class="slider-row">
+            <label style="flex:1">Carousel probability <span class="slider-badge" id="badge-carousel_probability">40%</span></label>
+            <input type="range" id="carousel_probability" min="0" max="100" step="5" value="40">
+          </div>
+          <div class="hint">Chance a multi-image post becomes a carousel. 0–100 mapped to 0.0–1.0.</div>
+        </div>
+      </div>
+    </div>
 
-  <div class="box warn">
-    <b>Speed tip</b>
-    <div class="hint">Hosted <code>https://9router.archxry.space/v1</code> is easiest. A 9router process on the same VPS host can be faster, but containers must reach it via <code>host.docker.internal</code>, not <code>localhost</code>.</div>
+    <div class="section">
+      <h3>Zero-Sell & Image Rules</h3>
+      <div class="row">
+        <div>
+          <div class="slider-row">
+            <label style="flex:1">Daily zero-sell posts <span class="slider-badge" id="badge-daily_zero_sell_posts">1</span></label>
+            <input type="range" id="daily_zero_sell_posts" min="0" max="3" step="1" value="1">
+          </div>
+        </div>
+        <div>
+          <div class="slider-row">
+            <label style="flex:1">Image cooldown <span class="slider-badge" id="badge-image_cooldown_days">7 days</span></label>
+            <input type="range" id="image_cooldown_days" min="1" max="30" step="1" value="7">
+          </div>
+        </div>
+      </div>
+      <div class="hint">Zero-sell posts are persona/value posts with sell_intensity=0. Image cooldown prevents reusing the same product image too often.</div>
+    </div>
+
+    <button onclick="saveTab('posting')">Save Posting Schedule</button>
+    <div id="posting-out"></div>
+  </div>
+
+  <!-- Tab 4: Auto-Reply Loop -->
+  <div class="tab-panel" id="panel-l4_reply" role="tabpanel">
+    <div class="section">
+      <h3>Behavior Switches</h3>
+      <label class="toggle"><input type="checkbox" id="enabled"><span>Enabled</span></label>
+      <div class="hint">Master on/off for the L4 auto-reply loop.</div>
+      <label class="toggle" style="margin-top:10px"><input type="checkbox" id="human_approval_required"><span>Require human approval</span></label>
+      <div class="hint">When on, drafted replies go to the review queue instead of auto-publishing.</div>
+    </div>
+
+    <div class="section">
+      <h3>Rate Limits</h3>
+      <div class="row">
+        <div>
+          <div class="slider-row">
+            <label style="flex:1">Max replies/day <span class="slider-badge" id="badge-max_replies_per_day">10</span></label>
+            <input type="range" id="max_replies_per_day" min="1" max="50" step="1" value="10">
+          </div>
+        </div>
+        <div>
+          <div class="slider-row">
+            <label style="flex:1">Max replies/post <span class="slider-badge" id="badge-max_replies_per_post">5</span></label>
+            <input type="range" id="max_replies_per_post" min="1" max="20" step="1" value="5">
+          </div>
+        </div>
+      </div>
+      <div class="slider-row">
+        <label style="flex:1;min-width:200px">User cooldown <span class="slider-badge" id="badge-cooldown_hours_per_user">24 hrs</span></label>
+        <input type="range" id="cooldown_hours_per_user" min="1" max="72" step="1" value="24">
+      </div>
+      <div class="hint">Hours before the same username can receive another auto-reply.</div>
+    </div>
+
+    <div class="section">
+      <h3>Reply Length</h3>
+      <div class="slider-row">
+        <label style="flex:1;min-width:200px">Max reply length <span class="slider-badge" id="badge-max_reply_length">180 chars</span></label>
+        <input type="range" id="max_reply_length" min="50" max="300" step="10" value="180">
+      </div>
+      <div class="hint">Hard cap on auto-reply character count. Replies exceeding this are trimmed or rejected.</div>
+    </div>
+
+    <button onclick="saveTab('l4_reply')">Save Auto-Reply Loop</button>
+    <div id="l4_reply-out"></div>
+  </div>
+
+  <!-- Tab 5: AI Algorithm & Scoring -->
+  <div class="tab-panel" id="panel-algo" role="tabpanel">
+    <div class="section">
+      <h3>Bandit Exploration</h3>
+      <div class="row">
+        <div>
+          <div class="slider-row">
+            <label style="flex:1">Epsilon <span class="slider-badge" id="badge-epsilon">0.25</span></label>
+            <input type="range" id="epsilon" min="5" max="50" step="1" value="25">
+          </div>
+          <div class="hint">Exploration rate. 5–50 mapped to 0.05–0.50. Higher = more experimental lever picks.</div>
+        </div>
+        <div>
+          <div class="slider-row">
+            <label style="flex:1">Decay <span class="slider-badge" id="badge-decay">0.90</span></label>
+            <input type="range" id="decay" min="70" max="99" step="1" value="90">
+          </div>
+          <div class="hint">Reward decay per cycle. 70–99 mapped to 0.70–0.99. Lower = faster forgetting.</div>
+        </div>
+      </div>
+      <div class="slider-row">
+        <label style="flex:1;min-width:200px">Cycle days <span class="slider-badge" id="badge-cycle_days">3 days</span></label>
+        <input type="range" id="cycle_days" min="1" max="7" step="1" value="3">
+      </div>
+      <div class="hint">How often the bandit re-evaluates and re-weights levers.</div>
+    </div>
+
+    <div class="section">
+      <h3>Engagement Weights (scoring)</h3>
+      <div class="hint">Relative weights for the engagement component of the money score. Values 0–100 mapped to 0.0–1.0. All three weights are normalized to sum to 1.0 internally.</div>
+      <div class="row">
+        <div>
+          <div class="slider-row">
+            <label style="flex:1">Weight EPM <span class="slider-badge" id="badge-w_epm">55%</span></label>
+            <input type="range" id="w_epm" min="0" max="100" step="5" value="55">
+          </div>
+        </div>
+        <div>
+          <div class="slider-row">
+            <label style="flex:1">Weight CTR <span class="slider-badge" id="badge-w_ctr">25%</span></label>
+            <input type="range" id="w_ctr" min="0" max="100" step="5" value="25">
+          </div>
+        </div>
+      </div>
+      <div class="row">
+        <div>
+          <div class="slider-row">
+            <label style="flex:1">Weight Engagement <span class="slider-badge" id="badge-w_eng">20%</span></label>
+            <input type="range" id="w_eng" min="0" max="100" step="5" value="20">
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <button onclick="saveTab('algo')">Save AI Algorithm & Scoring</button>
+    <div id="algo-out"></div>
   </div>
 </main>
 </div>
 
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+
 <script>
 const $=s=>document.querySelector(s);
+const $$=s=>document.querySelectorAll(s);
 let presets=[];
+
 async function api(path,opts){
   const r=await fetch('/api'+path,opts);
   if(r.status===401){show('login');throw new Error('auth')}
@@ -92,22 +402,156 @@ async function api(path,opts){
   if(!r.ok) throw new Error(j.error||'request failed');
   return j;
 }
-function show(which){$('#login').classList.toggle('hide',which!=='login');$('#app').classList.toggle('hide',which==='login')}
+function show(which){
+  $('#login').classList.toggle('hide',which!=='login');
+  $('#app').classList.toggle('hide',which==='login');
+}
 async function login(){
   const r=await fetch('/api/login',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({password:$('#pw').value})});
   if(r.ok){show('app');boot()}else alert('wrong password')
 }
-function cfg(extra={}){
-  return {
-    base_url: $('#base').value.trim(),
-    api_key: $('#key').value.trim(),
-    model_write: $('#write').value.trim(),
-    model_edit: $('#edit').value.trim(),
-    model_embed: $('#embed').value.trim(),
-    model_mine: $('#mine').value.trim(),
-    ...extra,
-  };
+
+/* ─── Tab switching ─── */
+function switchTab(name){
+  $$('.tab').forEach(t=>{
+    const active=t.dataset.tab===name;
+    t.classList.toggle('active',active);
+    t.setAttribute('aria-selected',active);
+  });
+  $$('.tab-panel').forEach(p=>{
+    p.classList.toggle('active',p.id==='panel-'+name);
+  });
 }
+$('#tabBar').addEventListener('click',e=>{
+  const tab=e.target.closest('.tab');
+  if(tab) switchTab(tab.dataset.tab);
+});
+
+/* ─── Helpers for slider badges ─── */
+function fmtPct(v){return v+'%'}
+function fmtPctFloat(v){return (v/100).toFixed(2)}
+function fmtEmoji(v){return v+' emojis'}
+function fmtChars(v){return v+' chars'}
+function fmtPosts(v){return v+' posts'}
+function fmtAttempts(v){return v+' attempts'}
+function fmtMins(v){return v+' min'}
+function fmtDays(v){return v+' days'}
+function fmtHours(v){return v+' hrs'}
+function fmtChars2(v){return v+' chars'}
+function fmtFloat2(v){return (v/100).toFixed(2)}
+function fmtFloat3(v){return (v/1000).toFixed(3)}
+function fmtFloat2Raw(v){return (v/100).toFixed(2)}
+function fmtEps(v){return (v/100).toFixed(2)}
+function fmtDecay(v){return (v/100).toFixed(2)}
+
+const BADGE_FMT={
+  hashtag_probability:fmtPct,
+  max_emoji:fmtEmoji,
+  max_chars:fmtChars,
+  max_similarity:fmtPct,
+  similarity_lookback:fmtPosts,
+  max_retries:fmtAttempts,
+  posts_per_day:v=>v,
+  jitter_minutes:fmtMins,
+  skip_probability:v=>(v/100*100).toFixed(0)+'%',
+  carousel_probability:fmtPct,
+  daily_zero_sell_posts:v=>v,
+  image_cooldown_days:fmtDays,
+  max_replies_per_day:v=>v,
+  max_replies_per_post:v=>v,
+  cooldown_hours_per_user:fmtHours,
+  max_reply_length:fmtChars2,
+  epsilon:fmtEps,
+  decay:fmtDecay,
+  cycle_days:fmtDays,
+  w_epm:fmtPct,
+  w_ctr:fmtPct,
+  w_eng:fmtPct,
+};
+
+function updateBadge(id,val){
+  const el=$('#badge-'+id);
+  if(!el) return;
+  const fn=BADGE_FMT[id]||(v=>v);
+  el.textContent=fn(val);
+}
+
+/* ─── Populate form from config ─── */
+/* Keys whose DB values are 0.0-1.0 but sliders use 0-100 (or 5-50, 70-99) */
+const PERCENT_KEYS=new Set([
+  'hashtag_probability','max_similarity','skip_probability','carousel_probability',
+  'epsilon','decay','w_epm','w_ctr','w_eng'
+]);
+
+function populate(cfg){
+  // LLM tab
+  if(cfg.llm){
+    const c=cfg.llm;
+    presets=c.presets||[];
+    renderPresetOptions();
+    $('#base').value=c.base_url||'';
+    $('#write').value=c.model_write||'';
+    $('#edit').value=c.model_edit||'';
+    $('#embed').value=c.model_embed||'';
+    $('#mine').value=c.model_mine||'';
+    $('#keyHint').innerHTML=c.api_key_set?'An API key is available. Leave blank to keep it.':'No API key available. Add one if your endpoint requires it.';
+    $('#preset').value=(presets.find(p=>p.base_url===c.base_url)||{}).id||'custom';
+    $('#preset').onchange();
+  }
+  // QA tab
+  if(cfg.qa){
+    const c=cfg.qa;
+    for(const [k,v] of Object.entries(c)){
+      const el=$(('#'+k));
+      if(el && el.type==='range'){
+        el.value=PERCENT_KEYS.has(k) ? Math.round(v*100) : v;
+        updateBadge(k, el.value);
+      }
+    }
+  }
+  // Posting tab
+  if(cfg.posting){
+    const c=cfg.posting;
+    for(const [k,v] of Object.entries(c)){
+      const el=$(('#'+k));
+      if(el && el.type==='range'){
+        el.value=PERCENT_KEYS.has(k) ? Math.round(v*100) : v;
+        updateBadge(k, el.value);
+      }
+    }
+  }
+  // L4 Reply tab
+  if(cfg.l4_reply){
+    const c=cfg.l4_reply;
+    $('#enabled').checked=Boolean(c.enabled);
+    $('#human_approval_required').checked=Boolean(c.human_approval_required);
+    for(const k of ['max_replies_per_day','max_replies_per_post','cooldown_hours_per_user','max_reply_length']){
+      const el=$(('#'+k));
+      if(el && c[k]!==undefined){
+        el.value=c[k];
+        updateBadge(k,c[k]);
+      }
+    }
+  }
+  // Algo tab (bandit + scoring merged)
+  const bandit=cfg.bandit||{};
+  const scoring=cfg.scoring||{};
+  const merged={...bandit,...scoring};
+  for(const [k,v] of Object.entries(merged)){
+    const el=$(('#'+k));
+    if(el && el.type==='range' && v!==undefined){
+      el.value=PERCENT_KEYS.has(k) ? Math.round(v*100) : v;
+      updateBadge(k, el.value);
+    }
+  }
+}
+
+/* ─── Slider live badge updates ─── */
+$$('input[type="range"]').forEach(s=>{
+  s.addEventListener('input',()=>updateBadge(s.id,s.value));
+});
+
+/* ─── LLM preset handling ─── */
 function renderPresetOptions(){
   $('#preset').innerHTML='<option value="custom">Custom</option>'+presets.map(p=>`<option value="${p.id}">${p.name}</option>`).join('');
 }
@@ -116,34 +560,137 @@ $('#preset').onchange=()=>{
   if(!p) { $('#presetNote').textContent=''; return; }
   $('#base').value=p.base_url; $('#presetNote').textContent=p.note||'';
 };
+
+/* ─── Save helpers ─── */
+function gatherTab(tab){
+  if(tab==='llm'){
+    return {
+      base_url: $('#base').value.trim(),
+      api_key: $('#key').value.trim(),
+      model_write: $('#write').value.trim(),
+      model_edit: $('#edit').value.trim(),
+      model_embed: $('#embed').value.trim(),
+      model_mine: $('#mine').value.trim(),
+    };
+  }
+  if(tab==='qa'){
+    return {
+      hashtag_probability: Number($('#hashtag_probability').value)/100,
+      max_emoji: Number($('#max_emoji').value),
+      max_chars: Number($('#max_chars').value),
+      max_similarity: Number($('#max_similarity').value)/100,
+      similarity_lookback: Number($('#similarity_lookback').value),
+      max_retries: Number($('#max_retries').value),
+    };
+  }
+  if(tab==='posting'){
+    return {
+      posts_per_day: Number($('#posts_per_day').value),
+      jitter_minutes: Number($('#jitter_minutes').value),
+      skip_probability: Number($('#skip_probability').value)/100,
+      carousel_probability: Number($('#carousel_probability').value)/100,
+      daily_zero_sell_posts: Number($('#daily_zero_sell_posts').value),
+      image_cooldown_days: Number($('#image_cooldown_days').value),
+    };
+  }
+  if(tab==='l4_reply'){
+    return {
+      enabled: $('#enabled').checked,
+      human_approval_required: $('#human_approval_required').checked,
+      max_replies_per_day: Number($('#max_replies_per_day').value),
+      max_replies_per_post: Number($('#max_replies_per_post').value),
+      cooldown_hours_per_user: Number($('#cooldown_hours_per_user').value),
+      max_reply_length: Number($('#max_reply_length').value),
+    };
+  }
+  if(tab==='algo'){
+    return {
+      epsilon: Number($('#epsilon').value)/100,
+      decay: Number($('#decay').value)/100,
+      cycle_days: Number($('#cycle_days').value),
+      w_epm: Number($('#w_epm').value)/100,
+      w_ctr: Number($('#w_ctr').value)/100,
+      w_eng: Number($('#w_eng').value)/100,
+    };
+  }
+  return {};
+}
+
+const TAB_LABELS={
+  llm:'AI Endpoints & Models',
+  qa:'Content & QA Rules',
+  posting:'Posting Schedule',
+  l4_reply:'Auto-Reply Loop',
+  algo:'AI Algorithm & Scoring',
+};
+
+async function saveTab(tab){
+  const out=$('#'+tab+'-out') || $('#llm-out');
+  out.innerHTML='<div class="box">Saving…</div>';
+  try{
+    if(tab==='algo'){
+      // Algo tab covers two settings keys: bandit and scoring
+      const body=gatherTab('algo');
+      const banditBody={epsilon:body.epsilon, decay:body.decay, cycle_days:body.cycle_days};
+      const scoringBody={w_epm:body.w_epm, w_ctr:body.w_ctr, w_eng:body.w_eng};
+      await api('/config/system/bandit',{method:'PUT',headers:{'content-type':'application/json'},body:JSON.stringify(banditBody)});
+      const r=await api('/config/system/scoring',{method:'PUT',headers:{'content-type':'application/json'},body:JSON.stringify(scoringBody)});
+      out.innerHTML=`<div class="box ok"><b>Saved.</b> ${TAB_LABELS[tab]} updated.</div>`;
+      showToast('✔ Saved '+TAB_LABELS[tab].replace('&','&')+' Rules');
+    }else{
+      const body=gatherTab(tab);
+      const r=await api('/config/system/'+tab,{method:'PUT',headers:{'content-type':'application/json'},body:JSON.stringify(body)});
+      $('#key').value='';
+      if(r.value && r.value.api_key_set!==undefined){
+        $('#keyHint').innerHTML=r.value.api_key_set?'An API key is available. Leave blank to keep it.':'No API key available.';
+      }
+      out.innerHTML=`<div class="box ok"><b>Saved.</b> ${TAB_LABELS[tab]} updated.</div>`;
+      showToast('✔ Saved '+TAB_LABELS[tab].replace('&','&')+' Rules');
+    }
+  }catch(e){
+    out.innerHTML=`<div class="box bad"><b>Save failed.</b> ${e.message}</div>`;
+  }
+}
+
+/* ─── LLM test & clear key ─── */
+async function testCfg(){
+  $('#llm-out').innerHTML='<div class="box">Testing /models…</div>';
+  try{
+    const body=gatherTab('llm');
+    const r=await api('/config/llm/test',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(body)});
+    $('#llm-out').innerHTML=`<div class="box ok"><b>Connection OK.</b>${r.model_count!==null?` ${r.model_count} models visible.`:''}</div>`;
+  }catch(e){
+    $('#llm-out').innerHTML=`<div class="box bad"><b>Test failed.</b> ${e.message}</div>`;
+  }
+}
+function clearKey(){
+  if(confirm('Clear the saved API key?')){
+    saveTab('llm'); // uses clear_api_key via gatherTab? No, gatherTab doesn't include clear_api_key
+    // Better: call the dedicated endpoint
+    api('/config/llm',{method:'PUT',headers:{'content-type':'application/json'},body:JSON.stringify({clear_api_key:true,api_key:''})})
+      .then(()=>{ $('#key').value=''; $('#keyHint').innerHTML='No API key available. Add one if your endpoint requires it.'; $('#llm-out').innerHTML='<div class="box ok"><b>API key cleared.</b></div>'; })
+      .catch(e=>$('#llm-out').innerHTML=`<div class="box bad">${e.message}</div>`);
+  }
+}
+
+/* ─── Toast ─── */
+function showToast(msg){
+  const t=$('#toast');
+  t.textContent=msg;
+  t.classList.add('show');
+  setTimeout(()=>t.classList.remove('show'),2500);
+}
+
+/* ─── Boot ─── */
 async function boot(){
   try{
-    const c=await api('/config/llm');
-    presets=c.presets||[]; renderPresetOptions();
-    $('#base').value=c.base_url; $('#write').value=c.model_write; $('#edit').value=c.model_edit;
-    $('#embed').value=c.model_embed; $('#mine').value=c.model_mine;
-    $('#keyHint').innerHTML=c.api_key_set?'An API key is available. Leave blank to keep it.':'No API key available. Add one if your endpoint requires it.';
-    $('#preset').value=(presets.find(p=>p.base_url===c.base_url)||{}).id||'custom';
-    $('#preset').onchange();
+    const r=await api('/config/system');
+    populate(r.config);
     show('app');
-  }catch(e){ if(e.message!=='auth') $('#out').innerHTML=`<div class="box bad">${e.message}</div>`; }
+  }catch(e){
+    if(e.message!=='auth') $('#llm-out').innerHTML=`<div class="box bad">${e.message}</div>`;
+  }
 }
-async function save(extra={}){
-  $('#out').innerHTML='<div class="box">Saving…</div>';
-  try{
-    const c=await api('/config/llm',{method:'PUT',headers:{'content-type':'application/json'},body:JSON.stringify(cfg(extra))});
-    $('#key').value=''; $('#keyHint').innerHTML=c.api_key_set?'An API key is available. Leave blank to keep it.':'No API key available.';
-    $('#out').innerHTML='<div class="box ok"><b>Saved.</b> n8n generation and KB mining will use this config.</div>';
-  }catch(e){$('#out').innerHTML=`<div class="box bad"><b>Save failed.</b> ${e.message}</div>`}
-}
-async function testCfg(){
-  $('#out').innerHTML='<div class="box">Testing /models…</div>';
-  try{
-    const r=await api('/config/llm/test',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(cfg())});
-    $('#out').innerHTML=`<div class="box ok"><b>Connection OK.</b>${r.model_count!==null?` ${r.model_count} models visible.`:''}</div>`;
-  }catch(e){$('#out').innerHTML=`<div class="box bad"><b>Test failed.</b> ${e.message}</div>`}
-}
-function clearKey(){ if(confirm('Clear the saved API key?')) save({clear_api_key:true,api_key:''}); }
 boot();
 </script>
 </body>

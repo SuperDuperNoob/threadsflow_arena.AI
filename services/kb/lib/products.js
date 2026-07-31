@@ -92,6 +92,19 @@ async function putS3(buf, key, contentType) {
 export const putImage = (buf, key, ct) =>
   IMAGE_BACKEND === 's3' ? putS3(buf, key, ct) : putLocal(buf, key);
 
+/** Determine media_kind from mimetype. */
+export const getMediaKind = (mimetype) =>
+  /^video\/(mp4|quicktime)$/.test(mimetype) ? 'VIDEO' : 'IMAGE';
+
+/** Get file extension from mimetype. */
+export const getExtension = (mimetype) => {
+  if (mimetype === 'image/png') return 'png';
+  if (mimetype === 'image/jpeg') return 'jpg';
+  if (mimetype === 'video/mp4') return 'mp4';
+  if (mimetype === 'video/quicktime') return 'mov';
+  return 'bin';
+};
+
 // ─────────────────────────────────────────── enrichment
 
 /**
@@ -200,7 +213,9 @@ ${textOnly
 }
 
 /** Describe an image so the copy matches the photo it's attached to. Best-effort. */
-export async function describeImage(publicUrl) {
+export async function describeImage(publicUrl, mediaKind = 'IMAGE') {
+  // Skip vision for videos — LLM vision endpoints do not support video yet.
+  if (mediaKind === 'VIDEO') return null;
   try {
     const out = await complete(
       'Describe literally what is visible in this product photo in ONE Malay sentence. ' +

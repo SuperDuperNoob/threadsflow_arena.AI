@@ -91,6 +91,7 @@
   <div class="tabs">
     <div class="tab on" data-t="docs">Documents</div>
     <div class="tab" data-t="tech">Technique Library</div>
+    <div class="tab" data-t="products">Products</div>
     <div class="tab" data-t="review">Review <span class="badge hide" id="rbadge">0</span></div>
   </div>
 
@@ -107,6 +108,7 @@
     </div>
     <div id="techlist"></div>
   </div>
+  <div id="pane-products" class="hide"></div>
   <div id="pane-review" class="hide"></div>
 </main>
 </div>
@@ -157,7 +159,7 @@ async function send(files) {
 document.querySelectorAll('.tab').forEach(t => t.onclick = () => {
   tab = t.dataset.t;
   document.querySelectorAll('.tab').forEach(x => x.classList.toggle('on', x === t));
-  ['docs','tech','review'].forEach(p => $('#pane-' + p).classList.toggle('hide', p !== tab));
+  ['docs','tech','products','review'].forEach(p => $('#pane-' + p).classList.toggle('hide', p !== tab));
   refresh();
 });
 
@@ -243,6 +245,42 @@ async function loadReview() {
     </div>`).join('') : '<div class="empty">Nothing to review.</div>';
 }
 
+async function loadProducts() {
+  const p = await api('/products');
+  if (!p.length) {
+    $('#pane-products').innerHTML = '<div class="empty">No products yet. <a href="/product.html" style="color:var(--acc)">Add one</a>.</div>';
+    return;
+  }
+  $('#pane-products').innerHTML = `<table><tr>
+    <th>Product</th><th>UID</th><th>Media</th><th>Images/Videos</th><th>Posts</th><th>Created</th><th></th></tr>` +
+    p.map(pr => {
+      const mediaBadge = pr.media_mode === 'text' ? '<span class="pill s-done">Text only</span>' :
+                         pr.media_mode === 'image' ? '<span class="pill t-hook">Images</span>' :
+                         '<span class="pill t-voice">Video</span>';
+      const thumbHtml = pr.media?.map(m => `
+        <a href="${esc(m.public_url)}" target="_blank" style="display:inline-block;margin:2px;text-decoration:none">
+          <div style="width:60px;height:60px;border-radius:6px;overflow:hidden;border:1px solid var(--line);position:relative;background:var(--panel2)">
+            ${m.media_kind === 'video'
+              ? `<video src="${esc(m.public_url)}" muted style="width:100%;height:100%;object-fit:cover"></video>`
+              : `<img src="${esc(m.public_url)}" style="width:100%;height:100%;object-fit:cover">`}
+            <span style="position:absolute;bottom:0;right:0;background:#000a;color:#fff;font-size:9px;padding:1px 4px;border-radius:3px 0 0 0">
+              ${m.media_kind === 'video' ? '▶' : 'IMG'}
+            </span>
+          </div>
+        </a>
+      `).join('') || '<span class="muted">—</span>';
+      return `<tr>
+        <td><b>${esc(pr.name || '—')}</b><br><span class="muted mono">${esc(pr.product_uid)}</span></td>
+        <td class="mono">${esc(pr.product_uid)}</td>
+        <td>${mediaBadge}</td>
+        <td>${thumbHtml}</td>
+        <td>${pr.post_count || 0}</td>
+        <td class="muted">${new Date(pr.created_at).toLocaleDateString()}</td>
+        <td><a href="/product.html?edit=${esc(pr.product_uid)}" class="p" style="font-size:11px;padding:3px 8px">Edit</a></td>
+      </tr>`;
+    }).join('') + '</table>';
+}
+
 async function toggle(id, enabled) { await api('/techniques/' + id, { method:'PATCH',
   headers:{'content-type':'application/json'}, body: JSON.stringify({ enabled }) }); loadTech(); }
 async function review(id, action) { await api('/review/' + id, { method:'POST',
@@ -256,6 +294,7 @@ async function refresh() {
   let active = false;
   if (tab === 'docs') active = await loadDocs();
   else if (tab === 'tech') await loadTech();
+  else if (tab === 'products') await loadProducts();
   else await loadReview();
   clearTimeout(timer);
   if (active) timer = setTimeout(refresh, 2500);   // poll while a job is running

@@ -180,12 +180,22 @@ function pickArm({ levers, armStats, contextWeights, productUid, settings, plan,
 
     // Restrict media_type to what this product can physically produce.
     if (kind === 'media_type') {
-      const n = plan?.imageCount ?? 0;
-      const allowed = n === 0 ? ['TEXT'] : (n === 1 ? ['TEXT', 'IMAGE'] : ['TEXT', 'IMAGE', 'CAROUSEL']);
+      const images = Number(plan?.imageCount ?? 0) || 0;
+      const videos = Number(plan?.videoCount ?? 0) || 0;
+      let allowed;
+      if (images === 0 && videos === 0) {
+        allowed = ['TEXT'];
+      } else if (images > 0 && videos === 0) {
+        allowed = ['TEXT', 'IMAGE', 'CAROUSEL'];
+      } else if (videos === 1 && images === 0) {
+        allowed = ['TEXT', 'VIDEO'];
+      } else { // videos >= 1 && images >= 1
+        allowed = ['TEXT', 'IMAGE', 'VIDEO', 'CAROUSEL', 'MIXED_CAROUSEL'];
+      }
       options = options.filter(o => allowed.includes(o.code));
-      // Products WITH images should still mostly use them — they were uploaded for a reason.
-      // Cap pure-text at ~30% for image products so the bandit explores without overriding intent.
-      if (n > 0 && options.length > 1 && Math.random() > 0.30) {
+      // Products WITH media should still mostly use them — they were uploaded for a reason.
+      // Cap pure-text at ~30% for media products so the bandit explores without overriding intent.
+      if ((images > 0 || videos > 0) && options.length > 1 && Math.random() > 0.30) {
         options = options.filter(o => o.code !== 'TEXT');
       }
     }

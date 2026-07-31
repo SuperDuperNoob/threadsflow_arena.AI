@@ -24,8 +24,11 @@
   #thumbs{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
   .th{position:relative;width:88px;height:88px;border-radius:7px;overflow:hidden;border:1px solid var(--line)}
   .th img{width:100%;height:100%;object-fit:cover}
+  .th video{width:100%;height:100%;object-fit:cover}
   .th b{position:absolute;top:2px;right:4px;background:#000a;border-radius:4px;padding:0 5px;
         cursor:pointer;font-size:13px}
+  .th .existing-badge{position:absolute;top:2px;left:4px;background:var(--ok);color:#000;
+        border-radius:4px;padding:0 5px;font-size:10px;font-weight:600}
   button{background:var(--acc);color:#04101f;border:0;border-radius:7px;padding:11px 20px;
          font-weight:600;cursor:pointer;font-size:14px;margin-top:18px}
   button:disabled{opacity:.5;cursor:default}
@@ -38,12 +41,12 @@
 </head>
 <body>
 <header>
-  <h1>Add Product</h1>
+  <h1 id="pageTitle">Add Product</h1>
   <a href="/">← Knowledge Base</a>
   <a href="/settings.html">LLM Settings</a>
 </header>
 <main>
-  <p class="hint">Only the Shopee affiliate link is required. Add the full product URL when you
+  <p class="hint" id="introText">Only the Shopee affiliate link is required. Add the full product URL when you
   have it — it improves enrichment but is never used as the buyer link. Add images, a description,
   or both; the system adapts. Everything after this is automatic: enrichment, copy generation,
   scheduling, posting, link tracking, and the 3-day learning cycle.</p>
@@ -85,18 +88,30 @@
   <div class="hint">Write concrete facts a machine cannot know: real measurements, how long you've
     used it, who it's for, what's genuinely wrong with it. Generic notes produce generic copy.</div>
 
-  <label>Images (optional, up to 4)</label>
-  <div id="imgdrop">Drop images or click &middot; JPG/PNG &middot; max 8&nbsp;MB each &middot; or skip entirely
-    <input type="file" id="imgs" accept="image/jpeg,image/png" multiple hidden></div>
+  <label>Images & Videos (optional, up to 4 total)</label>
+  <div id="imgdrop">Drop images/videos or click &middot; JPG/PNG/MP4/MOV &middot; max 150&nbsp;MB each &middot; or skip entirely
+    <input type="file" id="imgs" accept="image/jpeg,image/png,video/mp4,video/quicktime" multiple hidden></div>
   <div id="thumbs"></div>
 
-  <button id="go" disabled>Add product &amp; start posting</button>
+  <button id="go" disabled>Add product & start posting</button>
   <div id="out"></div>
 </main>
 
 <script>
 const $=s=>document.querySelector(s);
 let files=[];
+let editUid = null;
+let existingMedia = [];
+
+// Check for edit mode
+const params = new URLSearchParams(window.location.search);
+if (params.get('edit')) {
+  editUid = params.get('edit');
+  document.title = 'ThreadsFlow — Edit Product';
+  $('#pageTitle').textContent = 'Edit Product';
+  $('#introText').textContent = 'Editing existing product. Modify fields and add new media as needed. Existing media shown below cannot be removed from this page.';
+  $('#go').textContent = 'Save Changes';
+}
 
 const drop=$('#imgdrop'), input=$('#imgs');
 drop.onclick=()=>input.click();
@@ -107,24 +122,58 @@ input.onchange=()=>add(input.files);
 
 function add(list){
   for(const f of list){
-    if(!/^image\/(jpeg|png)$/.test(f.type)) continue;
-    if(f.size>8*1024*1024){alert(`${f.name} is over 8 MB — Threads will reject it`);continue}
-    if(files.length>=4){alert('Maximum 4 images');break}
+    const isImage = /^image\/(jpeg|png)$/.test(f.type);
+    const isVideo = /^video\/(mp4|quicktime)$/.test(f.type);
+    if(!isImage && !isVideo) continue;
+    
+    const maxSize = isVideo ? 150*1024*1024 : 8*1024*1024;
+    const maxSizeLabel = isVideo ? '150 MB' : '8 MB';
+    if(f.size > maxSize){alert(`${f.name} is over ${maxSizeLabel} — Threads will reject it`);continue}
+    if(files.length + existingMedia.length >= 4){alert('Maximum 4 media items total');break}
     files.push(f);
   }
   render();
 }
+
 function render(){
   $('#thumbs').innerHTML='';
+  
+  // Render existing media first (non-removable)
+  existingMedia.forEach((m, i) => {
+    const d=document.createElement('div');d.className='th';
+    const isVideo = m.media_kind === 'video';
+    if(isVideo){
+      const v=document.createElement('video');v.src=m.public_url;v.controls=true;v.muted=true;
+      v.style.width='100%';v.style.height='100%';v.style.objectFit='cover';
+      d.append(v);
+    }else{
+      const im=document.createElement('img');im.src=m.public_url;
+      d.append(im);
+    }
+    const badge=document.createElement('span');badge.className='existing-badge';badge.textContent='EXISTING';
+    d.append(badge);
+    $('#thumbs').append(d);
+  });
+  
+  // Render new files (removable)
   files.forEach((f,i)=>{
     const d=document.createElement('div');d.className='th';
-    const im=document.createElement('img');im.src=URL.createObjectURL(f);
+    const isVideo = /^video\/(mp4|quicktime)$/.test(f.type);
+    if(isVideo){
+      const v=document.createElement('video');v.src=URL.createObjectURL(f);v.controls=true;v.muted=true;
+      v.style.width='100%';v.style.height='100%';v.style.objectFit='cover';
+      d.append(v);
+    }else{
+      const im=document.createElement('img');im.src=URL.createObjectURL(f);
+      d.append(im);
+    }
     const x=document.createElement('b');x.textContent='×';
     x.onclick=()=>{files.splice(i,1);render()};
-    d.append(im,x);$('#thumbs').append(d);
+    d.append(x);$('#thumbs').append(d);
   });
   validate();
 }
+
 const MIN_DESC=80;
 function httpUrlOk(s){
   if(!s) return false;
@@ -135,7 +184,7 @@ function validate(){
   const productUrl=$('#productUrl').value.trim();
   const productUrlOk=!productUrl || httpUrlOk(productUrl);
   const desc=$('#description').value.trim();
-  const n=files.length;
+  const n=files.length + existingMedia.length;
 
   // Mirror the server rule exactly: affiliate link is always required; a description is
   // required only when there are no images. Tell the user which mode they are in as they type.
@@ -171,8 +220,48 @@ $('#url').oninput=validate;
 $('#productUrl').oninput=validate;
 $('#description').oninput=validate;
 
+  // Load product data if in edit mode
+  if (editUid) {
+    (async () => {
+      try {
+        const r = await fetch('/api/products/' + editUid);
+        const p = await r.json();
+        if (!r.ok) throw new Error(p.error || 'failed');
+        
+        // Populate form
+        $('#url').value = p.affiliate_url || '';
+        $('#productUrl').value = p.shopee_url || '';
+        $('#name').value = p.name || '';
+        $('#price').value = p.price || '';
+        
+        // Store existing media from the new media array
+        existingMedia = [];
+        if (p.media && Array.isArray(p.media)) {
+          for (const m of p.media) {
+            existingMedia.push({
+              public_url: m.public_url,
+              media_kind: m.media_kind
+            });
+          }
+        } else if (p.media_urls && p.media_kinds && p.media_urls.length === p.media_kinds.length) {
+          // Fallback for old format
+          for (let i = 0; i < p.media_urls.length; i++) {
+            existingMedia.push({
+              public_url: p.media_urls[i],
+              media_kind: p.media_kinds[i]
+            });
+          }
+        }
+        
+        render();
+      } catch (e) {
+        $('#out').innerHTML = `<div class="box bad"><b>Failed to load product.</b> ${e.message}</div>`;
+      }
+    })();
+  }
+
 $('#go').onclick=async()=>{
-  $('#go').disabled=true; $('#go').textContent='Uploading…';
+  $('#go').disabled=true; $('#go').textContent=editUid ? 'Saving…' : 'Uploading…';
   const fd=new FormData();
   fd.append('affiliate_url',$('#url').value.trim());
   fd.append('product_url',$('#productUrl').value.trim());
@@ -181,24 +270,34 @@ $('#go').onclick=async()=>{
   fd.append('notes',$('#notes').value.trim());
   fd.append('description',$('#description').value.trim());
   files.forEach(f=>fd.append('images',f));   // may be empty — that is a valid submission
+  
+  const method = editUid ? 'PUT' : 'POST';
+  const url = editUid ? '/api/products/' + editUid : '/api/products';
+  
   try{
-    const r=await fetch('/api/products',{method:'POST',body:fd});
+    const r=await fetch(url,{method,body:fd});
     const j=await r.json();
     if(!r.ok) throw new Error(j.error||'failed');
-    $('#out').innerHTML=`<div class="box ok"><b>Product added.</b><br>
-      ${j.media_mode==='text'
-        ? 'No images — will post as text-only.'
-        : `${j.images} image${j.images>1?'s':''} stored publicly. Text-only variants will also be tested.`}<br>
-      ${j.product_url ? 'Full product URL saved for enrichment. Buyer links still use your affiliate URL.<br>' : ''}
-      First post is scheduled for the next generation run (03:00 Malaysia time).<br>
-      Tracking slug base: <code>${j.product_uid}</code></div>`;
-    files=[];render();
-    $('#url').value='';$('#productUrl').value='';$('#name').value='';$('#price').value='';$('#notes').value='';
-    $('#description').value='';
+    if (editUid) {
+      $('#out').innerHTML=`<div class="box ok"><b>Product updated.</b><br>
+        ${j.added_images > 0 ? `${j.added_images} new image${j.added_images>1?'s':''} added.<br>` : ''}
+        Changes saved successfully.</div>`;
+    } else {
+      $('#out').innerHTML=`<div class="box ok"><b>Product added.</b><br>
+        ${j.media_mode==='text'
+          ? 'No images — will post as text-only.'
+          : `${j.images} image${j.images>1?'s':''} stored publicly. Text-only variants will also be tested.`}<br>
+        ${j.product_url ? 'Full product URL saved for enrichment. Buyer links still use your affiliate URL.<br>' : ''}
+        First post is scheduled for the next generation run (03:00 Malaysia time).<br>
+        Tracking slug base: <code>${j.product_uid}</code></div>`;
+      files=[];render();
+      $('#url').value='';$('#productUrl').value='';$('#name').value='';$('#price').value='';$('#notes').value='';
+      $('#description').value='';
+    }
   }catch(e){
     $('#out').innerHTML=`<div class="box bad"><b>Failed.</b> ${e.message}</div>`;
   }
-  $('#go').textContent='Add product & start posting'; validate();
+  $('#go').textContent=editUid ? 'Save Changes' : 'Add product & start posting'; validate();
 };
 validate();
 </script>

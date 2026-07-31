@@ -17,14 +17,18 @@
     .badge-exploration { background: #8b5cf6; color: #fff; }
     .badge-pending { background: #eab308; color: #000; }
     textarea { width: 100%; height: 100px; background: #0f172a; color: #f8fafc; border: 1px solid #475569; border-radius: 4px; padding: 8px; font-family: inherit; margin: 8px 0; }
+    input[type="text"] { width: 100%; background: #0f172a; color: #f8fafc; border: 1px solid #475569; border-radius: 4px; padding: 8px; font-family: inherit; margin: 8px 0; }
     select { background: #0f172a; color: #f8fafc; border: 1px solid #475569; padding: 6px; border-radius: 4px; margin-right: 8px; }
     table { width: 100%; border-collapse: collapse; margin-top: 10px; }
     th, td { text-align: left; padding: 8px; border-bottom: 1px solid #334155; font-size: 14px; }
     th { color: #94a3b8; }
-    .actions { display: flex; gap: 8px; align-items: center; margin-top: 10px; }
+    .actions { display: flex; gap: 8px; align-items: center; margin-top: 10px; flex-wrap: wrap; }
     .btn-approve { background: #22c55e; color: #fff; }
     .btn-reject { background: #ef4444; color: #fff; }
     .btn-edit { background: #3b82f6; color: #fff; }
+    .btn-topic { background: #8b5cf6; color: #fff; }
+    .field-label { font-size: 12px; color: #94a3b8; margin-bottom: 4px; display: block; }
+    .topic-section { margin-bottom: 12px; padding: 12px; background: #111827; border-radius: 6px; border: 1px solid #374151; }
   </style>
 </head>
 <body>
@@ -60,7 +64,7 @@
 
     async function loadQueue() {
       try {
-        const res = await fetch('/api/review/queue');
+        const res = await fetch('/api/review');
         if (res.status === 401) return location.href = '/';
         const posts = await res.json();
         document.getElementById('count').textContent = posts.length;
@@ -75,8 +79,21 @@
               <span class="badge badge-pending">${p.status}</span>
               ${p.is_exploration ? '<span class="badge badge-exploration">EXPLORATION PROBE</span>' : ''}
               <strong>UID:</strong> ${p.uid} | <strong>Product:</strong> ${p.product_name || 'N/A'} | <strong>Tone:</strong> ${p.tone} | <strong>Format:</strong> ${p.format}
-              <br><small>Scheduled: ${new Date(p.scheduled_at).toLocaleString()} | Timeout: ${new Date(p.timeout_at).toLocaleString()}</small>
+              <br><small>Scheduled: ${new Date(p.scheduled_at).toLocaleString()} | Timeout: ${new Date(p.review_timeout_at).toLocaleString()}</small>
             </div>
+            
+            <!-- Topic section -->
+            <div class="topic-section">
+              <label class="field-label">Topic (Meta thread tag) — current: <strong>${escapeHtml(p.topic_context?.topic || '—')}</strong> ${p.topic_context?.topic_id ? `(id: ${p.topic_context.topic_id})` : ''} ${p.topic_context?.is_exploration ? '<span style="color:#8b5cf6">[AI suggested]</span>' : ''}</label>
+              <input type="text" id="topic-${p.id}" placeholder="Enter topic tag (e.g., 'dapur', 'gadget', 'skincare') or leave blank for no topic" value="${escapeHtml(p.topic_context?.topic || '')}">
+              <div style="margin-top:8px;display:flex;gap:6px">
+                <button class="btn-topic" onclick="topicAction(${p.id}, 'accept')">Accept AI Suggestion</button>
+                <button class="btn-topic" onclick="topicAction(${p.id}, 'clear')">Clear Topic</button>
+              </div>
+            </div>
+            
+            <!-- Body section -->
+            <label class="field-label">Post Body</label>
             <textarea id="body-${p.id}">${escapeHtml(p.body)}</textarea>
             <div class="actions">
               <button class="btn-approve" onclick="reviewAction(${p.id}, 'approve')">Approve</button>
@@ -105,6 +122,10 @@
       if (action === 'reject') {
         body.reason_code = document.getElementById(`reason-${postId}`).value;
       }
+      // Always include topic if provided
+      const topicVal = document.getElementById(`topic-${postId}`).value.trim();
+      if (topicVal) body.topic = topicVal;
+      
       const res = await fetch(`/api/review/${postId}`, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
@@ -115,6 +136,31 @@
       } else {
         const err = await res.json();
         alert('Action failed: ' + (err.error || 'unknown'));
+      }
+    }
+
+    async function topicAction(postId, action) {
+      const body = { action: 'topic', topic_action: action };
+      const topicInput = document.getElementById(`topic-${postId}`);
+      
+      if (action === 'accept') {
+        // Accept the AI suggested topic - the backend will use the existing topic_context.topic
+        body.topic = topicInput.value.trim() || 'accept_suggestion';
+      } else if (action === 'clear') {
+        body.topic = ''; // Clear the topic
+        topicInput.value = '';
+      }
+      
+      const res = await fetch(`/api/review/${postId}`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      if (res.ok) {
+        loadQueue();
+      } else {
+        const err = await res.json();
+        alert('Topic action failed: ' + (err.error || 'unknown'));
       }
     }
 
@@ -146,7 +192,7 @@
     }
 
     function escapeHtml(str) {
-      return (str || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+      return (str || '').replace(/&/g, '&').replace(/</g, '<').replace(/>/g, '>');
     }
 
     loadQueue();
