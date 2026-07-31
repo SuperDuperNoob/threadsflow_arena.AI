@@ -402,7 +402,7 @@ Instead of running multiple sql scripts manually, we have provided an automated 
 This script automatically executes all schemas, seeds, and **all 9 migrations** in the correct numerical order:
 1. **Core schemas** (`schema.sql`, `schema_techniques.sql`, `schema_kb.sql`)
 2. **Seeds** (`seed_levers_my.sql`, `seed_techniques_my.sql`, `mining_questions.sql`)
-3. **Migrations 001 through 009** (adding compatible media, localizations, contextual bandit weights, reply loops, user comment intent definitions, shared LLM config, and redirect base URL config)
+3. **Migrations 001 through 017** (adding compatible media, localizations, contextual bandit weights, human-in-the-loop review queue, text variations, etc.)
 4. **Books techniques seed** (`seed_techniques_books.sql`)
 5. **LLM config sync** from `infra/.env` into `settings.llm`
 
@@ -970,10 +970,11 @@ Check your Threads profile. If the image post appears, R2 is fully working.
 
 ## Step 6 — The KB web UI (product intake)
 
-The KB service has two web pages, both at `https://kb.yourdomain.com`:
+The KB service has web pages at `https://kb.yourdomain.com`:
 
 | Page | URL | What it does |
 |---|---|---|
+| Review Queue | `https://kb.yourdomain.com/queue.html` | Human-in-the-loop review dashboard (approve/reject/edit posts) |
 | Product intake | `https://kb.yourdomain.com/product.html` | Add products with images and/or description |
 | Knowledge Base | `https://kb.yourdomain.com/` | Upload copywriting PDFs to grow the technique library |
 

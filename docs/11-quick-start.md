@@ -32,7 +32,7 @@ sudo ./scripts/setup_new_vps.sh
 3. ✅ Generates secure random passwords
 4. ✅ Creates `.env` configuration
 5. ✅ Starts all Docker services
-6. ✅ Runs all 13 database migrations
+6. ✅ Runs all 17 database migrations
 7. ✅ Seeds 93+ techniques, levers, and 177 Malaysian snippets
 8. ✅ Configures LLM settings
 
@@ -64,11 +64,9 @@ sudo ./scripts/setup_new_vps.sh
    EOF
    ```
 
-4. **Access n8n dashboard:**
-   ```
-   https://n8n.yourdomain.com
-   ```
-   Password is in `infra/.env` (search for `N8N_PASSWORD`)
+4. **Access n8n dashboard & review queue:**
+   - n8n dashboard: `https://n8n.yourdomain.com` (Password in `infra/.env` under `N8N_PASSWORD`)
+   - **Human Review Queue:** `https://kb.yourdomain.com/queue.html` (Approve, reject, or edit generated posts before publication; log in with `KB_PASSWORD`)
 
 5. **Import workflows:**
    - n8n UI → Import from File → select all `n8n/workflows/*.json`
