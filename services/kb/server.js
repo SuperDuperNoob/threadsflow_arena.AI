@@ -50,7 +50,7 @@ await fs.mkdir(IMAGE_DIR, { recursive: true });
 // ── auth: single shared password, constant-time compare, cookie session.
 // Behind Cloudflare Access this is belt-and-braces, but the service can also run standalone.
 function authed(req) {
-  if (!KB_PASSWORD) return true;
+  if (!KB_PASSWORD) return false;
   const cookie = (req.headers.cookie ?? '').match(/kb_session=([^;]+)/)?.[1];
   const expect = crypto.createHash('sha256').update(KB_PASSWORD).digest('hex');
   return cookie && cookie.length === expect.length &&
@@ -60,7 +60,10 @@ const requireAuth = (req, res, next) =>
   authed(req) ? next() : res.status(401).json({ error: 'unauthorized' });
 
 app.post('/api/login', (req, res) => {
-  if (!KB_PASSWORD || req.body?.password === KB_PASSWORD) {
+  if (!KB_PASSWORD) {
+    return res.status(401).json({ error: 'KB_PASSWORD is not configured' });
+  }
+  if (req.body?.password === KB_PASSWORD) {
     const tok = crypto.createHash('sha256').update(KB_PASSWORD).digest('hex');
     res.setHeader('set-cookie',
       `kb_session=${tok}; HttpOnly; SameSite=Strict; Path=/; Max-Age=2592000`);
@@ -564,6 +567,118 @@ app.post('/api/import/conversions', requireAuth, async (req, res) => {
 
 // Serve stored images publicly when IMAGE_BACKEND=local. Meta must be able to fetch these,
 // so this route is intentionally NOT behind requireAuth.
+// ─────────────────────────────────────────── HUMAN-IN-THE-LOOP REVIEW API
+
+app.get('/api/review/queue', requireAuth, async (_, res) => {
+  // Auto-timeout check
+  await pool.query(`
+    UPDATE post_review
+       SET status = 'auto_published', reviewed_at = now(), reviewed_by = 'timeout_scheduler'
+     WHERE status = 'pending_review' AND timeout_at <= now()
+  `);
+
+  const { rows } = await pool.query(`
+    SELECT p.id, p.uid, p.body, p.format, p.angle, p.tone, p.sell_intensity,
+           p.length_band, p.scheduled_at, p.purpose, pr.name AS product_name,
+           r.status, r.timeout_at, r.is_exploration, r.edited_body, r.reason_code
+      FROM posts p
+      JOIN post_review r ON r.post_id = p.id
+      LEFT JOIN products pr ON pr.id = p.product_id
+     WHERE r.status = 'pending_review'
+     ORDER BY p.scheduled_at ASC
+     LIMIT 100
+  `);
+  res.json(rows);
+});
+
+app.post('/api/review/lock', requireAuth, async (req, res) => {
+  const { post_id } = req.body ?? {};
+  if (!post_id) return res.status(400).json({ error: 'post_id required' });
+  await pool.query(`
+    UPDATE post_review
+       SET under_review_until = now() + interval '5 minutes', status = 'under_review'
+     WHERE post_id = $1 AND status = 'pending_review'
+  `, [post_id]);
+  res.json({ ok: true });
+});
+
+app.post('/api/review/:post_id', requireAuth, async (req, res) => {
+  const postId = Number(req.params.post_id);
+  const { action, reason_code, edited_body } = req.body ?? {};
+  if (!['approve', 'reject', 'edit'].includes(action)) {
+    return res.status(400).json({ error: 'invalid action' });
+  }
+
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    if (action === 'approve') {
+      await client.query(`
+        UPDATE post_review
+           SET status = 'approved', reviewed_at = now(), reviewed_by = 'operator', under_review_until = NULL
+         WHERE post_id = $1
+      `, [postId]);
+      await client.query(`
+        INSERT INTO post_review_audit (post_id, decision_type, meta)
+        VALUES ($1, 'human_approval', $2::jsonb)
+      `, [postId, JSON.stringify({ action })]);
+    } else if (action === 'reject') {
+      await client.query(`
+        UPDATE post_review
+           SET status = 'rejected', reviewed_at = now(), reviewed_by = 'operator', reason_code = $2, under_review_until = NULL
+         WHERE post_id = $1
+      `, [postId, reason_code || 'other']);
+      await client.query(`
+        UPDATE posts SET status = 'failed', fail_reason = $2 WHERE id = $1
+      `, [postId, `rejected by operator: ${reason_code || 'other'}`]);
+      await client.query(`
+        INSERT INTO post_review_audit (post_id, decision_type, reason_code, meta)
+        VALUES ($1, 'human_rejection', $2, $3::jsonb)
+      `, [postId, reason_code || 'other', JSON.stringify({ action })]);
+    } else if (action === 'edit') {
+      if (!edited_body || typeof edited_body !== 'string') {
+        return res.status(400).json({ error: 'edited_body required for edit action' });
+      }
+      await client.query(`
+        UPDATE posts SET body = $2 WHERE id = $1
+      `, [postId, edited_body]);
+      await client.query(`
+        UPDATE post_review
+           SET status = 'approved', reviewed_at = now(), reviewed_by = 'operator', edited_body = $2, under_review_until = NULL
+         WHERE post_id = $1
+      `, [postId, edited_body]);
+      await client.query(`
+        INSERT INTO post_review_audit (post_id, decision_type, meta)
+        VALUES ($1, 'human_edit', $2::jsonb)
+      `, [postId, JSON.stringify({ action, edited_body })]);
+    }
+    await client.query('COMMIT');
+    res.json({ ok: true });
+  } catch (e) {
+    await client.query('ROLLBACK').catch(() => {});
+    res.status(500).json({ error: e.message });
+  } finally {
+    client.release();
+  }
+});
+
+app.get('/api/review/summary', requireAuth, async (_, res) => {
+  const { rows: armStats } = await pool.query(`
+    SELECT lever_kind, lever_code, round(n,1) AS n, round(reward_sum/NULLIF(n,0),3) AS mean_reward,
+           round(alpha,2) AS alpha, round(beta,2) AS beta
+      FROM arm_stats WHERE scope='global' ORDER BY mean_reward DESC LIMIT 30
+  `);
+  const { rows: audits } = await pool.query(`
+    SELECT a.*, p.uid AS post_uid FROM post_review_audit a
+    LEFT JOIN posts p ON p.id = a.post_id
+    ORDER BY a.ts DESC LIMIT 50
+  `);
+  const { rows: reviewCounts } = await pool.query(`
+    SELECT status, count(*)::int AS count FROM post_review GROUP BY status
+  `);
+  res.json({ arm_stats: armStats, recent_audits: audits, review_counts: reviewCounts });
+});
+
 app.use('/img', express.static(IMAGE_DIR, {
   maxAge: '30d', immutable: true, index: false, dotfiles: 'deny',
 }));

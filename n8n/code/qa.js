@@ -18,6 +18,7 @@
  */
 
 const EMOJI_RE = /[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}\u{FE0F}]/gu;
+const INDONESIAN_BAN = /\b(banget|nggak|gak|aja|udah|bikin|gimana|kalian|doang|cowok|cewek|gue|deh|dong|sih)\b/i;
 
 function cosine(a, b) {
   if (!a || !b || a.length !== b.length) return 0;
@@ -68,6 +69,11 @@ function qa(input) {
     let re;
     try { re = new RegExp(b.pattern, 'iu'); } catch { continue; }
     if (re.test(target)) reasons.push(`banned phrase: ${b.pattern}`);
+  }
+
+  // 2b. Indonesian words check (mechanical block)
+  if (INDONESIAN_BAN.test(text)) {
+    reasons.push('contains Indonesian word(s)');
   }
 
   // 3. emoji policy

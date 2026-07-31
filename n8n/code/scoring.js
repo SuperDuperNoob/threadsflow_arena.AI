@@ -122,8 +122,11 @@ function score(input) {
     // Bayesian EPM posterior rather than raw EPM.
     const target = settings.bandit?.money_shrinkage_target_orders ?? 20;
     const wMoney = Math.min(1, (num(input.lifetime_orders) || 0) / target);
-    r.w_money = wMoney;
-    r.final_score = clamp(wMoney * r.money_score + (1 - wMoney) * r.eng_score, -3, 3);
+    const wHuman = 0.15;
+    const humanScore = num(p.human_score, 0); // +1 approved/edited, -1 rejected, 0 default/auto
+    r.human_score = humanScore;
+    const wEng = Math.max(0, 1 - wMoney - wHuman);
+    r.final_score = clamp(wMoney * r.money_score + wEng * r.eng_score + wHuman * r.human_score, -3, 3);
 
     // Under-distributed posts remain low-confidence. They may be good, but the algorithm did not
     // give them enough reach to certify a winner.
