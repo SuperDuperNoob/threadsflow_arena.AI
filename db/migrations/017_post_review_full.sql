@@ -13,8 +13,19 @@ ALTER TABLE posts ADD COLUMN IF NOT EXISTS review_timeout_at TIMESTAMPTZ;
 ALTER TABLE posts ADD COLUMN IF NOT EXISTS review_locked_until TIMESTAMPTZ;
 ALTER TABLE posts ADD COLUMN IF NOT EXISTS review_timeout_minutes INT DEFAULT 120;
 
--- 2. Create append-only post_review table matching exact specification
-CREATE TABLE IF NOT EXISTS post_review (
+-- 2. Create append-only post_review table matching exact specification.
+--    Migration 016 shipped an incompatible 1-row-per-post `status`-based table plus an
+--    auto-insert trigger. The current app code (services/kb/server.js) targets THIS
+--    append-only shape and tracks review state via posts.status/posts.review_timeout_at,
+--    so 016's trigger and table are legacy. Drop them so 016→017 and fresh installs both
+--    converge here. (No real data is lost: on the 016→017 path, 017 previously aborted, so
+--    the review layer was never operational; step 6 backfills current posts.)
+DROP TRIGGER IF EXISTS trg_init_post_review ON posts;
+DROP FUNCTION IF EXISTS init_post_review();
+DROP VIEW IF EXISTS post_human_feedback CASCADE;
+DROP TABLE IF EXISTS post_review CASCADE;
+
+CREATE TABLE post_review (
   id BIGSERIAL PRIMARY KEY,
   post_id BIGINT NOT NULL REFERENCES posts(id) ON DELETE CASCADE,
   decision VARCHAR(32) NOT NULL, -- pending_review | approved | rejected | edited | auto_published

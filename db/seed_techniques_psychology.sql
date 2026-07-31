@@ -36,7 +36,7 @@ FROM (VALUES
  'Cialdini reciprocity principle: humans feel obligated to return favors. A post that gives real value (a petua, a relatable moment, a useful observation) creates a psychological debt that makes the next sell post feel like a friend''s recommendation rather than an ad. This is why accounts that only sell get throttled — they have no reciprocity bank.',
  'Dapur kecil, tapi kalau susun periuk ikut saiz, boleh muat semua. Petua mak saya.',
  'Hari ini saya nak share satu produk yang sangat bagus untuk dapur kecil.',
- '{petua,rant_bite,diary,overheard}','{warm_sibling,gaul,deadpan}','{0}','{}',
+ '{petua,rant_bite,diary,overheard}'::text[],'{warm_sibling,gaul,deadpan}'::text[],'{0}'::smallint[],'{}'::text[],
  false,null,
  (SELECT id FROM technique_sources WHERE title LIKE 'Books/ (Psychology%'),3,'approved'),
 
@@ -46,7 +46,7 @@ FROM (VALUES
  'Cialdini liking principle: we buy from people we like, and we like people who are like us. But on Threads, saying "we''re all the same" reads as a broadcast. Naming one specific detail (e.g., "flat Ampang", "bas rapidKL", "petronas RON95") signals shared experience without claiming it. The reader self-identifies.',
  'Flat Ampang, parking selalu penuh. Kena balik sebelum 6 kalau nak dapat slot.',
  'Kita semua tahu parking kat KL ni susah kan?',
- '{pov,confession,diary,overheard}','{gaul,warm_sibling}','{0,1}','{}',
+ '{pov,confession,diary,overheard}'::text[],'{gaul,warm_sibling}'::text[],'{0,1}'::smallint[],'{}'::text[],
  false,null,
  (SELECT id FROM technique_sources WHERE title LIKE 'Books/ (Psychology%'),2,'approved'),
 
@@ -56,7 +56,7 @@ FROM (VALUES
  'Cialdini social proof: we look to others to decide what''s correct. But "1000 orang dah beli" is the oldest trick in the book and reads as an ad. "Ramai tanya kat mana beli" or "member saya pun ada masalah yang sama" frames social proof as organic conversation, not a sales funnel.',
  'Ramai member tanya, memang berkesan ke span ni? Saya guna 4 bulan, masih elok.',
  'Sudah lebih 1000 pelanggan berpuas hati dengan produk ini.',
- '{honest_review,utility,confession}','{warm_sibling,gaul,deadpan}','{1,2}','{}',
+ '{honest_review,utility,confession}'::text[],'{warm_sibling,gaul,deadpan}'::text[],'{1,2}'::smallint[],'{}'::text[],
  true,'Contra sold_count_proof which uses explicit numbers. This version is softer and works better in warm-up phase. Bandit decides which wins.',
  (SELECT id FROM technique_sources WHERE title LIKE 'Books/ (Psychology%'),2,'approved'),
 
@@ -66,7 +66,7 @@ FROM (VALUES
  'Cialdini unity principle (added in the expanded edition): we are influenced most by people we perceive as "one of us". Naming the shared identity first ("ibu yang kerja shift", "student UITM Shah Alam") creates in-group signaling before the post even gets to its point. The reader thinks "ini orang macam aku".',
  'Ibu kerja shift, balik rumah penat, dapur bersepah. Ni cara saya kemas 5 minit je.',
  'Produk ini sesuai untuk ibu-ibu yang sibuk dengan kerja dan rumah.',
- '{pov,confession,diary}','{warm_sibling,gaul}','{0,1}','{}',
+ '{pov,confession,diary}'::text[],'{warm_sibling,gaul}'::text[],'{0,1}'::smallint[],'{}'::text[],
  false,null,
  (SELECT id FROM technique_sources WHERE title LIKE 'Books/ (Psychology%'),2,'approved'),
 
@@ -80,7 +80,7 @@ FROM (VALUES
  'Chris Voss tactical empathy: you don''t need to agree with someone to show you understand their emotional state. Labeling it ("macam stress je", "nampak excited ni") makes them feel heard, which triggers reciprocity and makes them more likely to click your link or ask a follow-up. This is why "terima kasih" replies kill engagement.',
  'Comment: "Mahalnya!" Reply: "Faham, RM39 memang nampak mahal untuk span. Tapi 4 bulan guna, jimat dah."',
  'Comment: "Mahalnya!" Reply: "Harga RM39 sahaja, sangat berpatutan."',
- '{}','{warm_sibling,gaul}','{1,2}','{}',
+ '{}'::text[],'{warm_sibling,gaul}'::text[],'{1,2}'::smallint[],'{}'::text[],
  false,null,
  (SELECT id FROM technique_sources WHERE title LIKE 'Books/ (Psychology%'),3,'approved'),
 
@@ -90,7 +90,7 @@ FROM (VALUES
  'Chris Voss mirroring: repeating the last few words as a question signals you''re listening and invites the other person to elaborate. It feels like active listening but actually gives you time to think and makes them feel heard. On Threads, this turns a dead-end comment ("Beli kat mana?") into a conversation ("Kat mana? Shopee ke Lazada?") which boosts reply density and algorithm distribution.',
  'Comment: "Memang berkesan ke?" Reply: "Berkesan ke? Saya guna 4 bulan, still elok lagi."',
  'Comment: "Memang berkesan ke?" Reply: "Ya, sangat berkesan."',
- '{}','{gaul,warm_sibling}','{1,2}','{}',
+ '{}'::text[],'{gaul,warm_sibling}'::text[],'{1,2}'::smallint[],'{}'::text[],
  false,null,
  (SELECT id FROM technique_sources WHERE title LIKE 'Books/ (Psychology%'),3,'approved'),
 
@@ -100,7 +100,7 @@ FROM (VALUES
  'Chris Voss calibrated questions: "why" questions feel accusatory ("kenapa tanya?"). "How" and "what" questions ("macam mana", "untuk apa") feel like genuine curiosity and give the other person control. On Threads, this creates longer comment threads which the algorithm interprets as high engagement, pushing the post to more people.',
  'Comment: "Nak beli satu." Reply: "Untuk dapur ke bilik air? Sebab ada dua saiz."',
  'Comment: "Nak beli satu." Reply: "Link kat bio ya."',
- '{}','{warm_sibling,gaul}','{1,2}','{}',
+ '{}'::text[],'{warm_sibling,gaul}'::text[],'{1,2}'::smallint[],'{}'::text[],
  false,null,
  (SELECT id FROM technique_sources WHERE title LIKE 'Books/ (Psychology%'),2,'approved'),
 
@@ -110,7 +110,7 @@ FROM (VALUES
  'Chris Voss late-night FM DJ voice: slow, calm, downward-inflecting speech signals "I''m in control, this isn''t up for debate". On Threads, this translates to short sentences with periods, no exclamation marks, no "memang berbaloi!" hype. It reads as someone stating facts, not selling. The opposite (exclamation marks, hype words) is what gets you flagged as an ad.',
  'RM39. 4 bulan guna. Tak melekit lagi.',
  'RM39 sahaja! Memang berbaloi sangat! Beli sekarang!',
- '{one_liner,honest_review,before_after}','{deadpan,minimal}','{1,2}','{}',
+ '{one_liner,honest_review,before_after}'::text[],'{deadpan,minimal}'::text[],'{1,2}'::smallint[],'{}'::text[],
  false,null,
  (SELECT id FROM technique_sources WHERE title LIKE 'Books/ (Psychology%'),3,'approved'),
 
@@ -124,7 +124,7 @@ FROM (VALUES
  'Erica Dhawan digital body language: in text-based communication, punctuation replaces facial expressions. A period signals "this is a statement, not up for debate" (good for sell posts). No period signals "casual thought" (good for persona posts). Exclamation marks signal "I''m trying too hard" and are the fastest way to look like a brand account. On Threads, this is the difference between "RM39. 4 bulan guna." (trustworthy) and "RM39! 4 bulan guna!" (ad).',
  'Persona: Dapur kecil tapi boleh muat semua kalau susun betul',
  'Persona: Dapur kecil tapi boleh muat semua kalau susun betul!',
- '{}','{}','{0,1,2}','{}',
+ '{}'::text[],'{}'::text[],'{0,1,2}'::smallint[],'{}'::text[],
  false,null,
  (SELECT id FROM technique_sources WHERE title LIKE 'Books/ (Psychology%'),2,'approved'),
 
@@ -134,7 +134,7 @@ FROM (VALUES
  'Erica Dhawan: confusing messages create anxiety and make people disengage. Ann Handley: one idea per sentence is the foundation of readable writing. On Threads, where attention spans are 3 seconds, a sentence with two ideas forces the reader to choose which one to process — and they usually choose "scroll past". Short, single-idea sentences are what stop the scroll.',
  'Buka peti ais, bau hanyir. Rupanya lobak merah terperuk di belakang.',
  'Buka peti ais dan terbau hanyir sebab ada lobak merah yang terperuk di belakang sejak minggu lepas.',
- '{}','{}','{0,1,2}','{}',
+ '{}'::text[],'{}'::text[],'{0,1,2}'::smallint[],'{}'::text[],
  false,null,
  (SELECT id FROM technique_sources WHERE title LIKE 'Books/ (Psychology%'),3,'approved'),
 
@@ -148,7 +148,7 @@ FROM (VALUES
  'Ann Handley: writing evolves with us, and in 2026 it''s more relaxed than ever. On Threads, formal BM ("tidak", "hendak", "di mana") reads as robotic and corporate. BM pasar ("tak", "nak", "kat mana") reads as human. The books teach this explicitly: if you wouldn''t say it to a friend at a mamak, don''t write it in a post.',
  'Tak sangka RM15 boleh kemaskan meja.',
  'Tidak sangka bahawa RM15 sahaja boleh mengemaskan meja saya.',
- '{}','{gaul,warm_sibling,chaotic}','{0,1}','{}',
+ '{}'::text[],'{gaul,warm_sibling,chaotic}'::text[],'{0,1}'::smallint[],'{}'::text[],
  false,null,
  (SELECT id FROM technique_sources WHERE title LIKE 'Books/ (Psychology%'),3,'approved'),
 
@@ -158,7 +158,7 @@ FROM (VALUES
  'Ann Handley: every sentence should earn its place. On Threads, where you have 180 chars before the "see more" cutoff, wasted words are fatal. "Produk ini sangat bagus" earns nothing because it''s a claim without evidence. "RM39, 4 bulan guna" earns its place because it''s specific. The editing pass is: for each sentence, ask "does this give the reader something they didn''t have before?" If no, delete.',
  'RM39. 4 bulan. Tak melekit lagi.',
  'Produk ini sangat bagus dan berkualiti tinggi. Memang berbaloi untuk dimiliki.',
- '{}','{}','{0,1,2}','{}',
+ '{}'::text[],'{}'::text[],'{0,1,2}'::smallint[],'{}'::text[],
  false,null,
  (SELECT id FROM technique_sources WHERE title LIKE 'Books/ (Psychology%'),2,'approved'),
 
@@ -172,7 +172,7 @@ FROM (VALUES
  'Carnegie "bury your boomerangs": a boomerang is when someone shares something and you immediately pivot back to yourself ("Oh you have that problem? Let me tell you about MY product"). On Threads, this kills engagement because it signals you''re not listening, you''re just waiting to sell. The fix: answer their question, ask about their context, and only share your experience if they ask. This turns a comment into a conversation.',
  'Comment: "Memang berkesan ke?" Reply: "Untuk apa? Dapur ke bilik air? Sebab ada dua jenis."',
  'Comment: "Memang berkesan ke?" Reply: "Memang berkesan! Saya guna 4 bulan, jimat sangat."',
- '{}','{warm_sibling,gaul}','{1,2}','{}',
+ '{}'::text[],'{warm_sibling,gaul}'::text[],'{1,2}'::smallint[],'{}'::text[],
  false,null,
  (SELECT id FROM technique_sources WHERE title LIKE 'Books/ (Psychology%'),2,'approved'),
 
@@ -182,7 +182,7 @@ FROM (VALUES
  'Carnegie "listen longer": most people are waiting to talk, not listening. On Threads, this manifests as replies that immediately pivot to "saya pun sama" or "saya guna ni". The fix: ask 2 questions ("Untuk apa?", "Berapa lama dah cari?") before sharing your take. This signals genuine interest and creates longer threads, which the algorithm rewards.',
  'Comment: "Nak cari yang murah." Reply: "Untuk apa guna? Dapur ke bilik air? Berapa lama dah cari?"',
  'Comment: "Nak cari yang murah." Reply: "Saya guna yang ni, RM39 je, memang berbaloi."',
- '{}','{warm_sibling,gaul}','{1,2}','{}',
+ '{}'::text[],'{warm_sibling,gaul}'::text[],'{1,2}'::smallint[],'{}'::text[],
  false,null,
  (SELECT id FROM technique_sources WHERE title LIKE 'Books/ (Psychology%'),2,'approved'),
 
@@ -192,7 +192,7 @@ FROM (VALUES
  'Carnegie "leave others a little better": every interaction should give the other person something they didn''t have. On Threads, a reply that just says "terima kasih" or "link kat bio" gives nothing. A reply that says "Shopee, tapi tunggu sale hari gaji, lagi murah" gives a useful timing tip. This is what turns a commenter into a follower.',
  'Comment: "Beli kat mana?" Reply: "Shopee, tapi tunggu sale hari gaji, boleh jimat RM5-10."',
  'Comment: "Beli kat mana?" Reply: "Shopee. Link kat bio."',
- '{}','{warm_sibling,gaul,deadpan}','{1,2}','{}',
+ '{}'::text[],'{warm_sibling,gaul,deadpan}'::text[],'{1,2}'::smallint[],'{}'::text[],
  false,null,
  (SELECT id FROM technique_sources WHERE title LIKE 'Books/ (Psychology%'),3,'approved'),
 
@@ -206,7 +206,7 @@ FROM (VALUES
  'Jono Bacon participation loops: communities thrive when members have a role. On Threads, asking "macam mana pendapat korang?" is too broad — people don''t know what to say. Asking "korang guna yang mana?" or "tempat korang macam ni juga ke?" gives them a specific prompt to respond to. This creates reply density, which the algorithm rewards.',
  'Dapur kecil, saya susun periuk ikut saiz. Korang susun macam mana?',
  'Macam mana pendapat korang tentang cara susun periuk?',
- '{petua,rant_bite,diary}','{gaul,warm_sibling}','{0}','{}',
+ '{petua,rant_bite,diary}'::text[],'{gaul,warm_sibling}'::text[],'{0}'::smallint[],'{}'::text[],
  false,null,
  (SELECT id FROM technique_sources WHERE title LIKE 'Books/ (Psychology%'),2,'approved'),
 
@@ -216,7 +216,7 @@ FROM (VALUES
  'Jono Bacon belonging signals: communities form around shared identity. On Threads, using "kita" when complaining ("kita semua tahu parking KL susah") signals "I''m one of you, we share this struggle". But using "kita" when giving tips ("kita semua patut susun periuk macam ni") sounds preachy. The rule: "kita" for struggles, "saya" for wins and tips.',
  'Kita semua tahu, balik kerja penat, dapur bersepah. Ni cara saya kemas 5 minit.',
  'Kita semua patut susun periuk ikut saiz, lagi kemas.',
- '{rant_bite,confession,diary}','{warm_sibling,gaul}','{0,1}','{}',
+ '{rant_bite,confession,diary}'::text[],'{warm_sibling,gaul}'::text[],'{0,1}'::smallint[],'{}'::text[],
  true,'Contra niche_positioning which uses very specific person-targeting. This uses inclusive language. Bandit decides which works better in different contexts.',
  (SELECT id FROM technique_sources WHERE title LIKE 'Books/ (Psychology%'),2,'approved')
 

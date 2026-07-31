@@ -5,7 +5,7 @@
  * applies rate limiting, and outputs one item per comment that needs a reply.
  *
  * Input $json (from preceding Postgres node):
- *   posts: [{id, uid, body, purpose, media_uid, published_at, comment_count}]
+ *   posts: [{id, uid, body, purpose, threads_media_id, published_at, comment_count}]
  *   comments: [{id, comment_id, text, username, post_id, created_at, has_reply}]
  *   l4_settings: { max_replies_per_day, max_replies_per_post, cooldown_hours_per_user,
  *                  post_age_days, min_comment_length, ... }
@@ -97,7 +97,7 @@ function planReplies(input) {
       post_uid: post.uid,
       post_body: post.body,
       post_purpose: post.purpose,
-      post_media_uid: post.media_uid,
+      post_media_uid: post.threads_media_id,
       score,
     });
   }

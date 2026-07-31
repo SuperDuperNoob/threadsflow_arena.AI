@@ -5,6 +5,7 @@ dist/
 .DS_Store
 ui/data/
 logs/
+TASK_PROGRESS.md
 
 # Uploaded PDFs stay in the repo (user pushed them intentionally), but any extracted
 # working files do not.

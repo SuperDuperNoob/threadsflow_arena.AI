@@ -6,7 +6,7 @@
  *
  * Input $json:
  *   access_token: Threads API access token
- *   posts: [{id, uid, media_uid, published_at}] - posts to fetch comments for
+ *   posts: [{id, uid, threads_media_id, published_at}] - posts to fetch comments for
  *
  * Output: one item per post with the fetch URL
  */
@@ -26,18 +26,18 @@ function prepareFetchUrls(input) {
   
   // Return one item per post with the URL to fetch comments
   return posts
-    .filter(p => p.media_uid)
+    .filter(p => p.threads_media_id)
     .map(post => ({
       json: {
         ...input,
-        fetch_url: `${THREADS_API_BASE}/${post.media_uid}/replies`,
+        fetch_url: `${THREADS_API_BASE}/${post.threads_media_id}/replies`,
         fetch_query: {
           access_token,
           fields: 'id,text,username,timestamp'
         },
         post_id: post.id,
         post_uid: post.uid,
-        media_uid: post.media_uid,
+        threads_media_id: post.threads_media_id,
       }
     }));
 }

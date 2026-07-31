@@ -37,7 +37,7 @@ FROM (VALUES
  'Threads affiliate guide 2026: naming a category instantly flags the post as an ad. Naming a result triggers curiosity without the pattern-match. The reader self-identifies as "someone who needs this" before they know what "this" is.',
  'Tak sangka RM15 boleh kemaskan meja yang bersepah sejak PKP.',
  'Kalau korang nak beli cable organizer saya suggest beli yang ni.',
- '{one_liner,pov,myth_bust}','{deadpan,gaul,minimal,chaotic}','{0,1}','{}',
+ '{one_liner,pov,myth_bust}'::text[],'{deadpan,gaul,minimal,chaotic}'::text[],'{0,1}'::smallint[],'{}'::text[],
  false,null,
  (SELECT id FROM technique_sources WHERE title LIKE 'Books/ (2026 Threads%'),2,'approved'),
 
@@ -47,7 +47,7 @@ FROM (VALUES
  'Content Machine Playbook: Hook→Value→Conflict→Takeaway mirrors the pattern humans tell stories in. Skip any one beat and the post either feels like a broadcast (missing Conflict), a lesson (missing Hook), or a rant (missing Value/Takeaway).',
  'Buka peti ais, bau hanyir.\\nBersihkan satu-satu, rupanya satu lobak merah terperuk di belakang.\\nTiga hari saya cari sumber bau.\\nBenda kecik yang buat dapur rasa bersih: peti ais yang tak berbau.',
  'Hai korang. Hari ini saya nak share satu produk yang sangat bagus untuk membersihkan peti ais anda.',
- '{confession,flash_story,diary,list_of_three}','{gaul,warm_sibling,deadpan}','{0,1}','{}',
+ '{confession,flash_story,diary,list_of_three}'::text[],'{gaul,warm_sibling,deadpan}'::text[],'{0,1}'::smallint[],'{}'::text[],
  false,null,
  (SELECT id FROM technique_sources WHERE title LIKE 'Books/ (2026 Threads%'),3,'approved'),
 
@@ -57,7 +57,7 @@ FROM (VALUES
  'Threads Profit Killer "mistake #6 — Post & Ghost": algorithms use reply density in the first 30 minutes as a ranking signal, and commenters who receive a genuine reply are 3–4× more likely to click the link. Short replies read as broadcast; a question turns a comment into a conversation, which triggers more distribution.',
  'Comment: "RM15 je? Beli kat mana?"\\nReply: "Shopee — nak link? Warna apa yang kau cari, sebab yang hitam selalu out of stock."',
  'Comment: "Beli kat mana?"\\nReply: "Link kat bio ya."',
- '{}','{gaul,warm_sibling,chaotic}','{0,1,2}','{}',
+ '{}'::text[],'{gaul,warm_sibling,chaotic}'::text[],'{0,1,2}'::smallint[],'{}'::text[],
  false,null,
  (SELECT id FROM technique_sources WHERE title LIKE 'Books/ (2026 Threads%'),3,'approved'),
 
@@ -67,7 +67,7 @@ FROM (VALUES
  'Threads Income Mastery Bab 2 Setup Profil: a bio or hook aimed at everyone is converted by nobody. Naming one specific person ("fresh grad gaji RM2.5k", "ibu 2 anak rumah flat") is what makes strangers stop and think "ini untuk aku".',
  'Ibu rumah flat yang dapur takde hood — boleh cuma buka tingkap dan tutup api 30 saat awal.',
  'Sesuai untuk semua orang yang mahu menjimatkan masa di dapur.',
- '{pov,confession,utility}','{gaul,warm_sibling}','{0,1}','{}',
+ '{pov,confession,utility}'::text[],'{gaul,warm_sibling}'::text[],'{0,1}'::smallint[],'{}'::text[],
  true,'Contra some storytelling books which recommend universal relatability; the 2026 Threads guides argue hyper-specific audiences outperform broad ones. Bandit decides.',
  (SELECT id FROM technique_sources WHERE title LIKE 'Books/ (2026 Threads%'),2,'approved'),
 
@@ -77,7 +77,7 @@ FROM (VALUES
  'Mudahnya Jual Produk Kurang 7 Saat: buyers give an opening 3 seconds. In 3 seconds they can read about 7–9 words; a number is the fastest way to land a concrete claim and stop the scroll. This is the shorter, Threads-native version of transformation_numbers.',
  'RM39. 4 bulan. Tak melekit lagi.',
  'Produk ini sangat berkualiti tinggi dan berbaloi untuk dimiliki.',
- '{one_liner,honest_review,before_after}','{deadpan,minimal,gaul}','{1,2}','{}',
+ '{one_liner,honest_review,before_after}'::text[],'{deadpan,minimal,gaul}'::text[],'{1,2}'::smallint[],'{}'::text[],
  false,null,
  (SELECT id FROM technique_sources WHERE title LIKE 'Books/ (2026 Threads%'),2,'approved'),
 
@@ -87,7 +87,7 @@ FROM (VALUES
  'Profit Killer mistake #6: "Post & Ghost" is named as one of seven mistakes that silently kill conversion even when every other part of the funnel is correct. The first-reply window is what Threads uses to decide whether to push the post further.',
  '(procedure: L4 reply loop handles this; this technique exists as a rule/reminder, not as a writer instruction.)',
  'Jadual auto-post dan biarkan.',
- '{}','{}','{0,1,2}','{}',
+ '{}'::text[],'{}'::text[],'{0,1,2}'::smallint[],'{}'::text[],
  false,null,
  (SELECT id FROM technique_sources WHERE title LIKE 'Books/ (2026 Threads%'),2,'approved'),
 
@@ -97,7 +97,7 @@ FROM (VALUES
  'Content Machine Playbook pillar 1: accounts where every post sells look like catalogues; catalogues get throttled. One value-only post in four is the floor, not the ceiling. wf6_persona produces these; this row lets wf4 score the ratio.',
  '(see wf6 persona posts for examples; they are pure value/no link.)',
  'Setiap hari 5 posts semua dengan link di bio.',
- '{}','{}','{0}','{}',
+ '{}'::text[],'{}'::text[],'{0}'::smallint[],'{}'::text[],
  false,null,
  (SELECT id FROM technique_sources WHERE title LIKE 'Books/ (2026 Threads%'),3,'approved'),
 
@@ -111,7 +111,7 @@ FROM (VALUES
  'Ayat Jualan Menarik Pelanggan (Umar Taib) langkah 1: dengar luahan prospek, then open with that exact sentence. It bypasses ad-detectors because it sounds like a friend complaining, not a seller pitching. This is the pre-AI version of what the persona-snippets dataset tries to do, but as an explicit writer instruction.',
  '"Kepala tengah serabut la Pak Kodi, mata dah la mengantuk." — buka dengan ayat ini sebelum cerita penyelesaiannya.',
  'Adakah anda menghadapi masalah dapur yang bersepah?',
- '{pov,confession,overheard,chat_narration}','{gaul,warm_sibling,chaotic}','{0,1}','{}',
+ '{pov,confession,overheard,chat_narration}'::text[],'{gaul,warm_sibling,chaotic}'::text[],'{0,1}'::smallint[],'{}'::text[],
  false,null,
  (SELECT id FROM technique_sources WHERE title LIKE 'Books/ (Classic Malay copywriting%'),3,'approved'),
 
@@ -121,7 +121,7 @@ FROM (VALUES
  'Mudahnya Jual Produk Kurang 7 Saat Teknik #2: identify one "peluru manfaat" and serve it in under nine words. The 3-second attention window cannot parse a clause; a short numeric claim is what sticks.',
  'Keringkan tangan dalam 10 saat.',
  'Produk ini mempunyai teknologi pengeringan tangan yang sangat cekap dan berkesan.',
- '{one_liner,honest_review}','{deadpan,minimal,gaul}','{1,2}','{}',
+ '{one_liner,honest_review}'::text[],'{deadpan,minimal,gaul}'::text[],'{1,2}'::smallint[],'{}'::text[],
  false,null,
  (SELECT id FROM technique_sources WHERE title LIKE 'Books/ (Classic Malay copywriting%'),2,'approved'),
 
@@ -131,7 +131,7 @@ FROM (VALUES
  'Kopi Writing / Teknik Mudah Ayat Jualan: the classic AIDA-derived structure adapted for Malay. The 30-point playbook''s questions 1-3 map exactly to pain→benefits→who-else-it-helped. We compress this to three lines so it fits in a Threads post.',
  'Tangan melekit minyak tiap kali lepas goreng.\\nCuci pinggan tak perlu gosok satu-satu.\\nSpan ni je tukar.',
  'Kami ada produk span cuci pinggan yang sangat berkualiti.',
- '{pov,flash_story,before_after}','{warm_sibling,gaul,deadpan}','{1,2}','{}',
+ '{pov,flash_story,before_after}'::text[],'{warm_sibling,gaul,deadpan}'::text[],'{1,2}'::smallint[],'{}'::text[],
  false,null,
  (SELECT id FROM technique_sources WHERE title LIKE 'Books/ (Classic Malay copywriting%'),3,'approved'),
 
@@ -141,7 +141,7 @@ FROM (VALUES
  '30-point copywriting: buyers buy a changed day, not a product. "Jimat 10 minit" is abstract; "sempat bancuh teh sementara periuk rendam" is a moment the reader can imagine and want.',
  'Lepas goreng, boleh terus duduk makan — tak perlu gosok kuali.',
  'Menjimatkan masa anda semasa memasak.',
- '{pov,diary,confession}','{gaul,warm_sibling,deadpan}','{1,2}','{}',
+ '{pov,diary,confession}'::text[],'{gaul,warm_sibling,deadpan}'::text[],'{1,2}'::smallint[],'{}'::text[],
  false,null,
  (SELECT id FROM technique_sources WHERE title LIKE 'Books/ (Classic Malay copywriting%'),2,'approved'),
 
@@ -151,7 +151,7 @@ FROM (VALUES
  '30-point questions 21–24 are all refund/warranty/fit anxieties; Kurang 7 Saat shows that unaddressed objections kill the sale in the first 3 seconds even when the hook is good. Answering one objection early reads as honesty rather than defensiveness. Line 3 (not line 1, not the end) is what the 2026 playbooks converge on — too early reads defensive, too late and the reader has already scrolled past.',
  'RM39. Mahal bagi span, tapi empat bulan saya guna tak buruk lagi.',
  'Harga RM39 sahaja, sangat berpatutan dan berbaloi.',
- '{honest_review,utility,diary}','{deadpan,minimal,warm_sibling}','{1,2}','{}',
+ '{honest_review,utility,diary}'::text[],'{deadpan,minimal,warm_sibling}'::text[],'{1,2}'::smallint[],'{}'::text[],
  false,null,
  (SELECT id FROM technique_sources WHERE title LIKE 'Books/ (Classic Malay copywriting%'),2,'approved')
 
@@ -195,8 +195,8 @@ ON CONFLICT (pattern, scope) DO NOTHING;
 INSERT INTO levers (kind, code, label, brief, enabled) VALUES
 ('format','rant_bite','Rencana gigit','Satu luahan 1-2 baris yang paling pendek, biasanya satu keluhan atau pemerhatian dengan tarikan nafas.', true),
 ('format','petua','Satu petua','Satu ayat yang memberitahu satu petua kecil tanpa intro, tanpa nama produk.', true),
-('angle','anti_tips','Anti-petua','Buka dengan mengatakan petua orang lain salah, kemudian tunjuk cara yang sebenar bekerja.', true),
-('angle','mundane','Benda biasa','Sudut pandang yang meraikan benda yang sangat kecil dan biasa — tiada pengajaran, cuma perhatian.', true),
+('format','anti_tips','Anti-petua','Buka dengan mengatakan petua orang lain salah, kemudian tunjuk cara yang sebenar bekerja.', true),
+('format','mundane','Benda biasa','Sudut pandang yang meraikan benda yang sangat kecil dan biasa — tiada pengajaran, cuma perhatian.', true),
 ('tone','makcik','Makcik bawang','Nada makcik tepi pagar — panjang lebar, berleter sedikit, banyak detail yang tak penting tapi lucu.', true)
 ON CONFLICT (kind, code) DO NOTHING;
 
@@ -204,8 +204,8 @@ ON CONFLICT (kind, code) DO NOTHING;
 -- are usable. No structural change; just a marker.
 UPDATE settings
 SET value = jsonb_set(
-              jsonb_set(value, '{persona_extra_formats}', to_jsonb(ARRAY['rant_bite','petua']::text[]), true),
-              '{persona_extra_tones}', to_jsonb(ARRAY['makcik']::text[]), true)
+              jsonb_set(value, '{persona_extra_formats}'::text[], to_jsonb(ARRAY['rant_bite','petua']::text[]), true),
+              '{persona_extra_tones}'::text[], to_jsonb(ARRAY['makcik']::text[]), true)
 WHERE key = 'warmup';
 
 -- ── Log it (run_log has no natural key; just INSERT. Duplicate log lines on re-run are harmless.)
