@@ -81,6 +81,10 @@ services:
       LLM_MODEL_MINE: ${LLM_MODEL_MINE:-gemini-2.5-pro}
       LLM_MODEL_EMBED: ${LLM_MODEL_EMBED:-text-embedding-3-small}
       PUBLIC_REDIRECT_BASE: ${PUBLIC_REDIRECT_BASE:-https://r.yourdomain.com}
+      # Perplexity (optional, for persona topic discovery):
+      PERPLEXITY_API_KEY: ${PERPLEXITY_API_KEY:-}
+      PERPLEXITY_BASE_URL: ${PERPLEXITY_BASE_URL:-https://api.perplexity.ai}
+      PERPLEXITY_MODEL: ${PERPLEXITY_MODEL:-sonar}
     extra_hosts:
       - "host.docker.internal:host-gateway"
     volumes:
@@ -144,6 +148,10 @@ services:
       DEBUG_UNTIL: ${DEBUG_UNTIL:-}
       LOG_LEVEL: ${LOG_LEVEL:-info}
       TZ: Asia/Kuala_Lumpur
+      # Perplexity (optional, for persona topic refresh):
+      PERPLEXITY_API_KEY: ${PERPLEXITY_API_KEY:-}
+      PERPLEXITY_BASE_URL: ${PERPLEXITY_BASE_URL:-https://api.perplexity.ai}
+      PERPLEXITY_MODEL: ${PERPLEXITY_MODEL:-sonar}
     volumes:
       - kbdata:/data
     extra_hosts:

@@ -5,7 +5,7 @@
 -- ── where techniques came from (provenance matters: you'll want to know which book lied)
 CREATE TABLE technique_sources (
   id           BIGSERIAL PRIMARY KEY,
-  title        TEXT NOT NULL,           -- "Boron Letters", "Ogilvy on Advertising"
+  title        TEXT NOT NULL UNIQUE,    -- "Boron Letters", "Ogilvy on Advertising" — unique so ON CONFLICT (title) works
   author       TEXT,
   notebook_id  TEXT,                    -- NotebookLM notebook id, if you used the MCP/CLI
   mined_at     TIMESTAMPTZ DEFAULT now(),

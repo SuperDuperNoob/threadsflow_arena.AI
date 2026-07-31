@@ -146,13 +146,26 @@ async function post(path, body, { tries = 4, config } = {}) {
   throw lastErr;
 }
 
-export async function complete(system, user, { json = true, temperature = 0.3, model } = {}) {
-  const cfg = await getLlmConfig();
+export async function complete(system, user, { json = true, temperature = 0.3, model, base_url, api_key, max_tokens } = {}) {
+  const defaultCfg = await getLlmConfig();
+  // Caller can override any piece (used for Perplexity topic-refresh, alternative providers, etc).
+  const cfg = (base_url || api_key || model)
+    ? normalizeLlmConfig({
+        base_url: base_url ?? defaultCfg.base_url,
+        api_key: api_key ?? defaultCfg.api_key,
+        model_write: model ?? defaultCfg.model_write,
+        model_edit: defaultCfg.model_edit,
+        model_embed: defaultCfg.model_embed,
+        model_mine: model ?? defaultCfg.model_mine,
+      })
+    : defaultCfg;
+  const useModel = model ?? cfg.model_mine;
   const body = {
-    model: model ?? cfg.model_mine,
+    model: useModel,
     temperature,
     messages: [{ role: 'system', content: system }, { role: 'user', content: user }],
   };
+  if (max_tokens) body.max_tokens = max_tokens;
   if (json) body.response_format = { type: 'json_object' };
   const out = await post('/chat/completions', body, { config: cfg });
   const txt = out.choices?.[0]?.message?.content?.trim() ?? '';
@@ -165,6 +178,55 @@ export async function complete(system, user, { json = true, temperature = 0.3, m
     if (m) return JSON.parse(m[0]);
     throw new Error('LLM returned non-JSON');
   }
+}
+
+/**
+ * Call Perplexity Sonar (web search enabled). Separate from default config because Perplexity
+ * has its own base URL and returns `citations` in the response. Used weekly by wf7_topic_refresh.
+ * Accepts any Perplexity chat-completion option (model, temperature, max_tokens, search_domain_filters, etc).
+ */
+export async function completePerplexity(system, user, {
+  model, temperature = 0.4, max_tokens = 1200, apiKey, baseUrl,
+  search_recency_filter = 'week',
+  ...opts
+} = {}) {
+  const env = process.env;
+  const base = (baseUrl ?? env.PERPLEXITY_BASE_URL ?? 'https://api.perplexity.ai').replace(/\/+$/, '');
+  const key = (apiKey ?? env.PERPLEXITY_API_KEY ?? '').trim();
+  if (!key) throw new Error('PERPLEXITY_API_KEY is not configured');
+  const useModel = model ?? env.PERPLEXITY_MODEL ?? 'sonar';
+  const url = `${base}/chat/completions`;
+  const body = {
+    model: useModel,
+    temperature,
+    max_tokens,
+    search_recency_filter,
+    messages: [
+      { role: 'system', content: system },
+      { role: 'user', content: user },
+    ],
+    ...opts,
+  };
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+      authorization: `Bearer ${key}`,
+    },
+    body: JSON.stringify(body),
+    signal: AbortSignal.timeout(60_000),
+  });
+  if (!res.ok) {
+    const t = await res.text().catch(() => '');
+    throw new Error(`Perplexity HTTP ${res.status}: ${t.slice(0, 300)}`);
+  }
+  const out = await res.json();
+  return {
+    content: out.choices?.[0]?.message?.content ?? '',
+    citations: out.citations ?? [],
+    model: out.model ?? useModel,
+    usage: out.usage ?? null,
+  };
 }
 
 export async function embed(texts) {

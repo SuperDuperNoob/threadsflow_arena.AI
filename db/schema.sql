@@ -63,7 +63,8 @@ CREATE TABLE banned_phrases (
   pattern  TEXT NOT NULL,        -- regex, case-insensitive
   reason   TEXT,
   scope    TEXT DEFAULT 'all',   -- 'all' | 'opener' | tone code
-  added_at TIMESTAMPTZ DEFAULT now()
+  added_at TIMESTAMPTZ DEFAULT now(),
+  UNIQUE (pattern, scope)       -- so ON CONFLICT (pattern, scope) DO NOTHING works in seeds
 );
 
 CREATE TABLE cta_variants (

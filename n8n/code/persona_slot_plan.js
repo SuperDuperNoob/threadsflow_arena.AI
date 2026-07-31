@@ -1,0 +1,137 @@
+/**
+ * n8n Code node — wf6 step 0: build today's persona posting slots.
+ *
+ * Output: one item per persona slot, with scheduled_at, length_band, tone, format.
+ *
+ * Rules:
+ *  - Slots are placed at persona_slot_hours (defaults [7, 11, 16, 21] Kuala Lumpur time).
+ *  - Each slot is jittered ±persona_jitter_min (default 22 min) for irregularity.
+ *  - persona_skip_prob (default 8%) chance a slot is dropped — irregularity.
+ *  - Length-band mix is configurable: micro/mid/long (default 25/60/15).
+ *  - Tone is drawn from a persona-appropriate subset (no enthusiast, no corporate_parody —
+ *    those read like influencers or parody accounts).
+ *  - Format is drawn from persona-appropriate formats (confession, one_liner, chat_narration,
+ *    overheard, list_of_three, question_hook) — no honest_review/diary/myth_bast/product frames.
+ *  - Media type is always TEXT for persona posts (no product photos to attach).
+ */
+
+const ALLOWED_TONES = ['deadpan', 'gaul', 'warm_sibling', 'chaotic', 'minimal'];
+const ALLOWED_FORMATS = ['confession', 'one_liner', 'chat_narration', 'overheard',
+                         'list_of_three', 'question_hook', 'pov'];
+
+const DEFAULT_SETTINGS = {
+  persona_slot_hours: [7, 11, 16, 21],
+  persona_jitter_min: 22,
+  persona_skip_prob: 0.08,
+  persona_micro_pct: 0.25,
+  persona_mid_pct: 0.60,
+  persona_long_pct: 0.15,
+  timezone: 'Asia/Kuala_Lumpur',
+};
+
+function pickWeighted(rng, pairs) {
+  const total = pairs.reduce((s, p) => s + p.w, 0);
+  let r = rng() * total;
+  for (const p of pairs) { r -= p.w; if (r <= 0) return p.v; }
+  return pairs[pairs.length - 1].v;
+}
+
+function buildPersonaSlots(opts = {}) {
+  const settings = { ...DEFAULT_SETTINGS, ...(opts.settings ?? {}) };
+  const now = new Date();
+  const tz = settings.timezone ?? 'Asia/Kuala_Lumpur';
+
+  // We run at 03:30 (after wf2's 03:00 product generation finishes), so slots are for TODAY or
+  // TOMORROW depending on hour. For simplicity: if before 05:00 local, generate for today;
+  // otherwise for tomorrow.
+  const d = new Date(now);
+  // Compute local hour in timezone.
+  const localHourStr = new Intl.DateTimeFormat('en-US', {
+    hour: '2-digit', hour12: false, timeZone: tz,
+  }).format(d);
+  const localHour = Number(localHourStr) % 24;
+  if (localHour >= 5) d.setDate(d.getDate() + 1);
+  // Set to midnight local time in the timezone.
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    year: 'numeric', month: '2-digit', day: '2-digit', timeZone: tz,
+  }).formatToParts(d);
+  const y = Number(parts.find(p => p.type === 'year').value);
+  const m = Number(parts.find(p => p.type === 'month').value) - 1;
+  const day = Number(parts.find(p => p.type === 'day').value);
+  const dayStart = new Date(Date.UTC(y, m, day, 0, 0, 0));
+  // UTC offset for the timezone at that date — this gives us the right UTC start.
+  const tzOffsetMs = (() => {
+    const dtf = new Intl.DateTimeFormat('en-US', {
+      timeZone: tz, hour12: false, year: 'numeric', month: '2-digit', day: '2-digit',
+      hour: '2-digit', minute: '2-digit', second: '2-digit',
+    });
+    const parts2 = dtf.formatToParts(new Date(Date.UTC(y, m, day, 12, 0, 0)));
+    const obj = {};
+    for (const p of parts2) obj[p.type] = Number(p.value);
+    const asUtc = Date.UTC(obj.year, obj.month - 1, obj.day, obj.hour % 24, obj.minute, obj.second);
+    return asUtc - Date.UTC(obj.year, obj.month - 1, obj.day, 12, 0, 0);
+  })();
+  const localMidnight = new Date(dayStart.getTime() - tzOffsetMs);
+
+  const slots = [];
+  const hours = settings.persona_slot_hours;
+  for (let i = 0; i < hours.length; i++) {
+    if (Math.random() < (settings.persona_skip_prob ?? 0.08)) continue;
+
+    const jitter = Math.round((Math.random() * 2 - 1) * (settings.persona_jitter_min ?? 22));
+    const t = new Date(localMidnight);
+    t.setHours(hours[i], 0, 0, 0);
+    t.setMinutes(t.getMinutes() + jitter);
+    t.setSeconds(Math.floor(Math.random() * 60));
+
+    const r = Math.random();
+    let length_band = 'mid';
+    if (r < settings.persona_micro_pct) length_band = 'micro';
+    else if (r < settings.persona_micro_pct + settings.persona_mid_pct) length_band = 'mid';
+    else length_band = 'long';
+
+    // Tone: simple uniform draw from allowed set. Bandit scoring will update post-hoc via
+    // wf4 extension — we extend topic bandit first; tone selection stays uniform for personas
+    // until we have enough samples per tone on persona posts to learn.
+    const tone = ALLOWED_TONES[Math.floor(Math.random() * ALLOWED_TONES.length)];
+    const format = ALLOWED_FORMATS[Math.floor(Math.random() * ALLOWED_FORMATS.length)];
+
+    slots.push({
+      slot_index: i,
+      scheduled_at: t.toISOString(),
+      length_band,
+      tone,
+      format,
+      angle: 'utility',           // personas aren't selling; 'utility' is "one small useful/true thing"
+      sell_intensity: '0',        // never any CTA
+      media_type: 'TEXT',
+      is_carousel: false,
+      reply_delay_sec: 0,
+      purpose: 'persona',
+      timezone: tz,
+    });
+  }
+
+  // Never produce zero persona slots (guards against 8% skip rolling all 4 slots).
+  if (slots.length === 0) {
+    const t = new Date(localMidnight);
+    t.setHours(20, 12, Math.floor(Math.random() * 60), 0);
+    slots.push({
+      slot_index: 0, scheduled_at: t.toISOString(),
+      length_band: 'mid', tone: 'gaul', format: 'one_liner',
+      angle: 'utility', sell_intensity: '0', media_type: 'TEXT',
+      is_carousel: false, reply_delay_sec: 0, purpose: 'persona', timezone: tz,
+    });
+  }
+  return slots;
+}
+
+// n8n entry point: receives $json with `settings` (or falls back to defaults).
+if (typeof $ !== 'undefined' && typeof $json !== 'undefined') {
+  const slots = buildPersonaSlots({ settings: $json.warmup ?? $json.settings ?? {} });
+  return slots.map(s => ({ json: { ...$json, ...s } }));
+}
+
+if (typeof module !== 'undefined') {
+  module.exports = { buildPersonaSlots, ALLOWED_TONES, ALLOWED_FORMATS };
+}

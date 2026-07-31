@@ -16,7 +16,7 @@
 INSERT INTO technique_sources (id, title, author, notes)
 VALUES (1, 'ThreadsFlow baseline (MY)', 'built-in',
         'Hand-written cold-start library, Malaysian Malay. Survives with zero uploaded documents.')
-ON CONFLICT DO NOTHING;
+ON CONFLICT (title) DO NOTHING;
 SELECT setval(pg_get_serial_sequence('technique_sources','id'),
               GREATEST((SELECT max(id) FROM technique_sources), 1));
 

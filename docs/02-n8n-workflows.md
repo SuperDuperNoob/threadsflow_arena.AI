@@ -339,3 +339,44 @@ doesn't need it.
 Spec lives at `n8n/workflows/wf6_karma.spec.md` and draft template at `n8n/workflows/wf6_karma_draft.json`. It searches Threads every 6 hours for active
 product categories, filters out affiliate/link-bait threads, and posts at most small helpful
 one-sentence replies with **no link and no CTA**. This workflow is preserved as a **project draft / future feature** on hold until Meta exposes public search (`GET /v1.0/search`) and third-party reply posting endpoints. Active engagement is handled via **Loop L4 On-Post Engagement** (`docs/07-l4-reply-loop.md`).
+
+---
+
+## Official references for every endpoint and setting used in the workflows
+
+**Threads Graph API — what wf0/wf3/wf4/wf6 call**
+
+- Auth window + short-lived token exchange (payload shapes match what wf0 handles): https://developers.facebook.com/docs/threads/get-started/get-access-tokens-and-permissions
+- Long-lived tokens and `refresh_access_token` / `th_refresh_token` (what wf0 calls every 25d): https://developers.facebook.com/docs/threads/get-started/long-lived-tokens
+- Publishing reference (`POST /{user-id}/threads`, `POST /{user-id}/threads_publish`, container params, reply-to via `reply_to_id`): https://developers.facebook.com/docs/threads/reference/publishing
+- Posts guide (TEXT/IMAGE/VIDEO/CAROUSEL steps, 30s wait recommendation, 20-image carousel cap, 500-char text limit): https://developers.facebook.com/docs/threads/posts
+- Insights (`GET /{media_id}/insights?metric=views,likes,replies,reposts,quotes`): https://developers.facebook.com/docs/threads/insights
+- Conversation / replies endpoints (read replies, post replies, hide — used by L4): https://developers.facebook.com/docs/threads/reply-control
+- Publishing limits / rate limits (`/threads_publishing_limit`, 250/24h): https://developers.facebook.com/docs/threads/overview
+- Profile (`GET /v1.0/me?fields=id,username`): https://developers.facebook.com/docs/threads/profile
+- Error codes: https://developers.facebook.com/docs/threads/troubleshooting
+
+**Shopee Affiliate Open API — what wf5 calls**
+
+Shopee does not host a single canonical public doc page; use the affiliate dashboard's
+*Open API* section for the current GraphQL endpoint
+(`https://open-api.affiliate.shopee.com.my/graphql`) and the App ID / API Key pair. The
+client in `lib/shopee.js` follows the contract described in the Shopee Affiliate Open API
+spec available inside the affiliate portal.
+
+**Cloudflare R2 — what the KB service calls during intake**
+
+- S3-compatible API (SigV4, PUT object): https://developers.cloudflare.com/r2/api/s3/api/
+- R2 API tokens (scoped permissions, access key + secret): https://developers.cloudflare.com/r2/api/s3/tokens/
+
+**n8n itself**
+
+- Credentials (Postgres, HTTP header/basic): https://docs.n8n.io/integrations/builtin/credentials/
+- Workflow scheduling (cron expressions, timezone): https://docs.n8n.io/schedule-trigger/
+- Configuration / environment variables referenced in §"n8n instance settings": https://docs.n8n.io/hosting/configuration/environment-variables/
+- Execution data & pruning (why `EXECUTIONS_DATA_SAVE_ON_SUCCESS=none` is set): https://docs.n8n.io/hosting/configuration/executions/
+
+**OpenAI-compatible LLM — what wf2's HTTP nodes call**
+
+- Chat completions: https://platform.openai.com/docs/api-reference/chat
+- Embeddings: https://platform.openai.com/docs/api-reference/embeddings

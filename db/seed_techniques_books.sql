@@ -36,7 +36,7 @@ INSERT INTO technique_sources (title, author, notes) VALUES
  'The Storyteller''s Secret, The Laws of Brand Storytelling, The Power of Visual Storytelling, Infographics.'),
 ('Books/ (Threads Mastery Bonus Series)', 'various (Threads Profit/Mastery)',
  'Modern 2024-2026 strategies specifically for Threads affiliate marketing and Shopee Malaysia.')
-ON CONFLICT DO NOTHING;
+ON CONFLICT (title) DO NOTHING;
 
 INSERT INTO techniques
   (code, name, type, instruction, when_to_use, mechanism, example_do, example_dont,
@@ -316,4 +316,4 @@ INSERT INTO banned_phrases (pattern, reason, scope) VALUES
  'pujian kosong - Books/', 'all'),
 ('\y(jangan lepaskan peluang keemasan|sementara stok masih ada|first come first serve)\y',
  'urgency palsu - Books/', 'all')
-ON CONFLICT DO NOTHING;
+ON CONFLICT (pattern, scope) DO NOTHING;

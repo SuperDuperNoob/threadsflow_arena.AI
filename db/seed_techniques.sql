@@ -10,7 +10,7 @@
 INSERT INTO technique_sources (id, title, author, notes)
 VALUES (1, 'ThreadsFlow baseline', 'built-in',
         'Hand-written cold-start library. Survives with zero uploaded documents.')
-ON CONFLICT DO NOTHING;
+ON CONFLICT (title) DO NOTHING;
 SELECT setval(pg_get_serial_sequence('technique_sources','id'),
               GREATEST((SELECT max(id) FROM technique_sources), 1));
 
@@ -349,4 +349,4 @@ INSERT INTO banned_phrases (pattern, reason, scope) VALUES
 ('\y(dijamin|pasti puas|no tipu|amanah)\y','bahasa penjual','all'),
 ('\y(kalian tim|komen di bawah|tulis di kolom komentar)\y','engagement bait','all'),
 ('^\s*(spatula|panci|wajan|lampu|kabel|charger|tas|sepatu)\b','buka dengan kategori produk','opener')
-ON CONFLICT DO NOTHING;
+ON CONFLICT (pattern, scope) DO NOTHING;
