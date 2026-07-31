@@ -194,3 +194,28 @@ docker compose exec postgres psql -U threadsflow -d threadsflow \
 
 Leave `EXECUTIONS_DATA_SAVE_ON_SUCCESS=none` exactly as it is — that setting is what
 keeps Threads tokens out of n8n execution history, canary or not.
+
+---
+
+## Official references
+
+**Docker**
+
+- `docker compose` CLI (what `observe_72h.sh` drives): https://docs.docker.com/reference/cli/docker/compose/
+- Docker log drivers and `json-file` rotation (`max-size` / `max-file`, used in our compose): https://docs.docker.com/config/containers/logging/json-file/
+- Docker healthchecks (the `healthz` endpoints curl'd by the observer align with Docker's HEALTHCHECK convention): https://docs.docker.com/reference/dockerfile/#healthcheck
+
+**n8n**
+
+- Execution data / privacy (`EXECUTIONS_DATA_SAVE_ON_SUCCESS`, `EXECUTIONS_DATA_MAX_AGE`, why this matters for tokens): https://docs.n8n.io/hosting/configuration/executions/
+- Environment variables reference: https://docs.n8n.io/hosting/configuration/environment-variables/
+
+**PostgreSQL**
+
+- `psql` command-line client (used inside the `postgres` container by `observe_72h.sh`): https://www.postgresql.org/docs/current/app-psql.html
+- Routine `VACUUM` / data retention (the `DELETE FROM run_log` cleanup at the end): https://www.postgresql.org/docs/current/routine-vacuuming.html
+
+**tmux / screen / nohup** (keeping the observer alive across SSH disconnects)
+
+- tmux: https://manpages.debian.org/bookworm/tmux/tmux.1.en.html
+- nohup: https://manpages.debian.org/bookworm/coreutils/nohup.1.en.html

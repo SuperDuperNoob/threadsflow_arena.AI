@@ -1,6 +1,6 @@
 # Your Books/ folder — what was extracted and what was deliberately rejected
 
-You pushed 26 copywriting PDFs. Here's what happened to them.
+You pushed 32 PDFs plus 1 Markdown strategy note into `Books/`. Here is what happened to them.
 
 ---
 
@@ -8,32 +8,40 @@ You pushed 26 copywriting PDFs. Here's what happened to them.
 
 | | Count | Notes |
 |---|---|---|
-| Malay ebooks | 25 | headlines, ayat jualan, social content, Threads mastery |
-| English books | 4 | storytelling and visual storytelling |
-| **Scanned (no text layer)** | **3** | cannot be read — see below |
-| Total | **32** | |
+| Malay ebooks (classic FB/WhatsApp-era copywriting) | 15 | headlines, ayat jualan, social content |
+| 2026 Threads Mastery series (Hizami Radzi) | 5 | Threads Income Mastery v2, Content Machine Playbook, Profit Killer, Bonus 1–3 |
+| English books (storytelling / visual storytelling) | 3 | storytelling, brand storytelling, infographics |
+| Headline-template packs (shallow) | 9 | bulk "800 headlines" lists — very low signal |
+| Strategy note (Markdown) | 1 | `Threads_Affiliate_Marketing_2026_Strategies.md` |
+| **Scanned (no text layer, needs OCR)** | **2** | see below |
+| Total | **33 files** | |
 
-**These 3 are images, not text**, so nothing can be extracted from them:
+**Scanned / image-only PDFs** — these have no extractable text layer, so nothing can be mined from them until OCR is run:
 
-- `50 Headline Power Proven.pdf` — 13 pages, 24 characters of text
-- `TEKNIK COPYWRITING.pdf` — 9 pages, 16 characters
-- `Ebook - Strategi Tulis Headline Sentap Emosi.pdf` — 9 pages, 970 characters
+- `50 Headline Power Proven.pdf`
+- `TEKNIK COPYWRITING.pdf`
 
-To use them, run OCR first, then upload through the KB page:
+`Ebook - Strategi Tulis Headline Sentap Emosi.pdf` was previously flagged as scanned but does contain a real text layer (it begins with a "PENAFIAN" disclaimer page that made the initial sample look empty) — it is included in the seed.
+
+To OCR the two scanned files (requires `ocrmypdf` + Tesseract `msa`+`eng` language packs):
 
 ```bash
-ocrmypdf -l msa+eng "Books/TEKNIK COPYWRITING.pdf" "Books/TEKNIK COPYWRITING.ocr.pdf"
+ocrmypdf -l msa+eng "Books/50 Headline Power Proven.pdf" "Books/50 Headline Power Proven.ocr.pdf"
+ocrmypdf -l msa+eng "Books/TEKNIK COPYWRITING.pdf"  "Books/TEKNIK COPYWRITING.ocr.pdf"
 ```
+
+After OCR, upload the `.ocr.pdf` versions through the KB web page (see §6).
 
 ---
 
-## 2. A bug your books exposed
+## 2. Two bugs your books exposed
 
+### 2a. English-only chunk scorer (fixed)
 The chunk scorer — the part that decides which pages are worth sending to the AI — only knew
 English keywords (`technique`, `headline`, `never`, `because`). Your Malay books scored almost
 zero and would have been **silently skipped**.
 
-Measured on your actual folder:
+Measured on the original 26-book set:
 
 | | Before | After |
 |---|---|---|
@@ -43,16 +51,20 @@ Measured on your actual folder:
 | Whole folder | 284 | **465** |
 
 The scorer now knows Malay (`teknik`, `tajuk`, `jangan`, `sebab`, `pelanggan`, `contoh`…) and
-counts numbered lists, because that's how Malay ebooks present technique.
+counts numbered lists, because that is how Malay ebooks present technique.
 
-Worth saying plainly: without this fix, uploading your Malay books would have appeared to work
-and produced almost nothing.
+### 2b. Case-insensitive regex in Postgres (fixed in QA gate)
+My first attempt at an ALL-CAPS ban was a database rule: `([A-Z]{4,}\s+){3,}`.
+PostgreSQL matches the ban list **case-insensitively**, so `[A-Z]` also matched lowercase — it
+would have rejected nearly every Malay post the system ever wrote. The shouting check now lives
+in `n8n/code/qa.js`, where case-sensitivity is under control, and it ignores legitimate capitals
+(RM, OK, USB, LED, KL, JB, PJ).
 
 ---
 
-## 3. The important editorial decision
+## 3. The editorial decision
 
-**Most of your Malay books teach 2015-era Facebook-ads hard sell.** Measured:
+**Most pre-2020 Malay copywriting books teach 2015-era Facebook-ads hard sell.** Measured:
 
 | Book | ALL-CAPS words | Hype triggers |
 |---|---|---|
@@ -60,10 +72,10 @@ and produced almost nothing.
 | `800 Headline Catchy.pdf` | 3,812 | 47 |
 
 That style — `RAHSIA TERBONGKAR!`, `PERCUMA!`, `PM saya sekarang` — was effective in Facebook ads
-a decade ago. **On Threads in 2026 it is the fastest way to get your account down-ranked and
+a decade ago. **On Threads in 2026 it is the fastest way to get an account down-ranked and
 reported.** Copying it would destroy the account this system exists to grow.
 
-So the rule I applied: **keep the mechanism, reject the surface style.**
+The rule applied throughout: **keep the mechanism, reject the surface style.**
 
 Example — the books teach:
 > "Perkataan ajaib: PERCUMA, RAHSIA, TERBONGKAR, EKSKLUSIF, TERBUKTI"
@@ -76,13 +88,21 @@ What went into the database instead is the *opposite*, as an enforced rule:
 **The books' greatest value turned out to be as a catalogue of what NOT to do.** They show
 exactly what Malaysian hard-sell looks like, which is precisely what must never be published.
 
+The 2026 Threads Mastery series (Hizami Radzi) was different — those three ebooks + three bonuses
+were written *for* Threads in 2026 and directly informed the HVCT structure, Ghost Hook v2,
+reply-marketing rules, and zero-sell ratio that ship as defaults. Mechanisms from those books
+were added on top of (and sometimes in tension with) the older storytelling books; those
+tensions are flagged `contested` so real engagement data decides.
+
 ---
 
 ## 4. What's now in the database
 
-**22 techniques** in `db/seed_techniques_books.sql`, on top of the 43 built-in ones (65 total).
+**22 techniques** from the original seed (`db/seed_techniques_books.sql`), plus **11 more** from
+the 2026 Threads series + classic BM copywriting books (`db/seed_techniques_2026_threads.sql`),
+on top of the 43 built-in ones (≈76 total after both seeds run).
 
-Useful mechanisms extracted:
+### From the original Books/ batch (seed_techniques_books.sql)
 
 | Technique | From | What it does |
 |---|---|---|
@@ -103,21 +123,44 @@ Useful mechanisms extracted:
 | `stacked_value_thread` | Threads Mastery | Reciprocity before the offer |
 | `pattern_interrupt_gaul` | Content Machine | Visual disruption for busy feeds |
 
-Rejected as harmful, now **blocked automatically**:
+### From the 2026 Threads + classic BM batch (seed_techniques_2026_threads.sql)
+
+| Technique | From | What it does |
+|---|---|---|
+| `ghost_hook_v2` | Threads Income Mastery v2, Content Machine Playbook, Bonus 1 Hook Berhantu v2, Threads_Affiliate_Marketing_2026_Strategies.md | Name the result/mystery change, not the category, for ≥2 lines |
+| `hvct_structure` | Content Machine Playbook | Hook → Value → Conflict → Takeaway, in that order |
+| `reply_marketing` | Profit Killer mistake #6 | Reply to every comment in the first 20 min with a follow-up question |
+| `niche_positioning` | Threads Income Mastery Bab 2 | Name one exact person (e.g. "ibu 2 anak rumah flat"), never "korang semua" — *contested* vs universal-relatability storytelling |
+| `three_second_win` | Mudahnya-Jual-Produk-Kurang-7-Saat | <9-word numeric lead that states the measurable win |
+| `anti_post_and_ghost` | Profit Killer mistake #6 | Never schedule and walk away — a rule, not a technique |
+| `zero_sell_ratio` | Content Machine Playbook pillar 1, 2026 strategy note §4 | 1-in-4 posts has no product / price / link (wf6 persona posts enforce this) |
+| `voice_of_prospect` | Ebook-AJMP (Umar Taib), Kopi Writing | Open with a sentence the reader has literally said out loud this week |
+| `benefit_under_nine_words` | Kurang 7 Saat Teknik #2 | Lead with a single ≤9-word benefit phrase, with a number if possible |
+| `pain_dream_bridge` | Kopi Writing / Teknik Mudah Ayat Jualan / 30-point | Pain line → dream after-state line → bridge ("ini yang bawa kau ke sana") |
+| `specific_dream` | 30-point copywriting, 2026 strategy note | Name a specific mundane 10-second after-state (e.g. "sempat bancuh teh sementara periuk rendam"), not "senang" / "jimat masa" |
+| `objection_preempt` | 30-point questions 21–24, Kurang 7 Saat | Answer the silent objection (price, fit, penat) on line 3 — don't wait for comments |
+
+### Rejected as harmful — now blocked automatically
 
 | Blocked | Why |
 |---|---|
-| `no_magic_words` | PERCUMA / RAHSIA / TERBONGKAR / EKSKLUSIF |
-| `no_hard_close` | "PM saya sekarang", "klik link sekarang" |
-| `no_caps_headline` | 3+ ALL-CAPS words in a post |
-| 6 new regex patterns | catalogue language, fake urgency, empty praise |
+| `no_magic_words` (seed) | PERCUMA / RAHSIA / TERBONGKAR / EKSKLUSIF |
+| `no_hard_close` (seed) | "PM saya sekarang", "klik link sekarang" |
+| `no_caps_headline` (QA gate) | 3+ ALL-CAPS words in a post |
+| 2026 anti-patterns (seed_techniques_2026_threads.sql) | "game changer", "wajib ada", "berbaloi sangat", "content creator / reach / viral" jargon, "jangan lepaskan / stok terhad" artificial urgency, "DM/PM/wasap saya" off-CTA |
+| Classic BM hard-sell (new seed) | RAHSIA / TERBONGKAR / AJAIB / TERBAIK DI DUNIA / SANGAT HEBAT / LUAR BIASA; "saya nak berkongsi…" opener; "Adakah anda / Tahukah anda / Korang tahu…" FB-ad question openers; "harga istimewa / tawaran terhad / slalu RM\d+ sekarang RM" price-discount framing |
+| Persona-opener bans (migration 010) | "Korang pernah tak…", "Siapa kat sini…", "Jom / Jangan lepaskan / Save dulu / Share", "Thread/Post kali ini", "Hai semua / Assalammualaikum semua / Hi korang" |
 
-**3 marked `contested`** — the books disagree with each other, so your real sales data decides:
+### Contested (bandit decides)
 
-- `answer_first_question` — Malay books say state the benefit immediately; the storytelling books
-  say delay it. Both are in your library.
-- `question_then_gap` — the most-taught device here, and also the most exhausted on social feeds.
-- `sold_count_proof` — only works when the number is genuinely large.
+- `answer_first_question` (from seed_techniques_books) — Malay books say state the benefit
+  immediately; the storytelling books say delay it.
+- `question_then_gap` (from seed_techniques_books) — the most-taught device in headline books,
+  and also the most exhausted on social feeds.
+- `sold_count_proof` (from seed_techniques_books) — only works when the number is genuinely large.
+- `niche_positioning` (from the 2026 seed) — Threads 2026 books argue hyper-specific
+  person-targeting beats broad relatability; older storytelling books recommend universal
+  relatability. Real engagement decides.
 
 Check the verdicts after ~6 cycles:
 
@@ -125,18 +168,37 @@ Check the verdicts after ~6 cycles:
 SELECT * FROM v_contested_verdicts;
 ```
 
+New person-account levers added for 2026-style persona micro-posts (so the bandit can rotate through them):
+
+| Kind | Code | Label |
+|---|---|---|
+| format | `rant_bite` | Rencana gigit — 1–2 line complaint/observation |
+| format | `petua` | Satu petua — one small tip, no intro, no product name |
+| angle  | `anti_tips` | Anti-petua — "Orang kata X. Salah. Ini yang bekerja." |
+| angle  | `mundane` | Benda biasa — celebrates one tiny mundane thing, no teaching |
+| tone   | `makcik` | Makcik bawang — long-winded, slightly nagging, with irrelevant-but-funny detail |
+
 ---
 
-## 5. A second bug, caught while testing
+## 5. Headline-template packs (low signal, deliberately not mined)
 
-My first attempt at the ALL-CAPS ban was a database rule: `([A-Z]{4,}\s+){3,}`.
+Nine files are bulk "X headline templates" lists:
 
-PostgreSQL matches the ban list **case-insensitively**, so `[A-Z]` also matched lowercase. It
-blocked 4 out of 5 perfectly good Malay test sentences — it would have rejected nearly every post
-the system ever wrote.
+- `1359 Template Copywriting Headline Memukau.pdf`
+- `21.101-Idea Headline.pdf`
+- `29 Template Copywriting Headline Memukau.pdf`
+- `50 template tajuk memikat.pdf`
+- `800 Headline  Catchy.pdf`
+- `97-templat-tajuk-memikat.pdf`
+- `50 Ayat Iklan Promosi Cun.pdf`
+- `Ayat-Jualan-Power-Shahmi-Hasifi-Waizu.pdf`
+- `Him-Pun-an-88-Headline.pdf`
 
-The shouting check now lives in `n8n/code/qa.js`, where case-sensitivity is under control, and it
-ignores legitimate capitals like RM, OK, USB, LED. Verified 4/4 against good and bad copy.
+These were scanned for mechanisms but contributed mostly low-signal variations on the same
+devices (curiosity gap + numbered lists + "X rahsia"). The few that weren't already covered by
+existing techniques were the ones that led to the *bans* (the hard-sell language in §4).
+Nothing new was added to the database from them. Uploading them to the KB will mine them more
+deeply if you want, but don't expect a step-change in post quality.
 
 ---
 
@@ -152,10 +214,11 @@ pipeline with deduplication, so re-uploading the same book is harmless.
 ./scripts/ingest_books.sh https://kb.yourdomain.com
 ```
 
-Both need an LLM endpoint configured. Neither was runnable in the sandbox where these techniques
-were extracted, which is why `seed_techniques_books.sql` exists — same books, mined by hand.
+Both need an LLM endpoint configured. The seed SQL files exist because these techniques were
+mined by hand (the sandbox environment in which this layer was built couldn't reach the live
+KB stack).
 
-**Whichever you use, review before the new techniques consume posting slots:**
+**Whichever you use, review before new techniques consume posting slots:**
 
 ```sql
 SELECT code, type, instruction FROM techniques WHERE n = 0 ORDER BY created_at DESC;
@@ -164,3 +227,28 @@ UPDATE techniques SET enabled = false WHERE code IN ('one_you_dislike');
 
 A bad technique doesn't just make one bad post — it burns slots for a whole 3-day cycle before
 the bandit can down-weight it.
+
+---
+
+## References & tool docs
+
+**PDF handling**
+
+- OCRmyPDF (for the 2 scanned/image-only PDFs): https://ocrmypdf.readthedocs.io/
+- Tesseract `msa` (Malay) + `eng` language packs: https://tesseract-ocr.github.io/tessdoc/Data-Files
+- pdfminer.six (Python library used for text-layer detection in this audit): https://pdfminersix.readthedocs.io/
+
+**PostgreSQL features used by the seed files**
+
+- POSIX regular expressions (used by banned-phrase rules): https://www.postgresql.org/docs/current/functions-matching.html#FUNCTIONS-POSIX-REGEXP
+- Case-insensitive matching with `~*`: https://www.postgresql.org/docs/current/functions-matching.html#POSIX-MATCHING-METHODS
+- JSONB (used for `concrete_details`, `sensory_details`, `enrichment`, `topic_context`): https://www.postgresql.org/docs/current/datatype-json.html
+
+**Embeddings (similarity gate for the near-duplicate check)**
+
+- OpenAI embeddings API: https://platform.openai.com/docs/api-reference/embeddings
+
+**Threads 2026 algorithm context (cited by the 2026 books and strategy note)**
+
+- Meta Threads API docs (rate limits, reply endpoints, content policies): https://developers.facebook.com/docs/threads
+- Meta creator-reach best practices (authentic conversation, engagement ranking): https://developers.facebook.com/docs/threads/overview

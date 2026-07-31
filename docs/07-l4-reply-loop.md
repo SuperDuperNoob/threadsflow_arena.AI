@@ -40,3 +40,20 @@ The `/persona` dataset (`dataset-1.json` to `dataset-10.ipynb` and `persona_snip
 - **Daily Cap:** Max 10 replies/day across all active posts.
 - **Cooldown:** Max 1 reply per user per post.
 - **Human Approval Option:** Can be set to `status='pending_approval'` in `run_log` for manual review before publishing.
+
+---
+
+## Official references
+
+**Threads API endpoints used by L4**
+
+- Reading replies on a post (`GET /v1.0/{media_id}/replies`, the endpoint that powers "Fetch Comments" in step 1): https://developers.facebook.com/docs/threads/reply-control
+- Posting a reply (`POST /v1.0/{comment_id}/replies` / `reply_to_id` parameter): https://developers.facebook.com/docs/threads/reply-control
+- Hiding/unhiding replies (used by moderation): https://developers.facebook.com/docs/threads/reply-control
+- Publishing reference (container/publish pattern applies to reply containers exactly like top-level posts): https://developers.facebook.com/docs/threads/reference/publishing
+- Posts overview (500-char limit applies to replies too; L4 enforces 180 chars as a stricter safety cap): https://developers.facebook.com/docs/threads/posts
+- Rate limiting (why we cap at 10 replies/day instead of hammering the API): https://developers.facebook.com/docs/threads/overview
+
+**LLM chat completions used for drafting replies**
+
+- OpenAI Chat Completions (all providers we support speak this shape): https://platform.openai.com/docs/api-reference/chat

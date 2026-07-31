@@ -396,3 +396,42 @@ do not pay you.
    yourself every 2 weeks and add new phrases to the banned list. Keep the banned list in the DB,
    editable from the UI, not hardcoded.
 5. **15 posts per cycle is small-n.** Resist the urge to trust the 3-day report. Trust the 5th one.
+
+---
+
+## Official references
+
+The architectural claims in this document map to these official specs:
+
+**Threads API (Meta)**
+
+- Endpoint overview and versions (`graph.threads.net` / `graph.threads.com`, `/v1.0/...`): https://developers.facebook.com/docs/threads/overview
+- OAuth 2.0 user access tokens (short-lived 1h, long-lived 60d, refresh): https://developers.facebook.com/docs/threads/get-started/long-lived-tokens
+- Publishing flow — create container → `threads_publish` (TEXT / IMAGE / VIDEO / CAROUSEL, 30s recommended wait): https://developers.facebook.com/docs/threads/posts
+- Publishing endpoint reference (parameter tables for `/threads` and `/threads_publish`): https://developers.facebook.com/docs/threads/reference/publishing
+- Insights metrics (`views`, `likes`, `replies`, `reposts`, `quotes`): https://developers.facebook.com/docs/threads/insights
+- Replying + conversation controls (self-reply, hide, replies endpoint): https://developers.facebook.com/docs/threads/reply-control
+- User profile endpoint (`GET /v1.0/me?fields=id,username`): https://developers.facebook.com/docs/threads/profile
+- Rate limits (content-publishing quota, `threads_publishing_limit`): https://developers.facebook.com/docs/threads/overview
+- Error codes and troubleshooting (error 9004 media fetch, container status): https://developers.facebook.com/docs/threads/troubleshooting
+- Text post 500-character limit, emoji counting, link preview behavior: https://developers.facebook.com/docs/threads/posts#single-thread-posts
+
+**Cloudflare**
+
+- Tunnel / `cloudflared` reference (token-based auth, no inbound ports): https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/
+- Tunnel public hostnames (routing to internal services): https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/configure-tunnels/public-hostnames/
+- R2 S3-compatible API (SigV4, `PUT` object, endpoints of the form `<ACCOUNT_ID>.r2.cloudflarestorage.com`): https://developers.cloudflare.com/r2/api/s3/api/
+- R2 public buckets & r2.dev subdomains: https://developers.cloudflare.com/r2/buckets/public-buckets/
+- R2 free-tier limits (10 GB storage / 10M reads): https://developers.cloudflare.com/r2/platform/pricing/
+
+**OpenAI-compatible chat/embeddings (we speak this protocol regardless of which provider you pick)**
+
+- Chat completions: https://platform.openai.com/docs/api-reference/chat
+- Embeddings: https://platform.openai.com/docs/api-reference/embeddings
+- Gemini's OpenAI-compatible endpoint: https://ai.google.dev/gemini-api/docs/openai
+
+**Docker / Postgres / n8n**
+
+- Compose file reference (services, networks, depends_on): https://docs.docker.com/reference/compose-file/
+- PostgreSQL 16 docs (JSONB, CTEs, exclusion constraints we use for locks): https://www.postgresql.org/docs/16/
+- n8n hosting + env-vars (Postgres backend, execution pruning, queue-mode caveats): https://docs.n8n.io/hosting/configuration/

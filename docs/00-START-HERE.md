@@ -306,6 +306,36 @@ Built in, you do not need to do anything:
 - `docs/02-n8n-workflows.md` — the automations, box by box (for when you need to debug)
 - `docs/04-technique-library.md` — uploading copywriting PDFs
 - `docs/05-books.md` — what was extracted from your 26 books, and what was rejected
+- `docs/06-persona-warmup.md` — persona warm-up layer (wf6): 4/day no-link posts to age the account before product posts
 - `docs/07-l4-reply-loop.md` — on-post user comment engagement loop
 - `docs/08-72h-canary.md` — extra logging + health watcher for your first 72 hours live
 - `db/queries.sql` — ready-made reports you can run
+
+---
+
+## Official references (handy when a vendor UI changes)
+
+**Threads / Meta**
+
+- Threads API docs landing: https://developers.facebook.com/docs/threads
+- Get started + permissions + testers: https://developers.facebook.com/docs/threads/get-started
+- OAuth / authorization window: https://developers.facebook.com/docs/threads/get-started/get-access-tokens-and-permissions
+- Long-lived tokens (60-day, refresh): https://developers.facebook.com/docs/threads/get-started/long-lived-tokens
+- Publishing containers + 500-char post limit: https://developers.facebook.com/docs/threads/posts
+- Insights metrics: https://developers.facebook.com/docs/threads/insights
+- Reply management: https://developers.facebook.com/docs/threads/reply-control
+- Rate limits (250 posts/24h): https://developers.facebook.com/docs/threads/overview
+- Error codes (esp. 9004 "Meta cannot fetch image"): https://developers.facebook.com/docs/threads/troubleshooting
+
+**Cloudflare**
+
+- Cloudflare Tunnel (formerly Argo Tunnel): https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/
+- R2 object storage: https://developers.cloudflare.com/r2/
+- R2 public buckets: https://developers.cloudflare.com/r2/buckets/public-buckets/
+- R2 S3-compatible API / SigV4: https://developers.cloudflare.com/r2/api/s3/
+
+**OpenAI-compatible APIs (any of these work as `LLM_BASE_URL`)**
+
+- OpenAI API (GPT models, embeddings): https://platform.openai.com/docs/api-reference
+- Google Gemini (OpenAI-compatible endpoint): https://ai.google.dev/gemini-api/docs/openai
+- OpenRouter (multi-provider router): https://openrouter.ai/docs

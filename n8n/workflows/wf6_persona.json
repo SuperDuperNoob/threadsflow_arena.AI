@@ -1,0 +1,526 @@
+{
+  "name": "wf6_persona",
+  "nodes": [
+    {
+      "id": "cron6",
+      "name": "Daily 03:30 (persona)",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        -680,
+        300
+      ],
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "30 3 * * *"
+            }
+          ]
+        }
+      },
+      "notes": "Runs after wf2_generate (03:00) so persona slots land after product slots."
+    },
+    {
+      "id": "load6",
+      "name": "Load config + topics",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        -460,
+        300
+      ],
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "WITH llm_defaults AS (\n  SELECT '{\n    \"base_url\": \"https://9router.archxry.space/v1\",\n    \"api_key\": \"\",\n    \"model_write\": \"gemini-2.5-flash\",\n    \"model_edit\": \"gpt-4.1-mini\",\n    \"model_embed\": \"text-embedding-3-small\",\n    \"model_mine\": \"gemini-2.5-pro\"\n  }'::jsonb AS value\n), warmup_defaults AS (\n  SELECT '{\n    \"persona_slot_hours\": [7,11,16,21],\n    \"persona_jitter_min\": 22,\n    \"persona_skip_prob\": 0.08,\n    \"persona_micro_pct\": 0.25,\n    \"persona_mid_pct\": 0.60,\n    \"persona_long_pct\": 0.15,\n    \"timezone\": \"Asia/Kuala_Lumpur\"\n  }'::jsonb AS value\n), loaded AS (\n  SELECT\n    (SELECT value FROM llm_defaults) || COALESCE((SELECT value FROM settings WHERE key='llm'), '{}'::jsonb) AS llm,\n    COALESCE((SELECT value FROM settings WHERE key='qa'), '{}'::jsonb) AS qa,\n    COALESCE((SELECT value FROM settings WHERE key='warmup'), (SELECT value FROM warmup_defaults)) AS warmup,\n    COALESCE((SELECT value FROM settings WHERE key='bandit'), '{}'::jsonb) AS bandit,\n    COALESCE((SELECT jsonb_agg(to_jsonb(b)) FROM banned_phrases b\n              WHERE b.scope IN ('all','persona_opener','persona_all')), '[]'::jsonb) AS banned,\n    COALESCE((SELECT jsonb_agg(to_jsonb(r)) FROM (\n       SELECT body, embedding FROM posts\n        WHERE status IN ('published','queued')\n        ORDER BY created_at DESC LIMIT 30\n     ) r), '[]'::jsonb) AS recent,\n    COALESCE((SELECT jsonb_agg(to_jsonb(ps)) FROM (\n       SELECT id, domain, title, register, tags, text\n         FROM v_persona_snippets_for_prompt\n        LIMIT 24\n     ) ps), '[]'::jsonb) AS persona_snippets,\n    COALESCE((SELECT jsonb_agg(to_jsonb(t)) FROM (\n       SELECT id, uid, topic, angle_hint, niche_tags, n, alpha, beta, cooldown_until,\n              context, pinned\n         FROM persona_topics\n        WHERE cooldown_until IS NULL OR cooldown_until < now()\n        ORDER BY pinned DESC, (alpha/(alpha+beta)) DESC, random()\n        LIMIT 50\n     ) t), '[]'::jsonb) AS topics\n)\nSELECT llm, qa, warmup, bandit, banned, recent, persona_snippets, topics,\n  jsonb_build_object('llm', llm, 'qa', qa, 'warmup', warmup, 'bandit', bandit) AS settings,\n  jsonb_build_object(\n    'llm', llm, 'qa', qa, 'warmup', warmup, 'bandit', bandit,\n    'banned', banned, 'recent', recent,\n    'persona_snippets', persona_snippets, 'topics', topics\n  ) AS cfg\nFROM loaded;",
+        "options": {}
+      },
+      "credentials": {
+        "postgres": {
+          "id": "PG",
+          "name": "Postgres threadsflow"
+        }
+      },
+      "notes": "Loads llm config, QA rules, warm-up slot settings, recent posts (for anti-repetition), persona snippets, and candidate persona_topics (Thompson-ranked)."
+    },
+    {
+      "id": "slots6",
+      "name": "Build persona slots",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -240,
+        300
+      ],
+      "parameters": {
+        "jsCode": "/**\n * n8n Code node — wf6 step 0: build today's persona posting slots.\n *\n * Output: one item per persona slot, with scheduled_at, length_band, tone, format.\n *\n * Rules:\n *  - Slots are placed at persona_slot_hours (defaults [7, 11, 16, 21] Kuala Lumpur time).\n *  - Each slot is jittered ±persona_jitter_min (default 22 min) for irregularity.\n *  - persona_skip_prob (default 8%) chance a slot is dropped — irregularity.\n *  - Length-band mix is configurable: micro/mid/long (default 25/60/15).\n *  - Tone is drawn from a persona-appropriate subset (no enthusiast, no corporate_parody —\n *    those read like influencers or parody accounts).\n *  - Format is drawn from persona-appropriate formats (confession, one_liner, chat_narration,\n *    overheard, list_of_three, question_hook) — no honest_review/diary/myth_bast/product frames.\n *  - Media type is always TEXT for persona posts (no product photos to attach).\n */\n\nconst ALLOWED_TONES = ['deadpan', 'gaul', 'warm_sibling', 'chaotic', 'minimal'];\nconst ALLOWED_FORMATS = ['confession', 'one_liner', 'chat_narration', 'overheard',\n                         'list_of_three', 'question_hook', 'pov'];\n\nconst DEFAULT_SETTINGS = {\n  persona_slot_hours: [7, 11, 16, 21],\n  persona_jitter_min: 22,\n  persona_skip_prob: 0.08,\n  persona_micro_pct: 0.25,\n  persona_mid_pct: 0.60,\n  persona_long_pct: 0.15,\n  timezone: 'Asia/Kuala_Lumpur',\n};\n\nfunction pickWeighted(rng, pairs) {\n  const total = pairs.reduce((s, p) => s + p.w, 0);\n  let r = rng() * total;\n  for (const p of pairs) { r -= p.w; if (r <= 0) return p.v; }\n  return pairs[pairs.length - 1].v;\n}\n\nfunction buildPersonaSlots(opts = {}) {\n  const settings = { ...DEFAULT_SETTINGS, ...(opts.settings ?? {}) };\n  const now = new Date();\n  const tz = settings.timezone ?? 'Asia/Kuala_Lumpur';\n\n  // We run at 03:30 (after wf2's 03:00 product generation finishes), so slots are for TODAY or\n  // TOMORROW depending on hour. For simplicity: if before 05:00 local, generate for today;\n  // otherwise for tomorrow.\n  const d = new Date(now);\n  // Compute local hour in timezone.\n  const localHourStr = new Intl.DateTimeFormat('en-US', {\n    hour: '2-digit', hour12: false, timeZone: tz,\n  }).format(d);\n  const localHour = Number(localHourStr) % 24;\n  if (localHour >= 5) d.setDate(d.getDate() + 1);\n  // Set to midnight local time in the timezone.\n  const parts = new Intl.DateTimeFormat('en-CA', {\n    year: 'numeric', month: '2-digit', day: '2-digit', timeZone: tz,\n  }).formatToParts(d);\n  const y = Number(parts.find(p => p.type === 'year').value);\n  const m = Number(parts.find(p => p.type === 'month').value) - 1;\n  const day = Number(parts.find(p => p.type === 'day').value);\n  const dayStart = new Date(Date.UTC(y, m, day, 0, 0, 0));\n  // UTC offset for the timezone at that date — this gives us the right UTC start.\n  const tzOffsetMs = (() => {\n    const dtf = new Intl.DateTimeFormat('en-US', {\n      timeZone: tz, hour12: false, year: 'numeric', month: '2-digit', day: '2-digit',\n      hour: '2-digit', minute: '2-digit', second: '2-digit',\n    });\n    const parts2 = dtf.formatToParts(new Date(Date.UTC(y, m, day, 12, 0, 0)));\n    const obj = {};\n    for (const p of parts2) obj[p.type] = Number(p.value);\n    const asUtc = Date.UTC(obj.year, obj.month - 1, obj.day, obj.hour % 24, obj.minute, obj.second);\n    return asUtc - Date.UTC(obj.year, obj.month - 1, obj.day, 12, 0, 0);\n  })();\n  const localMidnight = new Date(dayStart.getTime() - tzOffsetMs);\n\n  const slots = [];\n  const hours = settings.persona_slot_hours;\n  for (let i = 0; i < hours.length; i++) {\n    if (Math.random() < (settings.persona_skip_prob ?? 0.08)) continue;\n\n    const jitter = Math.round((Math.random() * 2 - 1) * (settings.persona_jitter_min ?? 22));\n    const t = new Date(localMidnight);\n    t.setHours(hours[i], 0, 0, 0);\n    t.setMinutes(t.getMinutes() + jitter);\n    t.setSeconds(Math.floor(Math.random() * 60));\n\n    const r = Math.random();\n    let length_band = 'mid';\n    if (r < settings.persona_micro_pct) length_band = 'micro';\n    else if (r < settings.persona_micro_pct + settings.persona_mid_pct) length_band = 'mid';\n    else length_band = 'long';\n\n    // Tone: simple uniform draw from allowed set. Bandit scoring will update post-hoc via\n    // wf4 extension — we extend topic bandit first; tone selection stays uniform for personas\n    // until we have enough samples per tone on persona posts to learn.\n    const tone = ALLOWED_TONES[Math.floor(Math.random() * ALLOWED_TONES.length)];\n    const format = ALLOWED_FORMATS[Math.floor(Math.random() * ALLOWED_FORMATS.length)];\n\n    slots.push({\n      slot_index: i,\n      scheduled_at: t.toISOString(),\n      length_band,\n      tone,\n      format,\n      angle: 'utility',           // personas aren't selling; 'utility' is \"one small useful/true thing\"\n      sell_intensity: '0',        // never any CTA\n      media_type: 'TEXT',\n      is_carousel: false,\n      reply_delay_sec: 0,\n      purpose: 'persona',\n      timezone: tz,\n    });\n  }\n\n  // Never produce zero persona slots (guards against 8% skip rolling all 4 slots).\n  if (slots.length === 0) {\n    const t = new Date(localMidnight);\n    t.setHours(20, 12, Math.floor(Math.random() * 60), 0);\n    slots.push({\n      slot_index: 0, scheduled_at: t.toISOString(),\n      length_band: 'mid', tone: 'gaul', format: 'one_liner',\n      angle: 'utility', sell_intensity: '0', media_type: 'TEXT',\n      is_carousel: false, reply_delay_sec: 0, purpose: 'persona', timezone: tz,\n    });\n  }\n  return slots;\n}\n\n// n8n entry point: receives $json with `settings` (or falls back to defaults).\nif (typeof $ !== 'undefined' && typeof $json !== 'undefined') {\n  const slots = buildPersonaSlots({ settings: $json.warmup ?? $json.settings ?? {} });\n  return slots.map(s => ({ json: { ...$json, ...s } }));\n}\n\nif (typeof module !== 'undefined') {\n  module.exports = { buildPersonaSlots, ALLOWED_TONES, ALLOWED_FORMATS };\n}\n"
+      }
+    },
+    {
+      "id": "topic6",
+      "name": "Pick persona topic",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -20,
+        300
+      ],
+      "parameters": {
+        "jsCode": "/**\n * n8n Code node — wf6 step 1: pick one persona topic via Thompson sampling.\n *\n * Mirrors bandit.js's SELECT logic, but over persona_topics rather than products/arms.\n *\n * Input $json (set by the preceding Postgres \"load persona_topics\" node):\n *   topics    : [{id, uid, topic, angle_hint, niche_tags, alpha, beta, n, cooldown_until, context, pinned}]\n *   last_n_ids: array of topic ids used in the last 7 days (avoid repetition)\n *   settings  : { bandit: { epsilon, cooldown_days, ... } }\n *   scheduled_at, timezone\n *\n * Output:\n *   Adds `{ topic: <chosen row>, purpose: 'persona' }` to the current item.\n */\n\n// Gamma(k,1) via Marsaglia-Tsang (copy of bandit.js helper — kept standalone so this\n// node can be pasted into n8n without requiring require()/import).\nfunction gammaSample(k) {\n  if (k < 1) return gammaSample(k + 1) * Math.pow(Math.random(), 1 / k);\n  const d = k - 1 / 3, c = 1 / Math.sqrt(9 * d);\n  for (;;) {\n    let x, v;\n    do { x = normalSample(); v = 1 + c * x; } while (v <= 0);\n    v = v * v * v;\n    const u = Math.random();\n    if (u < 1 - 0.0331 * x * x * x * x) return d * v;\n    if (Math.log(u) < 0.5 * x * x + d * (1 - v + Math.log(v))) return d * v;\n  }\n}\nfunction normalSample() {\n  let u = 0, v = 0;\n  while (u === 0) u = Math.random();\n  while (v === 0) v = Math.random();\n  return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v);\n}\nfunction betaSample(a, b) {\n  const x = gammaSample(Math.max(a, 0.05)), y = gammaSample(Math.max(b, 0.05));\n  return x / (x + y);\n}\n\nfunction pickTopic({ topics, lastNIds = [], settings = {} }) {\n  topics = Array.isArray(topics) ? topics : [];\n  if (!topics.length) throw new Error('persona_topic_pick: no topics supplied');\n  const now = Date.now();\n\n  // Filter out topics in cooldown and topics used very recently (within last 7 days),\n  // unless pinning forces one through.\n  const recentlyUsed = new Set(lastNIds ?? []);\n  const live = topics.filter(t => {\n    if (t.pinned) return true;\n    if (t.cooldown_until && new Date(t.cooldown_until).getTime() > now) return false;\n    if (recentlyUsed.has(t.id)) return false;\n    return true;\n  });\n\n  // Prefer the filtered pool whenever it has anything — never serve a cooled-down topic\n  // unless literally nothing else exists.\n  const pool = live.length >= 1 ? live : topics;\n\n  const eps = settings?.bandit?.epsilon ?? 0.2;\n\n  // Pinned topics get priority 70% of the time when present (operator override).\n  const pinned = pool.filter(t => t.pinned);\n  if (pinned.length && Math.random() < 0.7) {\n    return pinned[Math.floor(Math.random() * pinned.length)];\n  }\n\n  if (Math.random() < eps) {\n    // EXPLORE: uniform random, biased toward least-sampled (alpha close to 1 = not yet sampled).\n    const shuffled = [...pool].sort((a, b) =>\n      (Number(a.alpha ?? 1) + Math.random() * 2) - (Number(b.alpha ?? 1) + Math.random() * 2));\n    return shuffled[0];\n  }\n\n  // EXPLOIT: Thompson-sample Beta(alpha,beta).\n  let best = null, bestDraw = -1;\n  for (const t of pool) {\n    const a = Number(t.alpha ?? 1);\n    const b = Number(t.beta ?? 1);\n    // Cold-start boost for fresh topics so they get sampled at least once before the bandit\n    // trusts the 0/0 prior — an (alpha=1,beta=1) draw can still land anywhere in [0,1], but\n    // topics with n===0 get a tiny extra exploration push.\n    const draw = Number(t.n ?? 0) === 0 ? Math.max(betaSample(a, b), 0.3 + Math.random() * 0.4)\n                                        : betaSample(a, b);\n    if (draw > bestDraw) { bestDraw = draw; best = t; }\n  }\n  return best ?? pool[0];\n}\n\n// n8n entry point. n8n's Code node provides $json for the current item.\nif (typeof $ !== 'undefined' && typeof $json !== 'undefined') {\n  const picked = pickTopic($json);\n  return [{ json: { ...$json, topic: picked, purpose: 'persona' } }];\n}\n\nif (typeof module !== 'undefined') {\n  module.exports = { pickTopic };\n}\n"
+      }
+    },
+    {
+      "id": "persona6",
+      "name": "Persona: Malay cadence",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        200,
+        300
+      ],
+      "parameters": {
+        "jsCode": "/**\n * n8n Code node — wf2 persona calibration.\n *\n * Input:\n *   $json.cfg.persona_snippets : [{id, domain, title, register, tags, text}]\n *   $json.tone                 : selected tone code from bandit\n *   $json.product              : product object with category_hint / enrichment\n *\n * Output:\n *   Adds persona_snippets + persona_fragment for the writer prompt.\n *\n * The snippets are style/rhythm references only. They must never become facts in a product post.\n */\n\nfunction shuffle(xs) {\n  const a = [...xs];\n  for (let i = a.length - 1; i > 0; i--) {\n    const j = Math.floor(Math.random() * (i + 1));\n    [a[i], a[j]] = [a[j], a[i]];\n  }\n  return a;\n}\n\nfunction toneRegisters(tone) {\n  return ({\n    warm_sibling: ['reflective', 'conversational'],\n    deadpan: ['neutral', 'informative'],\n    minimal: ['neutral', 'informative'],\n    gaul: ['conversational', 'neutral'],\n    chaotic: ['conversational'],\n    enthusiast: ['conversational', 'informative'],\n    corporate_parody: ['formal', 'informative'],\n  })[tone] ?? ['conversational', 'neutral', 'reflective'];\n}\n\nfunction clean(s) {\n  return String(s ?? '').replace(/\\s+/g, ' ').trim();\n}\n\nfunction categoryScore(snippet, product) {\n  if (!product) return 0;\n  const categoryText = String(\n    product.category_hint || product.enrichment?.category || product.name || ''\n  ).toLowerCase();\n\n  const domain = String(snippet.domain || snippet.source_domain || '').toLowerCase();\n  const text = String(snippet.text || '').toLowerCase();\n\n  const techKeywords = ['tech', 'gadget', 'phone', 'laptop', 'wireless', 'usb', 'charger', 'audio', 'sound', 'camera', 'peranti', 'skrin', 'bateri', 'moniter', 'keyboard'];\n  const lifestyleKeywords = ['rumah', 'dapur', 'baju', 'kasut', 'skin', 'beauty', 'mask', 'kain', 'makanan', 'decor', 'bilik', 'budak', 'anak', 'beg'];\n\n  const isTechProduct = techKeywords.some(k => categoryText.includes(k));\n  const isLifestyleProduct = lifestyleKeywords.some(k => categoryText.includes(k));\n\n  if (isTechProduct && (domain.includes('amanz') || text.includes('peranti') || text.includes('spesifikasi'))) {\n    return 3;\n  }\n  if (isLifestyleProduct && (domain.includes('iium') || domain.includes('facebook') || snippet.register === 'reflective')) {\n    return 3;\n  }\n  return 0;\n}\n\nfunction pickPersonaSnippets(input) {\n  const all = input.persona_snippets ?? input.cfg?.persona_snippets ?? [];\n  if (!Array.isArray(all) || !all.length) return { persona_snippets: [], persona_fragment: '' };\n\n  const preferred = toneRegisters(input.tone);\n  const product = input.product || input.product_data || {};\n\n  const ranked = all\n    .map(s => {\n      const cleanedText = clean(s.text);\n      let score = preferred.includes(s.register) ? 2 : 0;\n      score += categoryScore(s, product);\n      return { ...s, text: cleanedText, score };\n    })\n    .filter(s => s.text.length >= 80 && s.text.length <= 750)\n    .sort((a, b) => b.score - a.score || Math.random() - 0.5);\n\n  const picked = shuffle(ranked.slice(0, 12)).slice(0, 3);\n  if (!picked.length) return { persona_snippets: [], persona_fragment: '' };\n\n  const lines = picked.map((s, i) => {\n    const label = [s.register, s.domain || s.source_domain].filter(Boolean).join(' · ');\n    return `${i + 1}. (${label}) ${s.text.slice(0, 520)}`;\n  });\n\n  return {\n    persona_snippets: picked,\n    persona_fragment: `\\n### Persona calibration — Malaysian cadence references\\nThese are NOT facts and NOT templates. Borrow only rhythm, sentence pressure, and Malay register. Do not copy wording, claims, religious advice, or topic.\\n${lines.join('\\n')}\\n`,\n  };\n}\n\nif (typeof $json !== 'undefined') {\n  const picked = pickPersonaSnippets($json);\n  return [{ json: { ...$json, ...picked } }];\n}\n\nif (typeof module !== 'undefined') {\n  module.exports = { pickPersonaSnippets, toneRegisters, categoryScore };\n}\n"
+      }
+    },
+    {
+      "id": "build6",
+      "name": "Build prompts",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        400,
+        300
+      ],
+      "parameters": {
+        "jsCode": "// Build writer + editor prompt strings from the loaded topic/lever.\n// Output sets writer_system, writer_user, editor_system, editor_user, post_uid for the INSERT.\nconst d = $json;\nconst topic = d.topic || {};\nconst snippets = d.persona_snippets || d.cfg?.persona_snippets || [];\nconst recent = d.recent || d.cfg?.recent || [];\nconst llm = d.cfg?.llm || d.llm || {};\n\n// Pick 0-3 random persona snippets (none ~25% of the time, for voice variety).\nlet persona_fragment = '';\nif (snippets.length && Math.random() > 0.25) {\n  const shuffled = [...snippets].sort(() => Math.random() - 0.5).slice(0, 2);\n  persona_fragment =\n    '### Persona calibration — real Malaysian cadence references\\n' +\n    'Borrow RHYTHM, SENTENCE PRESSURE, and REGISTER only. Do not copy wording, facts, or topic.\\n' +\n    shuffled.map((s,i)=>'('+(s.register||'neutral')+' · '+(s.domain||'')+') '+String(s.text||'').slice(0,420)).join('\\n');\n}\n\n// Format lever labels so prompts have human-readable names — the bandit sets codes.\nconst LEVER_LABELS = {\n  format: {\n    flash_story:['Cerita kilat','Mikro-cerita 3 babak'],\n    confession:['Pengakuan','Nada pengakuan peribadi'],\n    pov:['POV','Satu saat dari sudut orang kedua'],\n    chat_narration:['Cerita balik perbualan','Petikan perbualan pendek'],\n    list_of_three:['Tiga pemerhatian','Tiga perkara kecil, baris berasingan'],\n    one_liner:['Satu baris','Maksimum dua ayat pendek'],\n    honest_review:['Pemerhatian jujur','Satu kelemahan / kelebihan yang spesifik'],\n    diary:['Diari','Catatan hari dengan butiran deria kecil'],\n    myth_bust:['Pecahkan tanggapan','Patahkan andaian umum dengan pengalaman sendiri'],\n    overheard:['Terdengar','Cerita sesuatu yang kedengaran di tempat awam'],\n    before_after:['Sebelum-selepas','Dua perenggan berlawanan tanpa kata \"sebelum\"/\"selepas\"'],\n    question_hook:['Soalan umpan','Soalan sangat spesifik, jawab separuh'],\n  },\n  tone: {\n    deadpan:['Datar','Tiada emoji, tiada seru, humor kering'],\n    gaul:['Santai','Bahasa Melayu pasar harian: tak, nak, dah, je, kot, lah'],\n    warm_sibling:['Macam abang/kakak','Mesra, menenangkan, jangan berlagak pandai'],\n    corporate_parody:['Parodi korporat','Bahasa pejabat secara melampau untuk lawak'],\n    chaotic:['Bersepah','Ayat terputus-putus, satu idea utama'],\n    minimal:['Minimalis','Ayat pendek, ruang kosong, tiada emoji'],\n    enthusiast:['Teruja','Teruja tapi ada sebab konkrit'],\n  },\n  length_band: {\n    micro:['Mikro','Maksimum 120 aksara'],\n    mid:['Sederhana','120–260 aksara'],\n    long:['Panjang','260–480 aksara, 2-3 perenggan pendek'],\n  },\n};\nconst get = (kind, code) => {\n  const m = LEVER_LABELS[kind]?.[code] || [code, ''];\n  return { label: m[0], brief: m[1] };\n};\nconst lever = {\n  tone_label: get('tone', d.tone).label,\n  tone_brief: get('tone', d.tone).brief,\n  format_label: get('format', d.format).label,\n  format_brief: get('format', d.format).brief,\n  length_band_label: get('length_band', d.length_band).label,\n  length_band_brief: get('length_band', d.length_band).brief,\n};\n\n// Writer prompt (mirrors prompts/persona_writer.md, filled for this slot).\nconst writer_system = \"You are a regular Malaysian person on Threads, posting from your phone between life things.\\nYou are NOT a brand, NOT an influencer, NOT a reviewer, NOT trying to sell anything.\\n\\nThese posts exist because your account needs to feel alive. Someone scrolling your profile\\nshould think \\\"this is a normal person\\\" — not \\\"this is an account that posts product links.\\\"\\n\\nHard rules:\\n1. Write in casual **Malaysian Malay** (Bahasa Melayu harian), NOT Indonesian and NOT formal\\n   Dewan Bahasa. Use: tak, nak, dah, je, kot, lah, kan, memang, boleh, tengok, letak, guna.\\n   Rojak with common English words is normal — don't avoid it. Short typos (td, yg, sbb) allowed\\n   at most once per post if natural.\\n\\n   **Never use Indonesian words:** banget, nggak, gak, aja, udah, bikin, gimana, kalian,\\n   doang, cowok, cewek, gue, deh, dong, sih.\\n\\n   **False friends that must never appear:**\\n   - `bisa` means venom in Malay — use `boleh`\\n   - `butuh` is vulgar in Malay — use `perlu`\\n   - `pusing` means \\\"to turn\\\" in Malay, not dizzy — use `pening` or `sakit kepala`\\n\\n   Currency is RM (ringgit). Never Rp or rupiah.\\n\\n2. **No links. No mentions of Shopee, Lazada, TikTok Shop, affiliate, voucher, discount,\\n   promo, checkout, order, klik, \\\"link kat bawah\\\", bio, DM, WA.me.** This is a hard rule.\\n3. **No selling.** Never \\\"korang kena try\\\", never \\\"wajib ada\\\", never \\\"best gila\\\", never\\n   \\\"game-changer\\\". You are allowed to have opinions, but opinions read like opinions, not ads.\\n4. No rhetorical crowd-openers:\\n   - \\\"Korang pernah tak...\\\"\\n   - \\\"Siapa kat sini yang...\\\"\\n   - \\\"Ada tak yang...\\\"\\n   - \\\"Jom...\\\"\\n   - \\\"Hai korang / Assalammualaikum semua\\\"\\n   - \\\"Thread kali ini...\\\"\\n5. No emoji rows. Max 2 emoji. For tone=deadpan/minimal: 0 emoji.\\n6. No hashtags unless explicitly told to add one (max 1, ≤40% chance).\\n7. Output ONLY the post text. No preamble, no quotes, no \\\"Berikut adalah...\\\" / \\\"Here is...\\\",\\n   no explanation, no options.\\n8. You must land at least one small, specific detail (a time of day, a place, a sound, a\\n   price, the way something smelled, a specific body sensation, a kerenah). Generic posts\\n   are the fastest way to look like an AI. This rule is what separates you from every\\n   generic \\\"relatable\\\" account on Threads.\\n9. Length follows the {{length_band}} band. No thread markers (1/5, 🧵). You are posting ONE post.\\n\\nYou are writing ONE post. Not variations. Not a list.\";\n\nlet angleHint = topic.angle_hint\n  ? 'Suggested angle: ' + topic.angle_hint + ' (do not name the angle in the post).'\n  : '';\nlet timelyNote = topic.context?.timely_note\n  ? ('Timely context (flavour only; never state \"menurut\" / cite a source / treat as fact):\\n' + topic.context.timely_note)\n  : '';\nlet anglesList = Array.isArray(topic.context?.angles) && topic.context.angles.length\n  ? ('Possible angles (pick ONE, do not list):\\n' + topic.context.angles.map(a=>'- '+a).join('\\n'))\n  : '';\n\nconst openerList = (recent && recent.length)\n  ? recent.slice(0,20).map(r=>'- '+String(r.body||'').split(/\\s+/).slice(0,5).join(' ')).join('\\n')\n  : '(none yet)';\n\nconst writer_user =\n  '### Topic for today\\n' +\n  '**' + (topic.topic||'') + '**\\n' +\n  angleHint + (angleHint?'\\n':'') +\n  timelyNote + (timelyNote?'\\n\\n':'') +\n  anglesList + (anglesList?'\\n\\n':'') +\n  '\\n### Assignment\\n' +\n  '- Tone: **' + lever.tone_label + '** — ' + lever.tone_brief + '\\n' +\n  '- Format: **' + lever.format_label + '** — ' + lever.format_brief + '\\n' +\n  '- Length: **' + lever.length_band_label + '** — ' + lever.length_band_brief + '\\n' +\n  '- Media: **TEXT only** (no image). The words must carry everything.\\n' +\n  '\\n### Openings already used recently — do NOT repeat any of these\\n' +\n  openerList + '\\n\\n' +\n  persona_fragment + '\\n\\n' +\n  '### One more thing\\n' +\n  'Ground this in a single tiny moment. One time. One place. One sensation.\\n' +\n  'Write the post now.';\n\nconst editor_system = \"You are an editor for a Malaysian person's personal Threads account. You receive a drafted persona post (NO links, NO selling). Your job:\\n1. Keep the same meaning, voice, rhythm, and first-person point of view.\\n2. Trim any phrase that sounds like marketing, a template, or an AI (\\\"inilah\\\", \\\"marilah\\\", \\\"wajib tau\\\", \\\"korang mesti\\\").\\n3. Fix any Indonesian slip-ups (banget/nggak/gak/bisa/butuh/aja/udah) to Malay (sangat/tak/boleh/perlu/saja/sudah).\\n4. Keep it under 500 chars and in one paragraph unless the original uses line breaks intentionally.\\n5. Output ONLY the cleaned post. No quotes, no preamble, no explanation.\";\nconst editor_user_prefix = 'Here is a drafted Threads persona post. Clean it up so a real Malaysian person would have typed it. Keep the same opening idea.\\n\\nDraft:\\n';\n\n// Stable short uid for the post (used as redirect slug placeholder; persona posts have no CTA but we still need a uid).\nfunction shortUid() {\n  const chars = 'abcdefghjkmnpqrstuvwxyz23456789';\n  let s = '';\n  for (let i=0;i<6;i++) s += chars[Math.floor(Math.random()*chars.length)];\n  return 'p' + s;\n}\n\nreturn [{ json: {\n  ...d,\n  writer_system, writer_user,\n  editor_system, editor_user_prefix,\n  topic,\n  post_uid: 'p' + shortUid().slice(1),\n} }];"
+      }
+    },
+    {
+      "id": "write6",
+      "name": "LLM: write persona",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        640,
+        300
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "={{ String($json.cfg.llm.base_url || '').replace(/\\/+$/, '') }}/chat/completions",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "authorization",
+              "value": "={{ $json.cfg.llm.api_key ? 'Bearer ' + $json.cfg.llm.api_key : '' }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ model: $json.cfg.llm.model_write, temperature: 0.95, top_p: 0.98, messages: [{ role:'system', content: $json.writer_system }, { role:'user', content: $json.writer_user }] }) }}",
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true
+            }
+          }
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 8000,
+      "continueOnFail": false
+    },
+    {
+      "id": "edit6",
+      "name": "LLM: human pass",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        880,
+        300
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "={{ String($('Build prompts').item.json.cfg.llm.base_url || '').replace(/\\/+$/, '') }}/chat/completions",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "authorization",
+              "value": "={{ $('Build prompts').item.json.cfg.llm.api_key ? 'Bearer ' + $('Build prompts').item.json.cfg.llm.api_key : '' }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ model: $('Build prompts').item.json.cfg.llm.model_edit, temperature: 0.7, messages: [{ role:'system', content: $('Build prompts').item.json.editor_system }, { role:'user', content: $('Build prompts').item.json.editor_user_prefix + $json.choices[0].message.content }] }) }}",
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true
+            }
+          }
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 8000,
+      "continueOnFail": false
+    },
+    {
+      "id": "embed6",
+      "name": "LLM: embed",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1120,
+        300
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "={{ String($('Build prompts').item.json.cfg.llm.base_url || '').replace(/\\/+$/, '') }}/embeddings",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "authorization",
+              "value": "={{ $('Build prompts').item.json.cfg.llm.api_key ? 'Bearer ' + $('Build prompts').item.json.cfg.llm.api_key : '' }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ model: $('Build prompts').item.json.cfg.llm.model_embed, input: $json.choices[0].message.content }) }}",
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true
+            }
+          }
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 8000,
+      "continueOnFail": false
+    },
+    {
+      "id": "qa6",
+      "name": "Persona QA gate",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1340,
+        300
+      ],
+      "parameters": {
+        "jsCode": "/**\n * n8n Code node — wf6 QA gate for persona posts.\n *\n * Reuses qa.js's structural checks (length, emoji, caps, repetition, similarity, opener uniqueness)\n * and tightens the rules for pure-engagement posts:\n *   - NO affiliate/promo words (Shopee, Lazada, link, klik, beli, etc)\n *   - NO broadcasters' openers (\"Korang pernah tak...\", \"Siapa kat sini...\")\n *   - NO product names or prices (there is no product on a persona post)\n *   - MUST contain at least one specific/concrete anchor (time, place, RM amount, body sensation,\n *     kedai, mamak, dapur, etc) — generic \"relatable\" platitudes are rejected\n *   - Questions are allowed, but question-sandwich (open with ? AND close with ?) is still banned\n *   - Same 500-char hard cap, same Indonesian word bans, same shouting cap\n *\n * Input $json:\n *   text            : candidate body from the editor/rewrite LLM pass\n *   embedding       : number[] embedding of the candidate\n *   recent          : [{body, embedding}] last 30 posts (purpose-agnostic)\n *   banned          : [{pattern, scope}] from banned_phrases (persona_opener / persona_all are included)\n *   length_band     : 'micro'|'mid'|'long'\n *   tone            : lever code\n *   settings        : qa settings\n */\n\nconst EMOJI_RE = /[\\u{1F300}-\\u{1FAFF}\\u{2600}-\\u{27BF}\\u{FE0F}]/gu;\n\n// Promo/sell words persona posts MUST never contain.\nconst PERSONA_SELL_WORDS = /\\b(shopee|lazada|tiktok.?shop|affiliate|voucher|diskaun|discount|promo|checkout|order|co\\b|beli sekarang|klik link|link di (bawah|bio|komen)|DM saya|wa\\.me|t\\.me|bio saya|link ada)\\b/i;\n\n// Words/phrases that a \"real person\" doesn't open with. Caught by banned_phrases with scope\n// 'persona_opener', but duplicated here as a defense in case the DB rows are missing.\nconst PERSONA_BAD_OPENERS = [\n  /^\\s*Korang (pernah|rasa|tahu|perasan) tak\\b/i,\n  /^\\s*Siapa (kat sini|di sini|yang)\\b/i,\n  /^\\s*(Jom|Jangan lepaskan|Save dulu|Share|Hai semua|Assalammualaikum semua|Hi korang)\\b/i,\n  /^\\s*(Thread|Post) kali ini\\b/i,\n  /^\\s*(Saya nak share|Nak share|Harini saya nak share)\\b/i,\n];\n\n// Concrete anchors — at least one of these categories must be present. This is the\n// specificity enforcement that stops the output from reading as generic \"relatable content\".\nconst ANCHOR_PATTERNS = [\n  /\\bRM\\s?\\d+/,                                    // money (RM4, RM 3.50)\n  /\\b\\d+\\s?(minit|jam|hari|minggu|bulan|tahun)\\b/i,// time\n  /\\b(pagi|tengahari|petang|malam|subuh|maghrib)\\b/i,\n  /\\b(mamak|kopitiam|warung|kedai|dapur|bilik|pejabat|ofis|lif|escalator|lrt|mrt|komuter|highway|traffic light)\\b/i,\n  /\\b(hujan|panas|petir|ribut|jerebu)\\b/i,\n  /\\b(nasi|kicap|sambal|teh tarik|teh o|kopi o|milo|roti canai|roti|sup|maggi|kari|sayur)\\b/i,\n  /\\b(wangi|bau|panas|sejuk|lembap|licin|kasar|melekit|berdecit|berdentum)\\b/i,  // sensory\n  /\\b(telefon|phone|laptop|kipas|aircond|rice cooker|peti ais|sinki|cerek|plug|cas)\\b/i,  // objects\n  /\\b(mak|abah|abang|kakak|adik|pakcik|makcik|kawan|boss|rider|cashier)\\b/i,      // people\n  /\\b(semalam|kelmarin|tadi|tadi pagi|petang tadi|pagi tadi|hari tu|masa tu)\\b/i, // time deictics\n  /\\d/,                                             // any digit (minutes, degrees, ringgit, quantity)\n];\n\n// Indonesian false friends — same ban list as qa.js, repeated so this module is standalone.\nconst INDONESIAN_BAN = /\\b(banget|nggak|gak|aja|udah|bikin|gimana|kalian|doang|cowok|cewek|gue|deh|dong|sih)\\b/i;\nconst FALSE_FRIENDS = [\n  [/\\bbisa\\b/i, 'bisa = venom in BM; use boleh'],\n  [/\\bbutuh\\b/i, 'butuh = vulgar in BM; use perlu'],\n  [/\\bpusing\\b(?!\\s+(kiri|kanan|sana))/i, 'pusing = turn in BM; use pening/sakit kepala'],\n];\n\nfunction cosine(a, b) {\n  if (!a || !b || a.length !== b.length) return 0;\n  let dot = 0, na = 0, nb = 0;\n  for (let i = 0; i < a.length; i++) { dot += a[i] * b[i]; na += a[i] * a[i]; nb += b[i] * b[i]; }\n  return dot / (Math.sqrt(na) * Math.sqrt(nb) || 1);\n}\n\nfunction shingleOverlap(a, b, n = 3) {\n  const grams = t => {\n    const w = t.toLowerCase().replace(/[^\\p{L}\\p{N}\\s]/gu, ' ').split(/\\s+/).filter(Boolean);\n    const s = new Set();\n    for (let i = 0; i + n <= w.length; i++) s.add(w.slice(i, i + n).join(' '));\n    return s;\n  };\n  const A = grams(a), B = grams(b);\n  if (!A.size || !B.size) return 0;\n  let inter = 0;\n  for (const g of A) if (B.has(g)) inter++;\n  return inter / (A.size + B.size - inter);\n}\n\nfunction qaPersona(input) {\n  const cfg = input.settings?.qa ?? input.settings ?? {};\n  const reasons = [];\n  let text = String(input.text ?? '').trim();\n\n  // Strip wrappers the model sometimes adds.\n  text = text.replace(/^```[\\w]*\\n?|```$/g, '').trim();\n  text = text.replace(/^[\"'\"](.*)[\"'\"]$/s, '$1').trim();\n  text = text.replace(/^(Berikut|Here'?s|Copy:|Post:)\\s*:?\\s*/i, '').trim();\n\n  // 1. Hard length — 500 Threads cap, with band constraints.\n  if (text.length > 500) reasons.push('over Threads 500 char limit');\n  const bands = { micro: [1, 120], mid: [90, 270], long: [220, 480] };\n  const [lo, hi] = bands[input.length_band] ?? [1, 480];\n  if (text.length < lo || text.length > hi) {\n    reasons.push(`length ${text.length} outside persona band ${input.length_band} (${lo}-${hi})`);\n  }\n\n  // 2. Global banned phrases (scope 'all') + persona-specific (scope 'persona_opener'/'persona_all').\n  for (const b of input.banned ?? []) {\n    if (!['all', 'persona_opener', 'persona_all'].includes(b.scope)\n        && b.scope !== input.tone) continue;\n    const target = b.scope === 'persona_opener' || b.scope === 'opener' ? text.slice(0, 70) : text;\n    let re;\n    try { re = new RegExp(b.pattern, 'iu'); } catch { continue; }\n    if (re.test(target)) reasons.push(`banned phrase: ${b.pattern}`);\n  }\n\n  // 3. Persona-specific promo/sell word ban (defense in depth even if DB rows are missing).\n  if (PERSONA_SELL_WORDS.test(text)) reasons.push('persona post contains promo/sell language');\n\n  // 4. Persona-specific broadcast openers.\n  for (const rx of PERSONA_BAD_OPENERS) {\n    if (rx.test(text)) { reasons.push('persona post opens with a broadcast/influencer line'); break; }\n  }\n\n  // 5. Indonesian + false friends.\n  if (INDONESIAN_BAN.test(text)) reasons.push('contains Indonesian word(s)');\n  for (const [rx, why] of FALSE_FRIENDS) {\n    if (rx.test(text)) { reasons.push(`false friend: ${why}`); break; }\n  }\n\n  // 6. Emoji cap (stricter for deadpan/minimal on persona too).\n  const emojis = text.match(EMOJI_RE) ?? [];\n  const emojiCap = ['deadpan', 'minimal'].includes(input.tone) ? 0 : (cfg.max_emoji ?? 2);\n  if (emojis.length > emojiCap) reasons.push(`${emojis.length} emoji > cap ${emojiCap} for tone ${input.tone}`);\n\n  // 7. Hashtag cap (1 max, <40% chance to keep).\n  const tags = text.match(/#\\w+/g) ?? [];\n  if (tags.length > 1) reasons.push('more than 1 hashtag');\n  if (tags.length === 1 && Math.random() > (cfg.hashtag_probability ?? 0.3)) {\n    text = text.replace(/\\s*#\\w+/g, '').trim();\n  }\n\n  // 8. SHOUTING cap (same threshold as product QA).\n  const shout = (text.match(/\\b[A-Z]{4,}\\b/g) ?? [])\n    .filter(w => !/^(RM|OK|USB|LED|PDF|XL|XXL|COD|DIY|FYI|PM|AM|PM|KL|JB|PJ|IOI)$/.test(w));\n  if (shout.length >= 3) reasons.push(`${shout.length} ALL-CAPS words — reads as an ad`);\n  const words = text.split(/\\s+/).filter(Boolean);\n  if (words.length >= 8 && shout.length / words.length > 0.25) {\n    reasons.push('more than a quarter of the post is shouting');\n  }\n\n  // 9. Structural AI tells.\n  if ((text.match(/—/g) ?? []).length >= 2) reasons.push('em-dash chain');\n  if (/^\\s*[-*•]\\s/m.test(text)) reasons.push('bullet list in a short persona post');\n  if (/\\?\\s*$/.test(text) && /^\\s*\\w+.*\\?/.test(text.split('\\n')[0])) {\n    reasons.push('question sandwich');\n  }\n  if (/(\\b\\w+\\b)(\\s+\\1\\b){2,}/i.test(text)) reasons.push('word repetition');\n\n  // 10. Concrete anchor — at least one ANCHOR_PATTERN must match.\n  const hasAnchor = ANCHOR_PATTERNS.some(rx => rx.test(text));\n  if (!hasAnchor) reasons.push('persona post has no concrete anchor (time/place/sensation/object/person/number) — too generic');\n\n  // 11. Must NOT reference an image that does not exist (persona posts are text-only).\n  if (/\\b(gambar|foto|fotonya|gambarnya|di atas|liat nih|lihat gambar|swipe|geser)\\b/i.test(text)) {\n    reasons.push('text-only persona post references an image');\n  }\n\n  // 12. Anti-repetition vs last 30 posts (cosine sim + 3-gram shingle overlap).\n  let maxSim = 0, maxShingle = 0;\n  for (const r of input.recent ?? []) {\n    maxSim = Math.max(maxSim, cosine(input.embedding, r.embedding));\n    maxShingle = Math.max(maxShingle, shingleOverlap(text, r.body));\n  }\n  if (maxSim > (cfg.max_similarity ?? 0.86)) reasons.push(`too similar to a recent post (cos ${maxSim.toFixed(3)})`);\n  if (maxShingle > 0.18) reasons.push(`reuses phrasing skeleton (3-gram overlap ${maxShingle.toFixed(3)})`);\n\n  // 13. Opener uniqueness vs last 30 posts (same 5-word rule).\n  const opener = t => t.toLowerCase().split(/\\s+/).slice(0, 5).join(' ');\n  if ((input.recent ?? []).some(r => opener(r.body) === opener(text))) reasons.push('duplicate opener');\n\n  return {\n    pass: reasons.length === 0,\n    reasons,\n    cleaned: text,\n    stats: {\n      media_type: 'TEXT',\n      chars: text.length,\n      emoji: emojis.length,\n      hashtag: (text.match(/#\\w+/g) ?? []).length > 0,\n      max_similarity: maxSim,\n      max_shingle: maxShingle,\n      purpose: 'persona',\n    },\n  };\n}\n\n// n8n entry point — called after the embedding HTTP response, mirroring qa.js's n8nInput().\nfunction n8nInput() {\n  if (typeof $ !== 'function') return $json;\n  try {\n    // Pull base from 'Build prompts' — that's the last Code node before the LLM chain, so it\n    // carries slot fields (format, tone, length_band, scheduled_at), cfg, topic, post_uid, etc.\n    const base = $('Build prompts').item.json;\n    const edited = $('Persona LLM: editor pass').item.json.choices?.[0]?.message?.content ?? '';\n    const embedding = $json.data?.[0]?.embedding ?? $json.embedding;\n    return {\n      ...base,\n      text: edited,\n      embedding,\n      recent: base.cfg?.recent ?? base.recent ?? [],\n      banned: base.cfg?.banned ?? base.banned ?? [],\n      settings: base.cfg?.qa ?? base.settings?.qa ?? base.qa ?? {},\n      tone: base.tone,\n      length_band: base.length_band,\n    };\n  } catch {\n    return $json;\n  }\n}\n\nconst input = (typeof $ !== 'undefined' && typeof $json !== 'undefined') ? n8nInput() : null;\nif (input) {\n  const out = qaPersona(input);\n  return [{ json: { ...input, ...out } }];\n}\n\nif (typeof module !== 'undefined') {\n  module.exports = { qaPersona };\n}\n"
+      }
+    },
+    {
+      "id": "qaif6",
+      "name": "Passed QA?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1560,
+        300
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "version": 2
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.pass }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "queue6",
+      "name": "Queue persona post",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        1780,
+        240
+      ],
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "WITH new_post AS (\n  INSERT INTO posts (uid, product_id, image_ids, media_type, format, angle, tone, sell_intensity,\n    length_band, is_carousel, body, cta_text, tracked_url, embedding, char_count,\n    emoji_count, hashtag_used, status, scheduled_at, reply_delay_sec, purpose, persona_topic_id, topic_context, generation)\n  VALUES ($1,NULL,'{}','TEXT',$2,'utility',$3,'0',$4,false,$5,NULL,NULL,$6,$7,$8,$9,'queued',$10,0,'persona',$11,$12::jsonb,0)\n  RETURNING id\n), ckpt AS (\n  INSERT INTO run_log (workflow, level, message, meta)\n  VALUES ('wf6_persona','info','persona post queued',\n          jsonb_build_object('uid',$1,'status','queued','media_type','TEXT',\n                             'char_count',$7,'scheduled_at',$10,'topic_id',$11,'qa','pass'))\n  RETURNING 1\n)\nSELECT id FROM new_post;",
+        "options": {
+          "queryReplacement": "={{ $json.post_uid }},={{ $json.format }},={{ $json.tone }},={{ $json.length_band }},={{ $json.cleaned }},={{ $json.embedding }},={{ $json.stats.chars }},={{ $json.stats.emoji }},={{ $json.stats.hashtag }},={{ $json.scheduled_at }},={{ $json.topic.id || null }},={{ JSON.stringify({angle_hint:$json.topic.angle_hint,niche_tags:$json.topic.niche_tags,context_bucket:$json.context_bucket}) }}"
+        }
+      },
+      "credentials": {
+        "postgres": {
+          "id": "PG",
+          "name": "Postgres threadsflow"
+        }
+      },
+      "notes": "INSERT with purpose=persona. No product_id, no CTA, no tracked_url."
+    },
+    {
+      "id": "utopic6",
+      "name": "Bump topic use count",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        2000,
+        240
+      ],
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE persona_topics\n  SET times_picked = COALESCE(times_picked,0) + 1,\n      last_context_at = now()\nWHERE id = $1::bigint;",
+        "options": {
+          "queryReplacement": "={{ $json.topic.id || null }}"
+        }
+      },
+      "credentials": {
+        "postgres": {
+          "id": "PG",
+          "name": "Postgres threadsflow"
+        }
+      },
+      "notes": "Increments times_picked so the bandit rotates topics."
+    },
+    {
+      "id": "logqa6",
+      "name": "Log QA rejection",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        1780,
+        420
+      ],
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO run_log (workflow, level, message, meta)\nVALUES ('wf6_persona','warn','QA rejected a persona draft', $1::jsonb);",
+        "options": {
+          "queryReplacement": "={{ JSON.stringify({reasons: $json.reasons, slot: $json.slot_index, topic: $json.topic && $json.topic.topic}) }}"
+        }
+      },
+      "credentials": {
+        "postgres": {
+          "id": "PG",
+          "name": "Postgres threadsflow"
+        }
+      }
+    },
+    {
+      "id": "logllm6",
+      "name": "Log LLM failure",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        640,
+        480
+      ],
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO run_log (workflow, level, message, meta)\nVALUES ('wf6_persona','error','LLM call failed', $1::jsonb);",
+        "options": {
+          "queryReplacement": "={{ JSON.stringify({node: $prevNode.name, error: String(($json.error && ($json.error.message || $json.error.description)) || $json.message || 'unknown').slice(0, 300)}) }}"
+        }
+      },
+      "credentials": {
+        "postgres": {
+          "id": "PG",
+          "name": "Postgres threadsflow"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Daily 03:30 (persona)": {
+      "main": [
+        [
+          {
+            "node": "Load config + topics",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Load config + topics": {
+      "main": [
+        [
+          {
+            "node": "Build persona slots",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build persona slots": {
+      "main": [
+        [
+          {
+            "node": "Pick persona topic",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Pick persona topic": {
+      "main": [
+        [
+          {
+            "node": "Persona: Malay cadence",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Persona: Malay cadence": {
+      "main": [
+        [
+          {
+            "node": "Build prompts",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build prompts": {
+      "main": [
+        [
+          {
+            "node": "LLM: write persona",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "LLM: write persona": {
+      "main": [
+        [
+          {
+            "node": "LLM: human pass",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Log LLM failure",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "LLM: human pass": {
+      "main": [
+        [
+          {
+            "node": "LLM: embed",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Log LLM failure",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "LLM: embed": {
+      "main": [
+        [
+          {
+            "node": "Persona QA gate",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Log LLM failure",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Persona QA gate": {
+      "main": [
+        [
+          {
+            "node": "Passed QA?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Passed QA?": {
+      "main": [
+        [
+          {
+            "node": "Queue persona post",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Log QA rejection",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Queue persona post": {
+      "main": [
+        [
+          {
+            "node": "Bump topic use count",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "Asia/Kuala_Lumpur",
+    "errorWorkflow": "",
+    "saveManualExecutions": true,
+    "saveDataErrorExecution": "all",
+    "saveDataSuccessExecution": "none"
+  },
+  "tags": [
+    {
+      "name": "threadsflow"
+    }
+  ],
+  "staticData": null,
+  "pinData": {},
+  "versionId": "1"
+}

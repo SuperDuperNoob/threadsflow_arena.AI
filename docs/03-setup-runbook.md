@@ -150,26 +150,81 @@ with no review.
 
 ### 1.4 — Get the token
 
-1. In your Meta app → **Threads** → **API Setup**
-2. Set a redirect URI: use `https://localhost/` for now (you only do this once)
-3. Generate a **short-lived token** (valid for 1 hour)
-4. Exchange it for a **long-lived token** (valid for 60 days):
+The Meta dashboard can issue you a **60-day long-lived token directly** via the
+**User Token Generator** on the Threads Settings page. You do NOT need to go
+through the OAuth flow or do the short→long curl exchange when you're only
+posting to your own account.
+
+Reference: https://developers.facebook.com/docs/threads/get-started/long-lived-tokens
+
+1. **Save the Threads Settings form** (you were here in step 1.2 already, but
+   double-check): go to **Threads → Settings** (the Customize use case page).
+   Fill in **all three** URL fields with the same real `https://` URL you control
+   — Meta refuses to save if any are blank, `localhost` is NOT accepted, and
+   `http://` is also rejected.
+
+   | Field | What to put |
+   |---|---|
+   | Threads Display Name | anything (e.g. your Threads handle) |
+   | Redirect Callback URLs | `https://r.yourdomain.com/threads-callback/` (a real HTTPS URL you own) |
+   | Uninstall Callback URL | same URL as above |
+   | Delete Callback URL | same URL as above |
+
+   > **Gotcha:** after you type the Redirect Callback URL, a small dropdown
+   > appears under the input. You must **click the dropdown to confirm the URL**
+   > before saving — just typing it in is not enough and the form silently rejects it.
+
+   Click **Save**. Wait for the success toast; reload and confirm all three URLs
+   are still populated.
+
+2. **Add yourself as a Threads Tester** (if not already):
+   - Go to **App Roles → Roles** → **Add People → Threads Tester**.
+   - Enter your own Threads username (e.g. `your.handle`) → **Add**.
+   - Open the Threads app or https://www.threads.com/settings/account →
+     **Website permissions** → **Invites** → **Accept** the invite.
+   - This step is what lets you skip App Review and post to your own account
+     indefinitely. Without accepting the invite, every API call returns an
+     OAuth permission error.
+
+3. **Make your Threads profile public** (required *only* at token generation
+   time — you can switch back to private afterwards; long-lived tokens for
+   private profiles are refreshable since the 2025 update):
+   - Threads → Settings → Privacy → toggle **Private profile** OFF.
+
+4. **Generate the long-lived token:**
+   - Go back to **Threads → Settings** and scroll down to **User Token Generator**.
+   - Your username should now appear in the list. Click **Generate Access Token**
+     next to your name.
+   - Authorize when prompted.
+   - **Copy the token immediately — it is shown once.** This is your **long-lived
+     token** (60 days). You do NOT need to run the short→long curl exchange when
+     you use this generator.
+
+5. **Verify the token and fetch your numeric Threads user ID:**
 
 ```bash
-# Copy-paste this into your terminal. Replace the UPPERCASE values.
-curl -s "https://graph.threads.net/access_token?grant_type=th_exchange_token&client_secret=YOUR_APP_SECRET&access_token=YOUR_SHORT_LIVED_TOKEN"
+curl -s "https://graph.threads.com/v1.0/me?fields=id,username&access_token=YOUR_LONG_TOKEN"
 ```
 
-The response contains `access_token`. This is your long-lived token. Write it
-down — you will paste it into the database in Step 2.
+   The response looks like `{"id":"17841400000000000","username":"your.handle"}`.
+   Copy the `id` — that is your Threads User ID. You need both the token and the
+   user ID later when you insert them into the database (Step 2.5).
 
-5. Find your Threads user ID:
+   > **Bash tip:** `UID` is a reserved read-only variable in bash. When you save
+   > the user id in a shell variable, call it `TUID` or `THREADS_UID`, not `UID`,
+   > or you will see `bash: UID: readonly variable`.
 
-```bash
-curl -s "https://graph.threads.net/v1.0/me?fields=id,username&access_token=YOUR_LONG_TOKEN"
-```
-
-The response contains `id` (a long number). Write this down too.
+> ⚠️ **Alternative (manual OAuth flow):** if for any reason the User Token
+> Generator doesn't work for you (e.g. your profile is private and you refuse
+> to make it public even temporarily), you can go through the OAuth flow
+> manually: generate a short-lived token from **Threads → API Setup**, then
+> exchange it for a long-lived token with:
+> ```bash
+> curl -s "https://graph.threads.com/access_token?grant_type=th_exchange_token&client_secret=YOUR_THREADS_APP_SECRET&access_token=YOUR_SHORT_LIVED_TOKEN"
+> ```
+> Use the **Threads App Secret** from **App Settings → Basic** (the field labeled
+> "Threads App secret"), NOT the regular Facebook "App secret" that also appears
+> on that page — Meta issues two separate secrets for a Threads app.
 
 ### 1.5 — Smoke test (do not skip this)
 
@@ -1036,3 +1091,38 @@ After 72 hours (debug logging expires by itself once `DEBUG_UNTIL` passes), set
 | n8n crashes with "out of memory" | The VPS ran out of RAM | Confirm `EXECUTIONS_DATA_SAVE_ON_SUCCESS=none` in the n8n environment. If still crashing, upgrade to 8GB VPS. |
 | Copy sounds the same across posts | The LLM is collapsing into a pattern | Add banned phrases, raise the exploration rate to 0.35 for one cycle, add 2 new format levers. |
 | Token renewal failed (wf0 shows error) | The Threads token is expired or the app secret changed | Generate a new token manually (Step 1.4) and update the `settings` table. Add an alert to wf0's failure branch. |
+
+---
+
+## Official references
+
+Everything in this runbook that touches an external service is verified against
+the vendor's current documentation. If a UI changes, check these first:
+
+**Threads / Meta**
+
+- Create a Threads app (use case): https://developers.facebook.com/docs/development/create-an-app/threads-use-case
+- Get started (overview, permissions, testers): https://developers.facebook.com/docs/threads/get-started
+- Authorization window + short-lived tokens (OAuth flow, `redirect_uri` rules): https://developers.facebook.com/docs/threads/get-started/get-access-tokens-and-permissions
+- Long-lived tokens — exchange and refresh (`th_exchange_token`, `th_refresh_token`, 60-day lifetime): https://developers.facebook.com/docs/threads/get-started/long-lived-tokens
+- Publishing posts (container → publish flow, `media_type=TEXT/IMAGE/VIDEO/CAROUSEL`, 500-char limit, wait ~30s): https://developers.facebook.com/docs/threads/posts
+- Publishing endpoint reference (`POST /{user-id}/threads`, `/threads_publish`): https://developers.facebook.com/docs/threads/reference/publishing
+- Insights metrics (`views`, `likes`, `replies`, `reposts`, `quotes`): https://developers.facebook.com/docs/threads/insights
+- Replying / conversation control (hide replies, replies endpoint): https://developers.facebook.com/docs/threads/reply-control
+- Rate limiting (250 posts/24h per user): https://developers.facebook.com/docs/threads/overview
+- Media specs + troubleshooting error 9004 / "container not processed": https://developers.facebook.com/docs/threads/troubleshooting
+
+**Cloudflare**
+
+- Cloudflare Tunnel (setup, `cloudflared`, tokens): https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/
+- Public hostnames configuration: https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/configure-tunnels/public-hostnames/
+- Cloudflare R2 (buckets, public access, custom domains): https://developers.cloudflare.com/r2/buckets/
+- R2 API tokens and S3-compatible auth (SigV4): https://developers.cloudflare.com/r2/api/s3/tokens/
+- R2 public buckets / r2.dev subdomain: https://developers.cloudflare.com/r2/buckets/public-buckets/
+
+**Docker / n8n**
+
+- Install Docker via `get.docker.com`: https://docs.docker.com/engine/install/
+- `docker compose` CLI reference: https://docs.docker.com/reference/cli/docker/compose/
+- n8n configuration (environment variables, Postgres backend, executions pruning): https://docs.n8n.io/hosting/configuration/
+- n8n Postgres compatibility note (why we don't use SQLite for production): https://docs.n8n.io/hosting/configuration/databases/

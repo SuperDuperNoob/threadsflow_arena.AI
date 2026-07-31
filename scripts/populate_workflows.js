@@ -22,6 +22,17 @@ const mappings = [
       { nodeName: 'Update arms + plan', sourceFile: 'bandit.js' },
       { nodeName: 'Update techniques', sourceFile: 'technique_picker.js' },
     ]
+  },
+  {
+    file: 'wf6_persona.json',
+    replacements: [
+      { nodeName: 'Build persona slots', sourceFile: 'persona_slot_plan.js' },
+      { nodeName: 'Pick persona topic', sourceFile: 'persona_topic_pick.js' },
+      { nodeName: 'Persona: Malay cadence', sourceFile: 'persona_picker.js' },
+      // 'Build prompts' is hand-coded in build_wf6.mjs and reads the persona_writer.md prompt at build time.
+      // 'Persona QA gate' pulls qa_persona.js; we inject it here so edits to qa_persona.js are picked up.
+      { nodeName: 'Persona QA gate', sourceFile: 'qa_persona.js' },
+    ]
   }
 ];
 

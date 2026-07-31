@@ -252,3 +252,32 @@ Let me be straight about what this buys you, in order:
 And the thing worth repeating: **your click and conversion data will eventually be more valuable
 than every PDF combined.** The books are a prior. Your bandit is the posterior. Treat the library
 as a way to generate good hypotheses cheaply, not as a source of truth.
+
+---
+
+## References & official docs
+
+This page is design commentary rather than an integration guide, but the tools it recommends
+are documented here:
+
+**PDF / text processing used by the KB ingestion pipeline**
+
+- `pdf-parse` (the library we use for text extraction): https://www.npmjs.com/package/pdf-parse
+- Mozilla PDF.js (what `pdf-parse` wraps; used as fallback for problematic PDFs): https://mozilla.github.io/pdf.js/
+- OCRmyPDF (recommended for scanned / image-only PDFs, supports Malay via `-l msa+eng`): https://ocrmypdf.readthedocs.io/
+- Tesseract language packs (`msa` for Malay, `eng` for English) used by OCRmyPDF: https://tesseract-ocr.github.io/tessdoc/Data-Files
+
+**Embeddings and similarity**
+
+- OpenAI embeddings API (default `text-embedding-3-small`): https://platform.openai.com/docs/api-reference/embeddings
+- Cosine similarity (the 0.86 threshold and the anti-repeat logic): https://en.wikipedia.org/wiki/Cosine_similarity
+
+**Multi-armed bandit / Thompson sampling**
+
+- Thompson sampling original paper (Russo et al. tutorial): https://web.stanford.edu/~bvr/pubs/TS_Tutorial.pdf
+- A friendly introduction: https://lilianweng.github.io/posts/2018-01-23-multi-armed-bandit/
+- SimHash for near-duplicate detection (the ≤6-bit Hamming gate for PDF dedup): https://en.wikipedia.org/wiki/SimHash
+
+**LLM chat completions**
+
+- OpenAI Chat Completions API (shape all our `/chat/completions` calls follow, regardless of provider): https://platform.openai.com/docs/api-reference/chat
