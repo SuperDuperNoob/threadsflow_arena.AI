@@ -168,7 +168,83 @@ function buildPersonaSlots(opts = {}) {
       is_carousel: false, reply_delay_sec: 0, purpose: 'persona', timezone: tz,
     });
   }
+
+  // Follow request posts: every 3 days during warm-up phase
+  const followRequestSettings = settings.persona_follow_request || {};
+  if (followRequestSettings.enabled !== false) {
+    const frequencyDays = followRequestSettings.frequency_days || 3;
+    const onlyDuringWarmup = followRequestSettings.only_during_warmup !== false;
+    const slotHour = followRequestSettings.slot_hour ?? 19;
+    const slotMinute = followRequestSettings.slot_minute ?? 30;
+
+    // Check if we're in warm-up phase (first 30 days: 14 days warmup + 16 days ramp)
+    const isWarmup = !onlyDuringWarmup || isWarmupPhase(settings);
+
+    if (isWarmup) {
+      // Check if today is a follow request day (day 0, 3, 6, 9, etc.)
+      const daysSinceStart = getDaysSinceWarmupStart(settings);
+      const isFollowRequestDay = daysSinceStart % frequencyDays === 0;
+
+      if (isFollowRequestDay) {
+        const t = new Date(localMidnight);
+        t.setHours(slotHour, slotMinute, Math.floor(Math.random() * 60), 0);
+
+        // Pick a random tone from allowed tones (gaul/warm_sibling/curious work well)
+        const followTones = ['gaul', 'warm_sibling', 'curious', 'deadpan', 'chaotic', 'minimal'];
+        const tone = followTones[Math.floor(Math.random() * followTones.length)];
+
+        // Pick a psychology technique suited for follow requests
+        const followTechniques = ['reciprocity_first', 'belonging_signal', 'participation_loop', 'liking_through_specificity'];
+        const psychology_techniques = [followTechniques[Math.floor(Math.random() * followTechniques.length)]];
+
+        slots.push({
+          slot_index: slots.length,
+          scheduled_at: t.toISOString(),
+          length_band: 'short',  // follow requests are usually short
+          tone,
+          format: 'direct_ask',  // new format for follow requests
+          time_of_day: HOUR_TO_TIME_OF_DAY[slotHour] || 'evening',
+          psychology_techniques,
+          angle: 'follow_request',
+          sell_intensity: '0',
+          media_type: 'TEXT',
+          is_carousel: false,
+          reply_delay_sec: 0,
+          purpose: 'persona',
+          timezone: tz,
+        });
+      }
+    }
+  }
+
   return slots;
+}
+
+/**
+ * Check if we're currently in warm-up phase (first 30 days).
+ */
+function isWarmupPhase(settings) {
+  const warmup = settings.warmup || {};
+  if (!warmup.enabled || !warmup.started_at) return false;
+
+  const startDate = new Date(warmup.started_at);
+  const now = new Date();
+  const daysSinceStart = Math.floor((now - startDate) / (1000 * 60 * 60 * 24));
+
+  // Warm-up is 14 days + ramp is 16 days = 30 days total
+  return daysSinceStart < 30;
+}
+
+/**
+ * Get the number of days since warm-up started.
+ */
+function getDaysSinceWarmupStart(settings) {
+  const warmup = settings.warmup || {};
+  if (!warmup.started_at) return 0;
+
+  const startDate = new Date(warmup.started_at);
+  const now = new Date();
+  return Math.floor((now - startDate) / (1000 * 60 * 60 * 24));
 }
 
 /**

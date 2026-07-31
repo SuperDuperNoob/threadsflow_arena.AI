@@ -141,6 +141,31 @@ Borrow RHYTHM, SENTENCE PRESSURE, and REGISTER only. Do not copy wording, facts,
 {{/each}}
 {{/if}}
 
+{{#if (eq slot.angle "follow_request")}}
+### Follow request post — special instructions
+This is a "follow for follow" style post. Common among Malaysian affiliate accounts during warm-up.
+The goal is to sound natural, friendly, and not pushy. Vary the approach — don't always say "follow I, I follow back".
+
+Good approaches:
+- Casual & friendly: "Newbie kat Threads ni. Jom saling follow, I follow back tau 🤝"
+- Question-based: "Korang follow I sebab apa eh? Content ke, vibe ke? Anyway I follow back"
+- Honest & direct: "I straight je cakap, I nak tambah followers. Tapi I follow balik, bukan jenis sombong"
+- Community-focused: "Jom bina komuniti kecil kat sini. Follow I, I follow back, kita saling support"
+- Playful: "Follow I kalau korang suka orang yang post random thoughts. I follow back, janji jangan ghost"
+- Value-based: "I share petua, tips, dan random thoughts. Kalau berminat, follow I. I follow back semua"
+- Gratitude: "Terima kasih yang dah follow I. I follow balik semua. Yang belum, jom follow"
+- Short & sweet: "Follow I, I follow back. Simple"
+
+Bad approaches (AVOID):
+- "FOLLOW ME PLEASE 🙏🙏🙏" — desperate
+- "Siapa follow I, I follow back. Siapa unfollow, I unfollow" — aggressive/threatening
+- "Jom exchange follow! DM I" — too transactional
+- "Follow for follow? Comment below!" — sounds like a bot
+- "I need 1000 followers by tonight, please help" — begging
+
+Keep it short (under 180 chars). Sound like a real person who's just trying to connect.
+{{/if}}
+
 ### One more thing
 Ground this in a single tiny moment. One time. One place. One sensation. If the topic is
 about hujan, write from inside one hujan — at the traffic light, waiting for the rain to
