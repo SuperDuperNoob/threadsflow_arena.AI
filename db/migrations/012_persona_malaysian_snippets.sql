@@ -229,7 +229,80 @@ FROM (VALUES
   ('Tandoori chicken', 'Tandoori chicken sini memang juicy, marination dia perfect. Makan dengan naan, sedap gila. RM12 untuk half chicken.')
 ) AS v(title, text);
 
--- Continue with more domains...
+-- ═══════════════════════════════════════════════════════════════════════════
+-- PARENTING (reflective, warm_sibling, conversational tones)
+-- ═══════════════════════════════════════════════════════════════════════════
+
+INSERT INTO persona_snippets (source_id, source_domain, title, lang, register, tags, text, text_sha256, char_count, usage_allowed)
+SELECT get_source_id('seed-parenting'), 'parenting.my', title, 'ms-MY', 'reflective',
+       ARRAY['parenting', 'reflective', 'conversational', 'family'], text, md5(text), length(text), true
+FROM (VALUES
+  ('Anak pertama', 'Anak pertama, semua benda kita google. Demam sikit, panic. Batuk sikit, rush hospital. Anak kedua, demam main luar tengah panas, kita chill je. Experience memang beza.'),
+  ('Taska mahal', 'Taska RM800 sebulan, gaji RM3500. Lebih separuh gaji untuk taska. Ada orang cakap baik berhenti kerja, jaga anak sendiri. Tapi kalau berhenti, lagi takde duit. Dilemma ibu bekerja.'),
+  ('Anak tak nak makan', 'Anak 3 tahun, susah gila nak makan. Setiap kali suap, dia tutup mulut. Kawan cakap jangan paksa, biar dia lapar. Tapi risau la, takut tak cukup nutrisi.'),
+  ('Potty training', 'Potty training anak, minggu pertama okay. Minggu kedua, accident 5 kali sehari. Sabar je la. Kawan cakap boys memang lambat sikit dari girls. Ada tips?'),
+  ('Screen time', 'Anak 4 tahun, kalau bagi phone, diam. Tapi risau screen time terlalu banyak. Cuba limit 1 jam sehari, tapi dia nangis. Parenting zaman sekarang memang mencabar.'),
+  ('Anak demam', 'Anak demam 3 hari, suhu 38.5. Bawa klinik, doctor cakap viral, bagi PCM je. Balik rumah, malam suhu naik balik. Ibu mana tak risau. Tapi kena trust process.'),
+  ('Breastfeed', 'Breastfeed 6 bulan, susu makin sikit. Stress, rasa gagal. Kawan cakap supplement, makan oat. Try, jadi sikit. At least aku cuba, tu yang penting.'),
+  ('Anak buli', 'Anak balik sekolah, cakap kawan buli dia. Tolong, tarik rambut. Hati ibu memang sakit. Tapi kena ajar dia defend diri, bukan balas balik. Susah nak explain.'),
+  ('Homework', 'Anak darjah 2, homework berjam-jam. Kita yang penat tolong dia. Kadang-kadang soalan tu susah, kita pun tak tahu jawapan. Education system memang mencabar.'),
+  ('Anak sakit', 'Anak masuk hospital, demam denggi. Platelet drop, kena admit 5 hari. Ibu tidur hospital, ayah jaga anak lagi satu kat rumah. Penat emotionally dan physically.'),
+  ('Birthday party', 'Birthday anak, buat party kecil-kecilan. Jemput kawan sekolah, family. Budget RM500, cukup-cukup. Anak happy, tu yang penting. Tak perlu grand.'),
+  ('Anak tantrum', 'Anak tantrum dekat mall, sebab nak mainan. Orang semua pandang. Kita rasa malu, tapi kena stay calm. Pick up anak, bawa keluar. Parenting 101: jangan give in.'),
+  ('Working mom guilt', 'Kerja 9-6, balik rumah anak dah tidur. Weekend je quality time. Rasa bersalah, macam tak cukup masa dengan anak. Tapi kena kerja, nak bagi dia hidup selesa.'),
+  ('Anak picky eater', 'Anak hanya nak makan nugget dan fries. Sayur tak sentuh. Cuba hide sayur dalam food, dia detect. Kawan cakap phase ni akan berlalu. Harap-harap la.'),
+  ('Sibling rivalry', 'Anak 2 orang, asyik gaduh. Berebut mainan, berebut TV. Kita penat jadi referee. Kawan cakap normal, diaorang akan rapat bila besar. Harap-harap.')
+) AS v(title, text);
+
+-- ═══════════════════════════════════════════════════════════════════════════
+-- COMMUTE (neutral, conversational, deadpan tones)
+-- ═══════════════════════════════════════════════════════════════════════════
+
+INSERT INTO persona_snippets (source_id, source_domain, title, lang, register, tags, text, text_sha256, char_count, usage_allowed)
+SELECT get_source_id('seed-commute'), 'commute.my', title, 'ms-MY', 'conversational',
+       ARRAY['commute', 'conversational', 'transport', 'daily-life'], text, md5(text), length(text), true
+FROM (VALUES
+  ('LRT delay', 'LRT delay 20 minit pagi ni. Semua orang muka stress. Ada yang call boss, ada yang tidur berdiri. Sampai office lambat, redha je la.'),
+  ('Federal highway', 'Federal highway jam 1 jam, 15km je. Dah la hujan. Waze suggest alternative, lagi jauh. Sometimes just kena sabar.'),
+  ('Parking KL', 'Parking dekat KL memang nightmare. Pusing 30 minit, akhirnya parking RM15 sehari. Mahal, tapi takde choice. Naik public transport lagi jimat.'),
+  ('Grab mahal', 'Grab dari rumah ke office RM25, balik RM30. Surge hour memang mahal. Sebulan RM1000+ untuk transport. Baik beli kereta secondhand.'),
+  ('Bas lambat', 'Bas RapidKL janji 15 minit, tunggu 45 minit. Dah la panas. Sampai office peluh, boss tanya kenapa. Nak explain pun malas.'),
+  ('Motor vs kereta', 'Naik motor 20 minit sampai office. Naik kereta 1 jam. Tapi hujan lebat, motor basah kuyup. Trade-off setiap hari.'),
+  ('KTM rosak', 'KTM rosak lagi. Penumpang semua kena turun, tunggu bas ganti. Dah la packed, panas. Public transport Malaysia memang mencabar.'),
+  ('Tol mahal', 'Tol RM3.50 sehala, RM7 pergi balik. Sebulan RM150. Setahun RM1800. Untuk apa eh duit tol tu? Jalan still berlubang.'),
+  ('Carpool', 'Carpool dengan kawan office, jimat minyak RM200 sebulan. Tapi kena adjust schedule, kadang-kadang kena tunggu dia. Worth it la.'),
+  ('Walk to work', 'Rumah dekat office, jalan kaki 15 minit. Jimat duit, sihat. Tapi panas gila, sampai office peluh. Malaysia memang tak mesra pejalan kaki.'),
+  ('MRT baru', 'MRT baru buka, cuba naik. Clean, aircond sejuk, on time. Tapi station jauh dari office, kena jalan 10 minit. Still better than jam.'),
+  ('GrabFood delivery', 'Order GrabFood, rider cancel last minute. Reason: kawasan jauh. Lapar, kena order balik. Wait another 45 minit. Sabar.'),
+  ('Traffic light', 'Traffic light dekat junction ni lama gila. 2 minit merah, 30 saat hijau. Queue sampai 20 kereta. Siapa design ni?'),
+  ('Flood', 'Hujan 30 minit, jalan dah banjir. Kereta sedan confirm mati enjin. Nasib baik pakai SUV. KL drainage memang kena improve.'),
+  ('E-hailing vs taxi', 'E-hailing RM15, taxi RM30 untuk jarak sama. Tapi e-hailing sometimes cancel, taxi confirm ambil. Depends on situasi la.')
+) AS v(title, text);
+
+-- ═══════════════════════════════════════════════════════════════════════════
+-- WORK (conversational, neutral, deadpan tones)
+-- ═══════════════════════════════════════════════════════════════════════════
+
+INSERT INTO persona_snippets (source_id, source_domain, title, lang, register, tags, text, text_sha256, char_count, usage_allowed)
+SELECT get_source_id('seed-work'), 'work.my', title, 'ms-MY', 'conversational',
+       ARRAY['work', 'conversational', 'office', 'career'], text, md5(text), length(text), true
+FROM (VALUES
+  ('Meeting pointless', 'Meeting 2 jam, boleh settle dalam email 5 minit. Tapi boss nak discuss, so everyone buang masa. Corporate life.'),
+  ('Overtime', 'Kerja sampai 9pm, boss cakap "ni untuk team". Tapi team lain balik 6pm. Rasa macam diperbodohkan. Tapi nak complain, takut.'),
+  ('KPI', 'KPI quarterly memang stress. Target tinggi, resource sikit. Bila tak capai, kena explain. Bila capai, next quarter naik lagi target.'),
+  ('Kawan office', 'Kawan office pinjam RM50, dah 3 bulan tak bayar. Nak tuntut, rasa awkward. Tapi RM50 pun duit. Lesson learned, jangan pinjamkan duit.'),
+  ('Promosi', 'Kerja 3 tahun, performance bagus, tapi tak dapat promotion. Boss cakap "next year". Next year sama je. Maybe kena cari tempat lain.'),
+  ('Work from home', 'WFH best, jimat masa commute. Tapi work-life balance blur, malam pun orang WhatsApp. Kena set boundaries, tapi susah.'),
+  ('Boss toxic', 'Boss asyik blame team bila ada problem. Bila ada success, dia ambil credit. Dah 2 tahun, mental health terjejas. Time to move on.'),
+  ('Interview', 'Interview semalam, diaorang tanya strength dan weakness. Cakap "I work too hard", cringe. Tapi semua orang cakap macam tu. Interview memang awkward.'),
+  ('Salary negotiation', 'Offer RM4500, nego RM5000. Diaorang bagi RM4800. Accept, sebab market rate memang macam tu. Next time kena research better.'),
+  ('Resign', 'Dah resign, notice 2 bulan. Boss minta stay, offer naik gaji. Tapi dah decide nak move on. Sometimes you just need fresh start.'),
+  ('Team building', 'Team building weekend, konon fun. Tapi kena bangun 7am, buat aktiviti outdoor. Penat, nak rehat je. Corporate event memang macam ni.'),
+  ('Lunch break', 'Lunch break 1 jam, tapi meeting sampai 1.30. Makan sandwich dekat desk. Work-life balance? What is that.'),
+  ('Kena scold', 'Kena scold depan team sebab mistake kecil. Rasa malu, tapi boss memang macam tu. Swallow pride, move on. Professional.'),
+  ('Side hustle', 'Kerja 9-5, side hustle malam. Penat, tapi extra income RM2000 sebulan. Worth it untuk future. Sacrifice sekarang, enjoy later.'),
+  ('Office politics', 'Office politics memang toxic. Kawan backstab untuk promotion. Kita just buat kerja, tak nak involve. Tapi susah nak avoid.')
+) AS v(title, text);
 
 COMMIT;
 
