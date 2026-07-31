@@ -7,7 +7,7 @@
 BEGIN;
 
 -- Create a new source for follow request topics
-INSERT INTO persona_topic_sources (slug, name, description)
+INSERT INTO persona_topic_sources (slug, label, description)
 VALUES (
   'follow_request',
   'Follow Request Topics',
@@ -17,8 +17,13 @@ ON CONFLICT (slug) DO NOTHING;
 
 -- Add 25 varieties of follow request topics
 -- Each one has a different angle, tone, and approach to avoid repetition
-INSERT INTO persona_topics (source_id, topic, angle, tone, time_of_day, psychology_technique)
-SELECT id, topic, angle, tone, time_of_day, psychology_technique
+INSERT INTO persona_topics (source_id, topic, angle_hint, time_of_day, context)
+SELECT
+  id,
+  topic,
+  angle,
+  ARRAY[time_of_day]::TEXT[],
+  jsonb_build_object('tone', tone, 'psychology_technique', psychology_technique)
 FROM persona_topic_sources,
 LATERAL (VALUES
   -- Casual & friendly

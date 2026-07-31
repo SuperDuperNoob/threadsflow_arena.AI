@@ -2,7 +2,13 @@
 
 BEGIN;
 
--- 1. Expand posts table columns for review tracking if not already present
+-- 1. Expand posts lifecycle/status and review tracking columns if not already present.
+-- The base schema only allows queued/publishing/published/failed/skipped; review routes
+-- and n8n workflows use pending_review/approved/rejected/auto_published before publish.
+ALTER TABLE posts DROP CONSTRAINT IF EXISTS posts_status_check;
+ALTER TABLE posts ADD CONSTRAINT posts_status_check
+  CHECK (status IN ('queued','publishing','published','failed','skipped',
+                    'pending_review','approved','rejected','auto_published'));
 ALTER TABLE posts ADD COLUMN IF NOT EXISTS review_timeout_at TIMESTAMPTZ;
 ALTER TABLE posts ADD COLUMN IF NOT EXISTS review_locked_until TIMESTAMPTZ;
 ALTER TABLE posts ADD COLUMN IF NOT EXISTS review_timeout_minutes INT DEFAULT 120;
@@ -71,7 +77,7 @@ LEFT JOIN LATERAL (
   SELECT count(*) AS clicks FROM clicks cl WHERE cl.post_uid = p.uid AND NOT cl.is_bot
 ) c ON true
 LEFT JOIN LATERAL (
-  SELECT count(*) AS orders, sum(commission_minor) AS commission
+  SELECT count(*) AS orders, sum(commission_idr) AS commission
   FROM conversions cv WHERE cv.post_uid = p.uid AND cv.status <> 'cancelled'
 ) o ON true
 WHERE p.status = 'published';
