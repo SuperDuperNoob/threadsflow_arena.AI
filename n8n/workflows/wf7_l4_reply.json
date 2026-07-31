@@ -1,0 +1,405 @@
+{
+  "name": "wf7_l4_reply",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [{ "field": "cronExpression", "expression": "0 */4 * * *" }]
+        }
+      },
+      "id": "schedule",
+      "name": "Every 4 hours",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [-1400, 400],
+      "notes": "Check for unreplied comments every 4 hours (configurable in settings.l4_reply)"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT value FROM settings WHERE key='l4_reply';",
+        "options": {}
+      },
+      "id": "load_config",
+      "name": "Load L4 config",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [-1180, 400],
+      "credentials": { "postgres": { "id": "PG", "name": "Postgres threadsflow" } },
+      "notes": "Load settings.l4_reply to check if enabled and get limits"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": { "version": 2 },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.value?.enabled }}",
+              "rightValue": true,
+              "operator": { "type": "boolean", "operation": "equals" }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "check_enabled",
+      "name": "L4 enabled?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [-960, 400],
+      "notes": "Skip entire workflow if l4_reply.enabled = false"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT p.id, p.uid, p.body, p.purpose, p.media_uid, p.published_at,\n       COUNT(c.id) AS comment_count\nFROM posts p\nLEFT JOIN threads_comments c ON c.post_id = p.id\nWHERE p.status = 'published'\n  AND p.published_at > now() - interval '7 days'\n  AND p.purpose IN ('product', 'persona')\nGROUP BY p.id, p.uid, p.body, p.purpose, p.media_uid, p.published_at\nHAVING COUNT(c.id) > 0\nORDER BY p.published_at DESC\nLIMIT 50;",
+        "options": {}
+      },
+      "id": "fetch_posts",
+      "name": "Fetch posts with comments",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [-740, 320],
+      "credentials": { "postgres": { "id": "PG", "name": "Postgres threadsflow" } },
+      "notes": "Get published posts from last 7 days that have comments"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT c.id, c.comment_id, c.text, c.username, c.post_id, c.created_at,\n       EXISTS(SELECT 1 FROM l4_replies r WHERE r.comment_id = c.comment_id) AS has_reply\nFROM threads_comments c\nWHERE c.post_id IN ({{ $json.posts.map(p => p.id).join(',') || '0' }})\n  AND c.created_at > now() - interval '7 days'\nORDER BY c.created_at DESC\nLIMIT 200;",
+        "options": {}
+      },
+      "id": "fetch_comments",
+      "name": "Fetch unreplied comments",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [-520, 320],
+      "credentials": { "postgres": { "id": "PG", "name": "Postgres threadsflow" } },
+      "notes": "Get comments that haven't been replied to yet"
+    },
+    {
+      "parameters": {
+        "jsCode": "// l4_reply_plan.js — plan which comments need replies\nconst fs = require('fs');\nconst planModule = fs.readFileSync('/home/node/.n8n/code/l4_reply_plan.js', 'utf8');\neval(planModule);\n\nconst input = {\n  posts: $('Fetch posts with comments').all().map(item => item.json),\n  comments: $input.all().map(item => item.json),\n  l4_settings: $('Load L4 config').first().json.value || {},\n  recent_replies: [],\n  self_username: ''\n};\n\nconst result = planReplies(input);\nif (result.length === 0) {\n  return [{ json: { _empty: true, message: 'No comments need replies' } }];\n}\nreturn result.map(r => ({ json: { ...input, ...r } }));"
+      },
+      "id": "plan_replies",
+      "name": "Plan replies",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [-300, 320],
+      "notes": "Apply rate limiting, filter bots, score comments by priority"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": { "version": 2 },
+          "conditions": [
+            {
+              "leftValue": "={{ $json._empty }}",
+              "rightValue": true,
+              "operator": { "type": "boolean", "operation": "not_equals" }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "has_candidates",
+      "name": "Has candidates?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [-80, 320],
+      "notes": "Skip if no comments need replies"
+    },
+    {
+      "parameters": {
+        "jsCode": "// l4_classify_intent.js — classify comment intent\nconst fs = require('fs');\nconst classifyModule = fs.readFileSync('/home/node/.n8n/code/l4_classify_intent.js', 'utf8');\neval(classifyModule);\n\nconst result = classifyIntent($input.first().json);\nreturn [{ json: { ...$input.first().json, ...result } }];"
+      },
+      "id": "classify_intent",
+      "name": "Classify intent",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [140, 320],
+      "notes": "Classify comment into 9 intents: link_inquiry, price_inquiry, experience_inquiry, etc."
+    },
+    {
+      "parameters": {
+        "jsCode": "// l4_draft_reply.js — build LLM prompt\nconst fs = require('fs');\nconst draftModule = fs.readFileSync('/home/node/.n8n/code/l4_draft_reply.js', 'utf8');\neval(draftModule);\n\nconst result = buildReplyPrompt($input.first().json);\nreturn [{ json: { ...$input.first().json, ...result } }];"
+      },
+      "id": "draft_reply",
+      "name": "Draft reply prompt",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [360, 320],
+      "notes": "Build LLM system/user prompts with psychology techniques"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Load L4 config').first().json.value?.llm?.base_url || 'https://api.openai.com/v1' }}/chat/completions",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"model\": \"{{ $('Load L4 config').first().json.value?.llm?.model || 'gpt-4o-mini' }}\",\n  \"messages\": [\n    { \"role\": \"system\", \"content\": {{ JSON.stringify($json.llm_system) }} },\n    { \"role\": \"user\", \"content\": {{ JSON.stringify($json.llm_user) }} }\n  ],\n  \"temperature\": 0.8,\n  \"max_tokens\": 200\n}",
+        "options": {
+          "response": {
+            "response": { "neverError": true }
+          }
+        }
+      },
+      "id": "llm_call",
+      "name": "LLM: generate reply",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [580, 320],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000,
+      "notes": "Call LLM to generate reply with psychology techniques"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": { "version": 2 },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.choices?.[0]?.message?.content }}",
+              "rightValue": "",
+              "operator": { "type": "string", "operation": "exists", "singleValue": true }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "llm_success",
+      "name": "LLM succeeded?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [800, 320],
+      "notes": "Check if LLM returned a valid response"
+    },
+    {
+      "parameters": {
+        "jsCode": "// l4_qa_reply.js — QA gate for drafted replies\nconst fs = require('fs');\nconst qaModule = fs.readFileSync('/home/node/.n8n/code/l4_qa_reply.js', 'utf8');\neval(qaModule);\n\nconst base = $('Draft reply prompt').first().json;\nconst llmResponse = $input.first().json;\nconst replyText = llmResponse.choices?.[0]?.message?.content || '';\n\nconst input = {\n  ...base,\n  reply_text: replyText,\n  settings: base.l4_settings || {}\n};\n\nconst result = qaReply(input);\nreturn [{ json: { ...input, ...result } }];"
+      },
+      "id": "qa_reply",
+      "name": "QA gate",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1020, 240],
+      "notes": "Check length, Indonesian words, hard-sell language, psychology technique validation"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": { "version": 2 },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.pass }}",
+              "rightValue": true,
+              "operator": { "type": "boolean", "operation": "equals" }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "qa_passed",
+      "name": "Passed QA?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [1240, 240],
+      "notes": "Only publish replies that pass QA"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://graph.threads.net/v1.0/{{ $json.comment_id }}/replies",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "access_token",
+              "value": "={{ $('Load L4 config').first().json.value?.threads_token || '' }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "multipart-form-data",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "text",
+              "value": "={{ $json.cleaned }}"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": { "neverError": true }
+          }
+        }
+      },
+      "id": "publish_reply",
+      "name": "Publish reply",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1460, 160],
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 3000,
+      "notes": "Post reply to Threads API"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO l4_replies (post_id, comment_id, comment_text, intent, reply_text, reply_comment_id, psychology_techniques, status, persona_calibrated, published_at)\nVALUES ($1, $2, $3, $4, $5, $6, $7::text[], 'published', $8, now())\nON CONFLICT (comment_id) DO UPDATE SET\n  status = 'published',\n  reply_comment_id = EXCLUDED.reply_comment_id,\n  published_at = now();",
+        "options": {
+          "queryReplacement": "={{ $json.post_id }},={{ $json.comment_id }},={{ $json.comment_text }},={{ $json.intent }},={{ $json.cleaned }},={{ $json.id || '' }},={{ JSON.stringify($json.psychology_techniques || []) }},={{ $json.persona_calibrated || false }}"
+        }
+      },
+      "id": "save_reply",
+      "name": "Save to DB",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [1680, 160],
+      "credentials": { "postgres": { "id": "PG", "name": "Postgres threadsflow" } },
+      "notes": "Save published reply to l4_replies table for audit"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO l4_replies (post_id, comment_id, comment_text, intent, reply_text, psychology_techniques, status, qa_reasons)\nVALUES ($1, $2, $3, $4, $5, $6::text[], 'rejected', $7::text[])\nON CONFLICT (comment_id) DO UPDATE SET\n  status = 'rejected',\n  qa_reasons = EXCLUDED.qa_reasons;",
+        "options": {
+          "queryReplacement": "={{ $json.post_id }},={{ $json.comment_id }},={{ $json.comment_text }},={{ $json.intent }},={{ $json.reply_text }},={{ JSON.stringify($json.psychology_techniques || []) }},={{ JSON.stringify($json.reasons || []) }}"
+        }
+      },
+      "id": "log_rejection",
+      "name": "Log QA rejection",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [1460, 400],
+      "credentials": { "postgres": { "id": "PG", "name": "Postgres threadsflow" } },
+      "notes": "Log rejected replies with QA reasons for analysis"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO run_log (workflow, level, message, meta)\nVALUES ('wf7_l4_reply', 'error', 'LLM call failed', $1::jsonb);",
+        "options": {
+          "queryReplacement": "={{ JSON.stringify({ error: $json.error || $json.message || 'unknown', comment_id: $('Classify intent').first().json.comment_id }).slice(0,500) }}"
+        }
+      },
+      "id": "log_llm_failure",
+      "name": "Log LLM failure",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [1020, 480],
+      "credentials": { "postgres": { "id": "PG", "name": "Postgres threadsflow" } },
+      "notes": "Log LLM failures for debugging"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO run_log (workflow, level, message, meta)\nVALUES ('wf7_l4_reply', 'info', 'No comments need replies', $1::jsonb);",
+        "options": {
+          "queryReplacement": "={{ JSON.stringify({ reason: 'all_comments_replied_or_filtered' }) }}"
+        }
+      },
+      "id": "log_no_candidates",
+      "name": "Log no candidates",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [140, 480],
+      "credentials": { "postgres": { "id": "PG", "name": "Postgres threadsflow" } },
+      "notes": "Log when no comments need replies"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO run_log (workflow, level, message)\nVALUES ('wf7_l4_reply', 'info', 'L4 disabled, skipping');",
+        "options": {}
+      },
+      "id": "log_disabled",
+      "name": "Log L4 disabled",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [-740, 560],
+      "credentials": { "postgres": { "id": "PG", "name": "Postgres threadsflow" } },
+      "notes": "Log when L4 is disabled"
+    }
+  ],
+  "connections": {
+    "Every 4 hours": {
+      "main": [[{ "node": "Load L4 config", "type": "main", "index": 0 }]]
+    },
+    "Load L4 config": {
+      "main": [[{ "node": "L4 enabled?", "type": "main", "index": 0 }]]
+    },
+    "L4 enabled?": {
+      "main": [
+        [{ "node": "Fetch posts with comments", "type": "main", "index": 0 }],
+        [{ "node": "Log L4 disabled", "type": "main", "index": 0 }]
+      ]
+    },
+    "Fetch posts with comments": {
+      "main": [[{ "node": "Fetch unreplied comments", "type": "main", "index": 0 }]]
+    },
+    "Fetch unreplied comments": {
+      "main": [[{ "node": "Plan replies", "type": "main", "index": 0 }]]
+    },
+    "Plan replies": {
+      "main": [[{ "node": "Has candidates?", "type": "main", "index": 0 }]]
+    },
+    "Has candidates?": {
+      "main": [
+        [{ "node": "Classify intent", "type": "main", "index": 0 }],
+        [{ "node": "Log no candidates", "type": "main", "index": 0 }]
+      ]
+    },
+    "Classify intent": {
+      "main": [[{ "node": "Draft reply prompt", "type": "main", "index": 0 }]]
+    },
+    "Draft reply prompt": {
+      "main": [[{ "node": "LLM: generate reply", "type": "main", "index": 0 }]]
+    },
+    "LLM: generate reply": {
+      "main": [[{ "node": "LLM succeeded?", "type": "main", "index": 0 }]]
+    },
+    "LLM succeeded?": {
+      "main": [
+        [{ "node": "QA gate", "type": "main", "index": 0 }],
+        [{ "node": "Log LLM failure", "type": "main", "index": 0 }]
+      ]
+    },
+    "QA gate": {
+      "main": [[{ "node": "Passed QA?", "type": "main", "index": 0 }]]
+    },
+    "Passed QA?": {
+      "main": [
+        [{ "node": "Publish reply", "type": "main", "index": 0 }],
+        [{ "node": "Log QA rejection", "type": "main", "index": 0 }]
+      ]
+    },
+    "Publish reply": {
+      "main": [[{ "node": "Save to DB", "type": "main", "index": 0 }]]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "Asia/Kuala_Lumpur"
+  },
+  "tags": [{ "name": "threadsflow" }],
+  "notes": "L4 On-Post Reply Engagement Loop\n\nChecks for unreplied comments every 4 hours, classifies intent, drafts replies with psychology techniques, passes QA gate, and publishes to Threads.\n\nTo enable: UPDATE settings SET value = jsonb_set(value, '{enabled}', 'true') WHERE key='l4_reply';\n\nRate limits: 10 replies/day, 5 per post, 24h cooldown per user (configurable in settings.l4_reply)"
+}
