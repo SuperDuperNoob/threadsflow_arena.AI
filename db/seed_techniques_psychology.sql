@@ -20,13 +20,17 @@ INSERT INTO techniques
   (code, name, type, instruction, when_to_use, mechanism, example_do, example_dont,
    compatible_formats, compatible_tones, compatible_intensity, compatible_media,
    contested, contested_note, source_id, corroboration, review_state)
-SELECT v.* FROM (VALUES
+SELECT
+  code, name, type, instruction, when_to_use, mechanism, example_do, example_dont,
+  compatible_formats::TEXT[], compatible_tones::TEXT[], compatible_intensity::SMALLINT[], compatible_media::TEXT[],
+  contested, contested_note, source_id, corroboration, review_state
+FROM (VALUES
 
 -- ══════════════════════════════════════════════════════════════════════════════
 -- FROM: Influence (Cialdini) — reciprocity, liking, social proof (used carefully)
 -- ══════════════════════════════════════════════════════════════════════════════
 
-('reciprocity_first','Give before you ask','engagement',
+('reciprocity_first','Give before you ask','psychology',
  'In persona posts (sell_intensity 0), offer one genuinely useful tip, observation, or small story with zero mention of products. Build a bank of goodwill before any sell post.',
  'All persona/warm-up posts. This is the psychological foundation of the zero_sell_ratio rule.',
  'Cialdini reciprocity principle: humans feel obligated to return favors. A post that gives real value (a petua, a relatable moment, a useful observation) creates a psychological debt that makes the next sell post feel like a friend''s recommendation rather than an ad. This is why accounts that only sell get throttled — they have no reciprocity bank.',
@@ -70,7 +74,7 @@ SELECT v.* FROM (VALUES
 -- FROM: Never Split the Difference (Voss) — tactical empathy, mirroring, labeling
 -- ══════════════════════════════════════════════════════════════════════════════
 
-('tactical_empathy_label','Label the emotion, don''t feel it','engagement',
+('tactical_empathy_label','Label the emotion, don''t feel it','psychology',
  'In replies (L4 reply loop), acknowledge the commenter''s emotion with "macam [frustrated/excited/confused] je" or "faham sangat" before answering their question.',
  'Reply-marketing and L4 engagement. This is how you turn a transactional reply into a conversation.',
  'Chris Voss tactical empathy: you don''t need to agree with someone to show you understand their emotional state. Labeling it ("macam stress je", "nampak excited ni") makes them feel heard, which triggers reciprocity and makes them more likely to click your link or ask a follow-up. This is why "terima kasih" replies kill engagement.',
@@ -80,7 +84,7 @@ SELECT v.* FROM (VALUES
  false,null,
  (SELECT id FROM technique_sources WHERE title LIKE 'Books/ (Psychology%'),3,'approved'),
 
-('mirror_last_three','Mirror: repeat their last 1-3 words as a question','engagement',
+('mirror_last_three','Mirror: repeat their last 1-3 words as a question','psychology',
  'In replies, when someone asks a question or makes a statement, repeat their last 1-3 words back as a question (with "?" or upward tone) to invite them to elaborate.',
  'Reply-marketing and L4 engagement. This is the single highest-ROI reply technique for triggering conversation.',
  'Chris Voss mirroring: repeating the last few words as a question signals you''re listening and invites the other person to elaborate. It feels like active listening but actually gives you time to think and makes them feel heard. On Threads, this turns a dead-end comment ("Beli kat mana?") into a conversation ("Kat mana? Shopee ke Lazada?") which boosts reply density and algorithm distribution.',
@@ -90,7 +94,7 @@ SELECT v.* FROM (VALUES
  false,null,
  (SELECT id FROM technique_sources WHERE title LIKE 'Books/ (Psychology%'),3,'approved'),
 
-('calibrated_question','Ask "macam mana" not "kenapa"','engagement',
+('calibrated_question','Ask "macam mana" not "kenapa"','psychology',
  'In replies, ask calibrated questions that invite the commenter to share their context: "macam mana kau guna?", "berapa lama dah cari?", "untuk apa?".',
  'Reply-marketing. This is how you turn a one-line comment into a thread that boosts distribution.',
  'Chris Voss calibrated questions: "why" questions feel accusatory ("kenapa tanya?"). "How" and "what" questions ("macam mana", "untuk apa") feel like genuine curiosity and give the other person control. On Threads, this creates longer comment threads which the algorithm interprets as high engagement, pushing the post to more people.',
@@ -100,7 +104,7 @@ SELECT v.* FROM (VALUES
  false,null,
  (SELECT id FROM technique_sources WHERE title LIKE 'Books/ (Psychology%'),2,'approved'),
 
-('late_night_dj_voice','Late-night FM DJ voice: calm, slow, downward','tone',
+('late_night_dj_voice','Late-night FM DJ voice: calm, slow, downward','voice',
  'In sell posts (intensity 1-2), use short declarative sentences with periods, not exclamation marks. State facts plainly. No hype, no "!", no "memang terbaik!".',
  'Honest reviews and direct-sell posts. This is the tone that reads as trustworthy rather than salesy.',
  'Chris Voss late-night FM DJ voice: slow, calm, downward-inflecting speech signals "I''m in control, this isn''t up for debate". On Threads, this translates to short sentences with periods, no exclamation marks, no "memang berbaloi!" hype. It reads as someone stating facts, not selling. The opposite (exclamation marks, hype words) is what gets you flagged as an ad.',
@@ -114,7 +118,7 @@ SELECT v.* FROM (VALUES
 -- FROM: Digital Body Language (Dhawan) — punctuation, response time, clarity
 -- ══════════════════════════════════════════════════════════════════════════════
 
-('punctuation_signals_tone','Punctuation is tone: period = serious, no period = casual','tone',
+('punctuation_signals_tone','Punctuation is tone: period = serious, no period = casual','voice',
  'Use periods for serious/factual posts (sell_intensity 1-2). Drop periods for casual/persona posts (intensity 0). Never use exclamation marks except in direct quotes.',
  'All posts. This is a subtle but powerful signal that separates "friend talking" from "brand posting".',
  'Erica Dhawan digital body language: in text-based communication, punctuation replaces facial expressions. A period signals "this is a statement, not up for debate" (good for sell posts). No period signals "casual thought" (good for persona posts). Exclamation marks signal "I''m trying too hard" and are the fastest way to look like a brand account. On Threads, this is the difference between "RM39. 4 bulan guna." (trustworthy) and "RM39! 4 bulan guna!" (ad).',
@@ -138,7 +142,7 @@ SELECT v.* FROM (VALUES
 -- FROM: Everybody Writes (Handley) — conversational writing, cutting ruthlessly
 -- ══════════════════════════════════════════════════════════════════════════════
 
-('write_like_you_talk','Write like you talk to a friend, not like you''re writing an essay','tone',
+('write_like_you_talk','Write like you talk to a friend, not like you''re writing an essay','voice',
  'Use BM pasar contractions ("tak" not "tidak", "nak" not "hendak", "kat" not "di"). Use sentence fragments. Start sentences with "Dan" or "Tapi" if that''s how you''d say it.',
  'All posts except utility/how-to. This is what separates "friend talking" from "brand posting".',
  'Ann Handley: writing evolves with us, and in 2026 it''s more relaxed than ever. On Threads, formal BM ("tidak", "hendak", "di mana") reads as robotic and corporate. BM pasar ("tak", "nak", "kat mana") reads as human. The books teach this explicitly: if you wouldn''t say it to a friend at a mamak, don''t write it in a post.',
@@ -162,7 +166,7 @@ SELECT v.* FROM (VALUES
 -- FROM: How to Win Friends Digital Age (Carnegie) — bury boomerangs, listen longer
 -- ══════════════════════════════════════════════════════════════════════════════
 
-('bury_boomerangs','Bury your boomerangs: don''t make it about you','engagement',
+('bury_boomerangs','Bury your boomerangs: don''t make it about you','psychology',
  'In replies, don''t immediately pivot back to your product or your experience. Answer their question fully, then ask about their context. Save your story for when they ask.',
  'Reply-marketing and L4 engagement. This is what separates conversation from broadcasting.',
  'Carnegie "bury your boomerangs": a boomerang is when someone shares something and you immediately pivot back to yourself ("Oh you have that problem? Let me tell you about MY product"). On Threads, this kills engagement because it signals you''re not listening, you''re just waiting to sell. The fix: answer their question, ask about their context, and only share your experience if they ask. This turns a comment into a conversation.',
@@ -172,7 +176,7 @@ SELECT v.* FROM (VALUES
  false,null,
  (SELECT id FROM technique_sources WHERE title LIKE 'Books/ (Psychology%'),2,'approved'),
 
-('listen_longer','Listen longer: ask 2 questions before sharing your take','engagement',
+('listen_longer','Listen longer: ask 2 questions before sharing your take','psychology',
  'In reply threads, ask at least 2 follow-up questions before sharing your own opinion or experience. This signals you''re listening, not broadcasting.',
  'Reply-marketing. This is the mechanism that turns a one-line comment into a thread that boosts distribution.',
  'Carnegie "listen longer": most people are waiting to talk, not listening. On Threads, this manifests as replies that immediately pivot to "saya pun sama" or "saya guna ni". The fix: ask 2 questions ("Untuk apa?", "Berapa lama dah cari?") before sharing your take. This signals genuine interest and creates longer threads, which the algorithm rewards.',
@@ -182,7 +186,7 @@ SELECT v.* FROM (VALUES
  false,null,
  (SELECT id FROM technique_sources WHERE title LIKE 'Books/ (Psychology%'),2,'approved'),
 
-('leave_better','Leave others a little better: one useful detail in every reply','engagement',
+('leave_better','Leave others a little better: one useful detail in every reply','psychology',
  'Every reply should contain at least one specific useful detail the commenter didn''t have before: a timing, a comparison, a warning, a tip.',
  'Reply-marketing and L4 engagement. This is what makes people click your profile and follow you.',
  'Carnegie "leave others a little better": every interaction should give the other person something they didn''t have. On Threads, a reply that just says "terima kasih" or "link kat bio" gives nothing. A reply that says "Shopee, tapi tunggu sale hari gaji, lagi murah" gives a useful timing tip. This is what turns a commenter into a follower.',
@@ -196,7 +200,7 @@ SELECT v.* FROM (VALUES
 -- FROM: Art of Community (Bacon) — participation loops, belonging signals
 -- ══════════════════════════════════════════════════════════════════════════════
 
-('participation_loop','Ask for input, not just attention','engagement',
+('participation_loop','Ask for input, not just attention','psychology',
  'In persona posts, ask for one specific piece of input: "korang guna yang mana?", "ada petua lain?", "tempat korang macam ni juga ke?". Never ask "macam mana?" (too broad).',
  'Persona posts (sell_intensity 0). This is how you build a community that replies, which boosts distribution.',
  'Jono Bacon participation loops: communities thrive when members have a role. On Threads, asking "macam mana pendapat korang?" is too broad — people don''t know what to say. Asking "korang guna yang mana?" or "tempat korang macam ni juga ke?" gives them a specific prompt to respond to. This creates reply density, which the algorithm rewards.',

@@ -318,8 +318,20 @@ app.get('/api/review', requireAuth, async (_, res) => {
   res.json(rows);
 });
 
+app.post('/api/review/lock', requireAuth, async (req, res) => {
+  req.url = `/api/posts/${req.body.post_id}/lock`;
+  req.method = 'POST';
+  app.handle(req, res);
+});
+
 app.post('/api/review/:id', requireAuth, async (req, res) => {
-  const { action } = req.body ?? {};   // 'insert' | 'discard'
+  const { action, decision } = req.body ?? {};   // KB: 'insert' | 'discard'; post review: approve/reject/edit
+  if (decision || ['approved', 'rejected', 'edited', 'approve', 'reject', 'edit'].includes(action)) {
+    req.url = `/api/posts/${req.params.id}/decision`;
+    req.method = 'POST';
+    return app.handle(req, res);
+  }
+
   const { rows: [c] } = await pool.query(`SELECT * FROM kb_candidates WHERE id=$1`, [req.params.id]);
   if (!c) return res.status(404).json({ error: 'not found' });
 
@@ -591,7 +603,7 @@ app.get('/api/posts/queue', requireAuth, async (_, res) => {
            p.length_band, p.scheduled_at, p.purpose, pr.name AS product_name,
            p.status, p.review_timeout_at, p.review_locked_until,
            COALESCE((p.topic_context->>'is_exploration')::boolean, false) AS is_exploration,
-           (SELECT edited_body FROM post_review WHERE post_id = p.id AND edited_body IS NOT NULL ORDER BY created_id DESC LIMIT 1) AS edited_body
+           (SELECT edited_body FROM post_review WHERE post_id = p.id AND edited_body IS NOT NULL ORDER BY id DESC LIMIT 1) AS edited_body
       FROM posts p
       LEFT JOIN products pr ON pr.id = p.product_id
      WHERE p.status = 'pending_review'
@@ -692,16 +704,6 @@ app.get('/api/posts/weekly', requireAuth, async (_, res) => {
 // Backwards compatibility aliases
 app.get('/api/review/queue', requireAuth, async (req, res) => {
   req.url = '/api/posts/queue';
-  app.handle(req, res);
-});
-app.post('/api/review/lock', requireAuth, async (req, res) => {
-  req.url = `/api/posts/${req.body.post_id}/lock`;
-  req.method = 'POST';
-  app.handle(req, res);
-});
-app.post('/api/review/:post_id', requireAuth, async (req, res) => {
-  req.url = `/api/posts/${req.params.post_id}/decision`;
-  req.method = 'POST';
   app.handle(req, res);
 });
 app.get('/api/review/summary', requireAuth, async (req, res) => {

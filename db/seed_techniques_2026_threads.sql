@@ -21,7 +21,11 @@ INSERT INTO techniques
   (code, name, type, instruction, when_to_use, mechanism, example_do, example_dont,
    compatible_formats, compatible_tones, compatible_intensity, compatible_media,
    contested, contested_note, source_id, corroboration, review_state)
-SELECT v.* FROM (VALUES
+SELECT
+  code, name, type, instruction, when_to_use, mechanism, example_do, example_dont,
+  compatible_formats::TEXT[], compatible_tones::TEXT[], compatible_intensity::SMALLINT[], compatible_media::TEXT[],
+  contested, contested_note, source_id, corroboration, review_state
+FROM (VALUES
 
 -- ══════════════════════════════════════════════════════════════════════════════
 -- FROM: Threads Income Mastery v2 (2026), Threads Content Machine Playbook, Threads Profit Killer
@@ -47,7 +51,7 @@ SELECT v.* FROM (VALUES
  false,null,
  (SELECT id FROM technique_sources WHERE title LIKE 'Books/ (2026 Threads%'),3,'approved'),
 
-('reply_marketing','Reply as the growth channel','engagement',
+('reply_marketing','Reply as the growth channel','psychology',
  'After posting, stay online for 20 minutes and reply to every comment with at least one follow-up question or additional detail — never just "terima kasih". Ask for one piece of their context.',
  'Every non-micro post. This is the single highest-ROI engagement action the 2026 guides call out.',
  'Threads Profit Killer "mistake #6 — Post & Ghost": algorithms use reply density in the first 30 minutes as a ranking signal, and commenters who receive a genuine reply are 3–4× more likely to click the link. Short replies read as broadcast; a question turns a comment into a conversation, which triggers more distribution.',
@@ -87,7 +91,7 @@ SELECT v.* FROM (VALUES
  false,null,
  (SELECT id FROM technique_sources WHERE title LIKE 'Books/ (2026 Threads%'),2,'approved'),
 
-('zero_sell_ratio','The 1-in-4 zero-sell rule','strategy',
+('zero_sell_ratio','The 1-in-4 zero-sell rule','structure',
  'Exactly one post in four should contain no mention of a product, no price, and no link. These posts ask a question, share a petua, or vent about something unrelated to selling.',
  'Account-level cadence. Already partially enforced by the daily free slot + wf6 persona posts. This technique exists so the bandit can measure it.',
  'Content Machine Playbook pillar 1: accounts where every post sells look like catalogues; catalogues get throttled. One value-only post in four is the floor, not the ceiling. wf6_persona produces these; this row lets wf4 score the ratio.',

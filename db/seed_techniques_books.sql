@@ -42,7 +42,11 @@ INSERT INTO techniques
   (code, name, type, instruction, when_to_use, mechanism, example_do, example_dont,
    compatible_formats, compatible_tones, compatible_intensity, compatible_media,
    contested, contested_note, source_id, corroboration, review_state)
-SELECT v.* FROM (VALUES
+SELECT
+  code, name, type, instruction, when_to_use, mechanism, example_do, example_dont,
+  compatible_formats::TEXT[], compatible_tones::TEXT[], compatible_intensity::SMALLINT[], compatible_media::TEXT[],
+  contested, contested_note, source_id, corroboration, review_state
+FROM (VALUES
 
 -- ══════════════════════════════════════════════════════════════════════
 -- FROM: 26.Ebook mudahnya copywriting / source-copywriting-30-point
