@@ -123,7 +123,7 @@ INSERT INTO settings (key, value)
 VALUES (
   'l4_reply',
   '{
-    "enabled": false,
+    "enabled": true,
     "max_replies_per_day": 10,
     "max_replies_per_post": 5,
     "cooldown_hours_per_user": 24,

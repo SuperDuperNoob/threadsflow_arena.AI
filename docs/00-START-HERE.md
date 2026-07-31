@@ -1,5 +1,7 @@
 # START HERE — read this one first
 
+> **Quick setup:** See [`docs/11-quick-start.md`](11-quick-start.md) for one-click installation scripts.
+
 Plain-language guide. No jargon. If a word is technical, it is explained right there
 the first time it appears.
 
@@ -217,22 +219,28 @@ actually buy, and writing real specifics in the notes box.
 
 | Part | Ready? |
 |---|---|
-| Database | Yes — tested on a real database |
-| Malay copy techniques (60 styles) | Yes — 43 built-in + 17 from your Books/ folder |
-| PDF reader (upload copywriting books) | Yes — fully tested |
-| Product upload page | Yes — all 3 input types tested |
-| Click tracking (the link shortener) | Yes — tested |
-| Posting automation (wf3_publish) | Yes — ready to import into n8n |
-| Key auto-renewal (wf0) | Yes — ready to import |
-| Writing automation (wf2_generate) | Yes — pre-populated with code blocks |
-| Learning automation (wf4_evaluate) | Yes — pre-populated with code blocks |
-| Shopee sales import (wf5) | Built — pulls from the Shopee Affiliate Open API (needs your keys) |
+| Database (13 migrations) | ✅ Yes — tested on a real database |
+| Techniques (93 styles) | ✅ Yes — 43 built-in + 22 books + 11 Threads + 17 psychology |
+| Malaysian persona snippets (177) | ✅ Yes — 9 domains, all registers |
+| PDF reader (upload copywriting books) | ✅ Yes — fully tested |
+| Product upload page | ✅ Yes — all 3 input types tested |
+| Click tracking (the link shortener) | ✅ Yes — tested |
+| Posting automation (wf3_publish) | ✅ Yes — ready to import into n8n |
+| Key auto-renewal (wf0) | ✅ Yes — ready to import |
+| Writing automation (wf2_generate) | ✅ Yes — pre-populated with code blocks |
+| Learning automation (wf4_evaluate) | ✅ Yes — pre-populated with code blocks |
+| Persona warm-up (wf6_persona) | ✅ Yes — Thompson-sampled topics, time-of-day affinity |
+| L4 reply loop (wf7_l4_reply) | ✅ Yes — intent classification, psychology techniques, QA gate |
+| Psychology techniques (17) | ✅ Yes — Cialdini, Voss, Dhawan, Handley, Carnegie, Bacon |
+| Shopee sales import (wf5) | 🔧 Optional — pulls from Shopee Affiliate Open API (add keys when ready) |
+| Karma engagement (wf6_karma) | 📋 Draft — waiting for Meta public search API |
 
-**Not tested end-to-end:** the live connections to Threads and the **Shopee Affiliate Open API**,
-because I do not have your login details / API keys. The Shopee client itself (`lib/shopee.js` —
-auth signature, query builders, conversion→`post_uid` mapping) is unit-tested against the
-official contract and just needs your App ID + API Key from the affiliate dashboard's *Open API*
-section. Everything else was tested against a real database and a real running server.
+**Shopee Affiliate Open API:** The client (`lib/shopee.js`) is unit-tested and ready.
+Just add your App ID + API Key to `infra/.env` or via SQL when you have them. The system
+works without Shopee keys — it just won't import conversion data automatically.
+
+**Everything else** was tested against a real database and a real running server.
+All workflows come pre-populated with code blocks — no copy-pasting needed.
 
 ---
 
@@ -301,14 +309,17 @@ Built in, you do not need to do anything:
 
 ## Where to go next
 
+- **[`docs/11-quick-start.md`](11-quick-start.md)** — one-click setup for new VPS or update existing
 - `docs/03-setup-runbook.md` — copy-paste setup, every step explained
 - `docs/01-architecture.md` — how it works inside (technical, optional)
 - `docs/02-n8n-workflows.md` — the automations, box by box (for when you need to debug)
 - `docs/04-technique-library.md` — uploading copywriting PDFs
-- `docs/05-books.md` — what was extracted from your 26 books, and what was rejected
+- `docs/05-books.md` — what was extracted from your 40+ books, and what was rejected
 - `docs/06-persona-warmup.md` — persona warm-up layer (wf6): 4/day no-link posts to age the account before product posts
 - `docs/07-l4-reply-loop.md` — on-post user comment engagement loop
 - `docs/08-72h-canary.md` — extra logging + health watcher for your first 72 hours live
+- `docs/09-wf6-l4-improvements.md` — psychology techniques + time-of-day awareness
+- `docs/10-malaysian-dataset.md` — 177 Malaysian persona snippets across 9 domains
 - `db/queries.sql` — ready-made reports you can run
 
 ---

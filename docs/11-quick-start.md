@@ -1,0 +1,235 @@
+# ThreadsFlow Quick Start Guide
+
+> Get ThreadsFlow running in under 10 minutes with one-click setup scripts.
+
+---
+
+## Scenario A: New VPS (Fresh Installation)
+
+**Requirements:** Fresh Debian 11+ or Ubuntu 20.04+ VPS (2 vCPU, 4GB RAM minimum)
+
+### One-Click Setup
+
+```bash
+# SSH into your VPS as root
+ssh root@your-vps-ip
+
+# Download and run the setup script
+curl -sSL https://raw.githubusercontent.com/SuperDuperNoob/threadsflow_arena.AI/main/scripts/setup_new_vps.sh | bash
+```
+
+**OR** if you prefer to clone first:
+
+```bash
+git clone https://github.com/SuperDuperNoob/threadsflow_arena.AI.git
+cd threadsflow_arena.AI
+sudo ./scripts/setup_new_vps.sh
+```
+
+### What the script does:
+1. ✅ Installs Docker and Docker Compose
+2. ✅ Clones the repository
+3. ✅ Generates secure random passwords
+4. ✅ Creates `.env` configuration
+5. ✅ Starts all Docker services
+6. ✅ Runs all 13 database migrations
+7. ✅ Seeds 93+ techniques, levers, and 177 Malaysian snippets
+8. ✅ Configures LLM settings
+
+### After Setup (5 minutes)
+
+1. **Edit `infra/.env`** to add your credentials:
+   ```bash
+   nano infra/.env
+   ```
+   
+   Required:
+   - `N8N_HOST=n8n.yourdomain.com` (your n8n subdomain)
+   - `LLM_API_KEY=sk-...` (your LLM API key)
+   - `CF_TUNNEL_TOKEN=eyJh...` (from Cloudflare Zero Trust)
+   - `S3_KEY` and `S3_SECRET` (from Cloudflare R2)
+   - `PUBLIC_REDIRECT_BASE=https://r.yourdomain.com`
+
+2. **Restart services:**
+   ```bash
+   cd infra && docker compose up -d
+   ```
+
+3. **Add your Threads token** (via SQL):
+   ```bash
+   docker compose exec -T postgres psql -U threadsflow -d threadsflow <<EOF
+   INSERT INTO settings (key, value) VALUES
+   ('threads_creds', '{"token":"YOUR_THREADS_TOKEN","user_id":"YOUR_USER_ID"}'::jsonb)
+   ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value;
+   EOF
+   ```
+
+4. **Access n8n dashboard:**
+   ```
+   https://n8n.yourdomain.com
+   ```
+   Password is in `infra/.env` (search for `N8N_PASSWORD`)
+
+5. **Import workflows:**
+   - n8n UI → Import from File → select all `n8n/workflows/*.json`
+   - Assign **"Postgres threadsflow"** credential to every Postgres node
+   - Assign your **HTTP Header Auth** credential (with `Bearer YOUR_THREADS_TOKEN`) to every HTTP Request node
+
+6. **Activate workflows in this order:**
+   - ✅ `wf0_token_refresh` (immediately)
+   - ✅ `wf6_persona` (day 1, for warm-up)
+   - ✅ `wf3_publish` (day 1, publishes queued posts)
+   - ✅ `wf7_l4_reply` (day 1, replies to comments)
+   - ⏳ `wf2_generate` (after 14 days, when warm-up phase ends)
+   - ⏳ `wf4_evaluate` (after first posts are published)
+
+### Done! 🎉
+
+Your system is now:
+- Posting 4 persona posts/day (warm-up phase)
+- Replying to comments automatically
+- Building account trust before selling
+
+---
+
+## Scenario B: Existing VPS (Update to Latest)
+
+**Requirements:** ThreadsFlow already running with Docker
+
+### One-Click Update
+
+```bash
+cd /path/to/threadsflow_arena.AI
+./scripts/update_existing_vps.sh
+```
+
+### What the script does:
+1. ✅ Pulls latest code from Git
+2. ✅ Runs new migrations (011, 012, 013 if not applied)
+3. ✅ Seeds new techniques (psychology, Malaysian snippets)
+4. ✅ Restarts Docker services
+5. ✅ Shows what's new
+
+### After Update (2 minutes)
+
+1. **Import new workflows into n8n:**
+   - `wf7_l4_reply.json` (L4 reply loop — NEW)
+   - `wf6_persona.json` (updated with psychology + time-of-day)
+
+2. **Activate `wf7_l4_reply` in n8n:**
+   - Assign **"Postgres threadsflow"** credential to all Postgres nodes
+   - Activate the workflow
+
+3. **(Optional) Import more Malaysian datasets:**
+   ```bash
+   ./scripts/import_malaysian_datasets.sh
+   ```
+
+### Done! 🎉
+
+You now have:
+- ✅ L4 Reply Loop (automatic comment replies with psychology techniques)
+- ✅ 17 psychology techniques (Cialdini, Voss, Dhawan, Handley, Carnegie, Bacon)
+- ✅ 177 Malaysian persona snippets (9 domains)
+- ✅ Time-of-day topic affinity
+
+---
+
+## Feature Status
+
+| Feature | Status | Auto-Enabled |
+|---|---|---|
+| **Persona warm-up (wf6)** | ✅ Running | Yes |
+| **L4 reply loop (wf7)** | ✅ Running | Yes |
+| **Psychology techniques** | ✅ Loaded | Yes |
+| **Malaysian snippets** | ✅ Seeded | Yes |
+| **Time-of-day affinity** | ✅ Active | Yes |
+| **Post generation (wf2)** | ⏳ Wait 14 days | After warm-up |
+| **Evaluation (wf4)** | ⏳ Wait for posts | After first publish |
+| **Shopee API** | 🔧 Optional | Add keys when ready |
+| **Karma workflow** | 📋 Draft | Waiting for Meta API |
+
+---
+
+## Quick Commands
+
+```bash
+# View logs
+docker compose -f infra/docker-compose.yml logs -f n8n
+
+# Restart services
+cd infra && docker compose restart
+
+# Check database
+docker compose -f infra/docker-compose.yml exec postgres psql -U threadsflow -d threadsflow
+
+# List queued posts
+docker compose -f infra/docker-compose.yml exec postgres psql -U threadsflow -d threadsflow \
+  -c "SELECT uid, purpose, scheduled_at FROM posts WHERE status='queued' ORDER BY scheduled_at"
+
+# List published posts
+docker compose -f infra/docker-compose.yml exec postgres psql -U threadsflow -d threadsflow \
+  -c "SELECT uid, purpose, published_at FROM posts WHERE status='published' ORDER BY published_at DESC LIMIT 10"
+
+# Check L4 replies
+docker compose -f infra/docker-compose.yml exec postgres psql -U threadsflow -d threadsflow \
+  -c "SELECT comment_id, intent, status FROM l4_replies ORDER BY created_at DESC LIMIT 10"
+
+# Import Malaysian datasets
+./scripts/import_malaysian_datasets.sh
+
+# Update to latest
+./scripts/update_existing_vps.sh
+```
+
+---
+
+## Troubleshooting
+
+### Services won't start
+```bash
+cd infra && docker compose logs
+```
+
+### Database connection failed
+```bash
+docker compose -f infra/docker-compose.yml exec postgres pg_isready -U threadsflow
+```
+
+### n8n not accessible
+- Check Cloudflare Tunnel is running: `docker compose -f infra/docker-compose.yml ps cloudflared`
+- Check n8n logs: `docker compose -f infra/docker-compose.yml logs n8n`
+
+### Workflows not running
+- Check if activated in n8n UI
+- Check credentials are assigned
+- Check execution logs in n8n
+
+### No posts being generated
+- During warm-up (first 14 days): only `wf6_persona` should be active
+- After warm-up: activate `wf2_generate`
+- Check `posts` table: `SELECT * FROM posts ORDER BY created_at DESC LIMIT 5`
+
+---
+
+## Documentation
+
+- **Full runbook:** `docs/03-setup-runbook.md`
+- **Architecture:** `docs/01-architecture.md`
+- **Workflows:** `docs/02-n8n-workflows.md`
+- **Persona warm-up:** `docs/06-persona-warmup.md`
+- **L4 reply loop:** `docs/07-l4-reply-loop.md`
+- **Malaysian dataset:** `docs/10-malaysian-dataset.md`
+- **72h canary:** `docs/08-72h-canary.md`
+
+---
+
+## Support
+
+- **Issues:** https://github.com/SuperDuperNoob/threadsflow_arena.AI/issues
+- **Discussions:** https://github.com/SuperDuperNoob/threadsflow_arena.AI/discussions
+
+---
+
+**Last updated:** 2026-07-31  
+**Version:** 2.0 (with L4, psychology, Malaysian dataset)

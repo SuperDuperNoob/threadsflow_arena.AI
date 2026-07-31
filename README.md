@@ -8,9 +8,24 @@ plus photos *or* a written description.
 puts the tracked link in the first comment, counts clicks and sales, and every 3 days shifts
 more posting slots to whatever actually made money. Runs until you stop it.
 
-**New?** Start with **[`docs/00-START-HERE.md`](docs/00-START-HERE.md)** — plain language,
-no jargon. Then **[`docs/03-setup-runbook.md`](docs/03-setup-runbook.md)** — click-by-click
-setup that assumes you know nothing about Docker, Cloudflare, or the Threads API.
+**New?** Start with **[`docs/11-quick-start.md`](docs/11-quick-start.md)** — one-click setup for new VPS or update existing. Then **[`docs/00-START-HERE.md`](docs/00-START-HERE.md)** — plain language, no jargon. Then **[`docs/03-setup-runbook.md`](docs/03-setup-runbook.md)** — click-by-click setup that assumes you know nothing about Docker, Cloudflare, or the Threads API.
+
+---
+
+## 🚀 Quick Start
+
+### New VPS (Fresh Installation)
+```bash
+curl -sSL https://raw.githubusercontent.com/SuperDuperNoob/threadsflow_arena.AI/main/scripts/setup_new_vps.sh | sudo bash
+```
+
+### Existing VPS (Update to Latest)
+```bash
+cd /path/to/threadsflow_arena.AI
+./scripts/update_existing_vps.sh
+```
+
+**Full guide:** [`docs/11-quick-start.md`](docs/11-quick-start.md)
 
 ---
 
@@ -44,9 +59,13 @@ docs/
   02-n8n-workflows.md        node-by-node build spec (for debugging)
   03-setup-runbook.md        empty VPS → first automated post (click-by-click)
   04-technique-library.md    how the technique system works
-  05-books.md                what was mined from your 26 PDFs
+  05-books.md                what was mined from your 40+ PDFs (Malay + English)
+  06-persona-warmup.md       account warm-up layer (wf6_persona)
   07-l4-reply-loop.md        on-post user comment engagement loop
   08-72h-canary.md           72-hour live debug / canary mode for first deployment
+  09-wf6-l4-improvements.md  psychology techniques + time-of-day awareness
+  10-malaysian-dataset.md    177 Malaysian persona snippets across 9 domains
+  11-quick-start.md          one-click setup for new VPS or update existing
 
 db/                          PostgreSQL: schema, seeds, migrations, queries
 
@@ -62,18 +81,29 @@ infra/
   docker-compose.yml         the whole stack, memory-capped for 4GB/2vCPU
   .env.example               copy → .env → fill in your secrets
 
-prompts/                     the three LLM prompts (writer, editor, CTA)
+scripts/
+  setup_new_vps.sh           one-click setup for fresh VPS (installs Docker, DB, everything)
+  update_existing_vps.sh     one-click update for running VPS (migrations, seeds, restart)
+  init_db.sh                 initialize database schema + migrations + seeds
+  import_malaysian_datasets.sh import Malaysian snippets from HuggingFace
+  refresh_persona_topics.sh  refresh persona topics via Perplexity Sonar
+  configure_llm.sh           configure LLM settings from .env
+  observe_72h.sh             72-hour canary observer
+
+prompts/                     the LLM prompts (writer, editor, persona_writer, reply_assistant)
 ```
 
-## The five loops
+## The seven loops
 
-| Loop | Runs | What it does |
-|---|---|---|
-| L0 intake | on demand | product + images → database row |
-| L1 generate | 03:00 daily | pick levers → write → edit → QA → queue 5 posts |
-| L2 publish | every 5 min | publish queued post → wait → CTA reply with tracked link |
-| L3 learn | every 3 days | insights + clicks + orders → score → update arms → breed winners |
-| L4 reply | every 4-6 hours | answer user comments on your own posts with persona calibration |
+| Loop | Workflow | Runs | What it does |
+|---|---|---|---|
+| L0 intake | KB web UI | on demand | product + images → database row |
+| L1 generate | wf2_generate | 03:00 daily | pick levers → write → edit → QA → queue 5 posts |
+| L2 publish | wf3_publish | every 5 min | publish queued post → wait → CTA reply with tracked link |
+| L3 learn | wf4_evaluate | every 3 days | insights + clicks + orders → score → update arms → breed winners |
+| L4 reply | wf7_l4_reply | every 4 hours | answer user comments with psychology techniques + persona calibration |
+| L5 persona | wf6_persona | 03:30 daily | no-link persona posts for account warm-up (Thompson-sampled topics) |
+| L6 token | wf0_token_refresh | every 25 days | refresh Threads API token before it expires |
 
 ## Build order (do not do it all at once)
 
