@@ -96,6 +96,11 @@ if ! docker compose -f infra/docker-compose.yml exec -T postgres psql -U threads
   MIGRATIONS_TO_RUN+=("013_threads_comments.sql")
 fi
 
+# Check for migration 017 (Human-in-the-loop review layer)
+if ! docker compose -f infra/docker-compose.yml exec -T postgres psql -U threadsflow -d threadsflow -t -c "SELECT 1 FROM information_schema.tables WHERE table_name='post_review'" | grep -q 1; then
+  MIGRATIONS_TO_RUN+=("017_post_review_full.sql")
+fi
+
 if [ ${#MIGRATIONS_TO_RUN[@]} -eq 0 ]; then
   success "All migrations already applied"
 else
@@ -154,9 +159,9 @@ success "═══════════════════════�
 echo ""
 log "New features available:"
 echo ""
-echo "  ✓ L4 Reply Loop (wf7_l4_reply)"
-echo "    Automatically replies to comments with psychology techniques"
-echo "    Status: $(docker compose -f infra/docker-compose.yml exec -T postgres psql -U threadsflow -d threadsflow -t -c "SELECT value->>'enabled' FROM settings WHERE key='l4_reply'" | tr -d ' ')"
+echo "  ✓ Human-in-the-Loop Review Queue"
+echo "    Approve, reject, or edit generated posts before publication"
+echo "    URL: https://kb.<your-domain>/queue.html"
 echo ""
 echo "  ✓ Psychology techniques (17 new)"
 echo "    Cialdini, Voss, Dhawan, Handley, Carnegie, Bacon"

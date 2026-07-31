@@ -261,11 +261,11 @@ function applyVariation(text, tone, personaSnippets, settings) {
     max_tokens: s.max_tokens || Math.ceil(text.length * 1.5),
   };
 
-  // In n8n workflow, this would be an HTTP request to the LLM
-  // For now, return the prompts for the workflow to use
+  // In n8n workflow, this returns prompts for the subsequent LLM HTTP request node.
+  // varied_text defaults to original text as a graceful fallback before LLM execution or if skipped.
   return {
     original_text: text,
-    varied_text: text,  // placeholder, will be replaced by LLM response
+    varied_text: text,  // graceful fallback; updated by LLM response in workflow
     system_prompt: systemPrompt,
     user_prompt: userPrompt,
     llm_config: llmSettings,

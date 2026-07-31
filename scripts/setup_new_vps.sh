@@ -191,7 +191,7 @@ log "  Seeding mining questions..."
 docker compose -f infra/docker-compose.yml exec -T postgres psql -v ON_ERROR_STOP=1 -U threadsflow -d threadsflow < db/mining_questions.sql
 
 # Migrations
-log "  Running migrations 001-013..."
+log "  Running database migrations..."
 for m in db/migrations/*.sql; do
   log "    $(basename "$m")"
   docker compose -f infra/docker-compose.yml exec -T postgres psql -v ON_ERROR_STOP=1 -U threadsflow -d threadsflow < "$m"
@@ -266,8 +266,9 @@ echo ""
 echo "  2. Restart services after editing .env:"
 echo "     cd infra && docker compose up -d"
 echo ""
-echo "  3. Access n8n dashboard:"
-echo "     https://$(grep N8N_HOST infra/.env | cut -d= -f2)"
+echo "  3. Access n8n dashboard & Review Queue:"
+echo "     - n8n: https://$(grep N8N_HOST infra/.env | cut -d= -f2)"
+echo "     - Review Queue: https://kb.$(grep N8N_HOST infra/.env | cut -d= -f2 | cut -d. -f2-)/queue.html"
 echo ""
 echo "  4. Import workflows (if not auto-imported):"
 echo "     n8n UI → Import from File → select n8n/workflows/*.json"

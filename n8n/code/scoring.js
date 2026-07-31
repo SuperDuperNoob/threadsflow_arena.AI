@@ -3,18 +3,12 @@
  *
  * Input $json:
  *   posts    : [{id, uid, product_uid, format, angle, tone, sell_intensity, length_band,
- *                views, likes, replies, reposts, quotes, clicks, orders, commission_idr}]
+ *                views, likes, replies, reposts, quotes, clicks, orders, commission_idr,
+ *                human_feedback, was_probe}]
  *   settings : scoring + bandit settings
  *   lifetime_orders : integer, all-time completed orders (drives the money/engagement blend)
  *
  * Output: per-post Bayesian scores + a cycle digest payload.
- *
- * 2026 logic:
- *  - No raw cycle z-score ranking. With ~15 posts/cycle it hallucinates winners from 1 lucky
- *    click or one under-distributed post.
- *  - Every noisy post metric is shrunk toward the cycle/global baseline before ranking.
- *  - Confidence comes from intent volume. By default a post needs ~50 clicks before its own
- *    CTR/EPM fully overrides the prior.
  */
 
 function num(v, fallback = 0) {
@@ -38,13 +32,10 @@ function bayesAverage(actual, prior, evidence, priorWeight) {
 }
 
 function logLift(value, baseline, floor = 1e-9) {
-  // Log lift is smoother than raw ratios and cannot explode when the baseline is tiny.
   return Math.log((Math.max(value, 0) + floor) / (Math.max(baseline, 0) + floor));
 }
 
 function zscores(values) {
-  // Kept only for backwards-compatible observability in post_scores.z_* columns.
-  // The final score does NOT use these values anymore.
   const n = values.length;
   if (n === 0) return [];
   const mean = values.reduce((a, b) => a + b, 0) / n;
@@ -60,6 +51,7 @@ function score(input) {
   const MIN_VIEWS = s.min_views ?? 200;
   const PRIOR_CLICKS = s.bayesian_prior_clicks ?? s.shrinkage_clicks ?? settings.bandit?.bayesian_prior_clicks ?? 50;
   const PRIOR_VIEWS = s.bayesian_prior_views ?? 500;
+  const wHuman = num(s.w_human, 0.15);
 
   const rows = posts.map(p => {
     const views = Math.max(num(p.views), 0);
@@ -88,45 +80,38 @@ function score(input) {
     weightedEng: acc.weightedEng + r.weightedEng,
   }), { views: 0, clicks: 0, orders: 0, commission: 0, weightedEng: 0 });
 
-  // Cycle-level priors. If the current cycle is tiny, these can be replaced by workflow-provided
-  // historical priors in settings.scoring.global_* without changing the Code node contract.
   const globalCtr = num(s.global_ctr, safeDiv(totals.clicks, totals.views));
   const globalEng = num(s.global_eng, safeDiv(totals.weightedEng, totals.views));
   const globalCvr = num(s.global_cvr, safeDiv(totals.orders, totals.clicks));
   const globalEpm = num(s.global_epm, totals.views ? (totals.commission / totals.views) * 1000 : 0);
 
   for (const r of rows) {
-    // User-requested shrinkage shape:
-    // Adjusted = ((Total_Clicks * PostMetric) + (C * GlobalMetric)) / (Total_Clicks + C)
-    // We apply it to CTR and EPM; engagement uses views as its evidence because likes/replies
-    // can exist without affiliate clicks.
     r.bayes_ctr = bayesAverage(r.ctr, globalCtr, r.clicks, PRIOR_CLICKS);
     r.bayes_epm = bayesAverage(r.epm, globalEpm, r.clicks, PRIOR_CLICKS);
     r.bayes_cvr = bayesAverage(r.cvr, globalCvr, r.clicks, PRIOR_CLICKS);
     r.bayes_eng = bayesAverage(r.eng, globalEng, r.views, PRIOR_VIEWS);
 
-    // Convert shrunk metrics into smooth lifts vs the baseline. These are stable enough for the
-    // bandit but still reward posts that are genuinely above account average.
     const ctrLift = logLift(r.bayes_ctr, globalCtr, 0.0001);
     const engLift = logLift(r.bayes_eng, globalEng, 0.0001);
     const epmLift = globalEpm > 0
       ? logLift(r.bayes_epm, globalEpm, 0.01)
-      // Before there is any commission signal, use shrunk CVR as a small intent proxy.
       : 0.5 * logLift(r.bayes_cvr, globalCvr, 0.0001);
 
     r.eng_score = (num(s.w_ctr, 0.25) * ctrLift + num(s.w_eng, 0.20) * engLift) /
                   (num(s.w_ctr, 0.25) + num(s.w_eng, 0.20));
     r.money_score = (num(s.w_epm, 0.55) * epmLift) + (0.10 * logLift(r.bayes_cvr, globalCvr, 0.0001));
 
-    // Trust money only as fast as money data accumulates, but rank the money component by the
-    // Bayesian EPM posterior rather than raw EPM.
     const target = settings.bandit?.money_shrinkage_target_orders ?? 20;
     const wMoney = Math.min(1, (num(input.lifetime_orders) || 0) / target);
     r.w_money = wMoney;
-    r.final_score = clamp(wMoney * r.money_score + (1 - wMoney) * r.eng_score, -3, 3);
 
-    // Under-distributed posts remain low-confidence. They may be good, but the algorithm did not
-    // give them enough reach to certify a winner.
+    const humanScore = num(r.post.human_feedback, 0);
+    r.human_score = humanScore;
+    r.was_probe = Boolean(r.post.was_probe);
+
+    r.final_score = clamp(wMoney * r.money_score + (1 - wMoney) * r.eng_score + wHuman * r.human_score, -3, 3);
+
+    // Eligibility gating is never overridden by human feedback
     if (!r.eligible) r.final_score = Math.min(r.final_score, -0.35);
   }
 
@@ -142,7 +127,7 @@ function score(input) {
     r.verdict = i < nWin ? 'winner' : (i >= sorted.length - nLose ? 'loser' : 'neutral');
   });
 
-  // ── marginal lever report (this is the part a human should read)
+  // ── marginal lever report with probe distinction
   const kinds = ['format', 'angle', 'tone', 'sell_intensity', 'length_band', 'media_type'];
   const cycleMean = rows.reduce((a, r) => a + r.final_score, 0) / (rows.length || 1);
   const leverReport = {};
@@ -151,18 +136,23 @@ function score(input) {
     for (const r of rows) {
       const c = String(r.post[kind] ?? '');
       if (!c) continue;
-      (byCode[c] ??= []).push(r.final_score);
+      (byCode[c] ??= []).push({ score: r.final_score, was_probe: r.was_probe, human_feedback: r.human_score });
     }
     leverReport[kind] = Object.entries(byCode)
-      .map(([code, arr]) => ({
-        code, n: arr.length,
-        mean: arr.reduce((a, b) => a + b, 0) / arr.length,
-        lift_vs_cycle: (arr.reduce((a, b) => a + b, 0) / arr.length) - cycleMean,
-      }))
+      .map(([code, arr]) => {
+        const scores = arr.map(x => x.score);
+        const probeRejections = arr.filter(x => x.was_probe && x.human_feedback < 0).length;
+        return {
+          code,
+          n: arr.length,
+          mean: scores.reduce((a, b) => a + b, 0) / scores.length,
+          lift_vs_cycle: (scores.reduce((a, b) => a + b, 0) / scores.length) - cycleMean,
+          probe_rejections: probeRejections,
+        };
+      })
       .sort((a, b) => b.mean - a.mean);
   }
 
-  // ── hour-of-day report: free extra lever you get for nothing
   const byHour = {};
   for (const r of rows) {
     const h = new Date(r.post.published_at).getHours();
@@ -175,8 +165,6 @@ function score(input) {
   const wMoney = rows[0]?.w_money ?? Math.min(1, (num(input.lifetime_orders) || 0) / (settings.bandit?.money_shrinkage_target_orders ?? 20));
 
   return {
-    // Pass-through fields keep the wf4 chain self-contained: the next Code nodes need the
-    // previous bandit/technique state after scoring has replaced the payload.
     settings,
     prev_arm_stats: input.prev_arm_stats ?? input.arm_stats ?? [],
     prev_context_weights: input.prev_context_weights ?? input.context_weights ?? [],
@@ -206,4 +194,10 @@ function score(input) {
   };
 }
 
-return [{ json: score($json) }];
+if (typeof $json !== 'undefined') {
+  return [{ json: score($json) }];
+}
+
+if (typeof module !== 'undefined') {
+  module.exports = { score, bayesAverage, logLift, zscores };
+}

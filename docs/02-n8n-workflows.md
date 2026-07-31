@@ -126,7 +126,9 @@ inventing. A wrong specific is worse than a missing one.
    ↓
 [Code: build tracked url]  https://r.domain/p/{post_uid}
    ↓
-[Postgres: INSERT posts]   status='queued'
+[Postgres: INSERT posts]   status='pending_review', review_timeout_at = scheduled_at - interval '120 minutes'
+   ↓
+[Postgres: INSERT post_review]   status='pending_review'
    ↓
 [Postgres: INSERT technique_usage]   post_id x device_ids  (attribution for wf4)
 ```
@@ -154,7 +156,10 @@ Do not paraphrase it."*
 ```
 [Cron */5 * * * *]
    ↓
-[Postgres] SELECT * FROM posts WHERE status='queued' AND scheduled_at <= now()
+[Postgres: Fetch due post + timeout sweep]
+           - Updates overdue pending_review posts (past review_timeout_at and not locked) to 'auto_published'
+           - Selects posts WHERE status='queued' AND scheduled_at <= now() AND rev.status IN ('approved', 'auto_published')
+             AND (rev.review_locked_until IS NULL OR rev.review_locked_until < now())
            ORDER BY scheduled_at LIMIT 1
    ↓ (no rows → NoOp)
 [HTTP GET] graph.threads.net/v1.0/{user_id}/threads_publishing_limit?fields=quota_usage,config

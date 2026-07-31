@@ -219,7 +219,8 @@ actually buy, and writing real specifics in the notes box.
 
 | Part | Ready? |
 |---|---|
-| Database (13 migrations) | ✅ Yes — tested on a real database |
+| Database (17 migrations) | ✅ Yes — tested on a real database |
+| Human-in-the-loop review queue | ✅ Yes — web dashboard at kb.yourdomain.com/queue.html |
 | Techniques (93 styles) | ✅ Yes — 43 built-in + 22 books + 11 Threads + 17 psychology |
 | Malaysian persona snippets (177) | ✅ Yes — 9 domains, all registers |
 | PDF reader (upload copywriting books) | ✅ Yes — fully tested |

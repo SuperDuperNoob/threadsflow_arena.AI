@@ -208,8 +208,11 @@ Cron 03:00
                               fall back to a different arm.
          8. Generate CTA comment text (separate style pool, 30 variants, also randomized)
          9. Build tracked link: base affiliate URL + sub_id = post_uid  (see §5)
-        10. INSERT into `posts` (status='queued', scheduled_at, all lever values, prompt_hash)
+        10. INSERT into `posts` (status='pending_review', scheduled_at, review_timeout_at, all lever values, prompt_hash)
+        11. INSERT into `post_review` (pending_review state initialized automatically via trigger/node)
 ```
+
+**Human-in-the-Loop Review Gate:** Every generated post enters a `pending_review` state rather than publishing immediately. You can review, approve, reject, or edit drafts via the secure web dashboard at `https://kb.yourdomain.com/queue.html`. If you don't act before the timeout window (`review_timeout_at`, default 2 hours before schedule), an automated timeout sweep promotes the post to `auto_published` using the bandit's pre-generated best arm variant. Active reviews are protected by a sliding `review_locked_until` lock so posts open in the dashboard are never published out from under you. Human decisions (approval/edit = `+1.0`, rejection = `-1.0`) feed into the scoring pipeline (`w_human = 0.15`) alongside Shopee commissions and engagement.
 
 Cost: 5 posts × 3 calls × ~1.5k tokens ≈ nothing (< $0.01/day on a cheap model).
 
