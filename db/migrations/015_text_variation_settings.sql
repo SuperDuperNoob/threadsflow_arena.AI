@@ -3,10 +3,17 @@
 -- This feature applies subtle LLM-based variations to posts before publishing to ensure
 -- no two posts are exactly identical. This helps avoid duplicate detection and makes
 -- the content feel more natural and human.
+--
+-- NOW WITH:
+-- - Integration with settings.llm (custom base URL, API key, model)
+-- - Persona snippet integration for authentic Malaysian variations
+-- - Malaysian Malay language preservation
+-- - Tone/persona awareness
 
 BEGIN;
 
 -- Add variation settings to the main settings table
+-- NOTE: Uses settings.llm for LLM configuration (base_url, api_key, model)
 INSERT INTO settings (key, value) VALUES (
   'text_variation',
   '{
@@ -17,8 +24,9 @@ INSERT INTO settings (key, value) VALUES (
     "preserve_links": true,
     "preserve_emoji": true,
     "min_length_for_variation": 50,
-    "temperature": 0.3,
-    "model": "gpt-3.5-turbo",
+    "temperature": 0.4,
+    "max_tokens": 500,
+    "model_override": null,
     "workflows": ["wf6_persona", "wf3_publish"]
   }'::jsonb
 )
@@ -33,6 +41,8 @@ CREATE TABLE IF NOT EXISTS text_variations (
   varied_text TEXT NOT NULL,
   changes_made INTEGER DEFAULT 0,
   validation_passed BOOLEAN DEFAULT true,
+  llm_model_used TEXT,
+  llm_base_url_used TEXT,
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
@@ -44,5 +54,7 @@ CREATE INDEX IF NOT EXISTS idx_text_variations_created_at ON text_variations(cre
 COMMENT ON TABLE text_variations IS 'Logs all text variations applied to posts before publishing';
 COMMENT ON COLUMN text_variations.changes_made IS 'Number of word/phrase substitutions made';
 COMMENT ON COLUMN text_variations.validation_passed IS 'Whether the variation passed validation checks';
+COMMENT ON COLUMN text_variations.llm_model_used IS 'Which LLM model was used for this variation';
+COMMENT ON COLUMN text_variations.llm_base_url_used IS 'Which LLM base URL was used (e.g., 9router, OpenAI)';
 
 COMMIT;
