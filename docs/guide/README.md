@@ -28,7 +28,10 @@ not guessed around; they are documented as current live-code mismatches:
    The DB path now works alongside env vars.
 6. **L4 comment ingestion source is incomplete.** `wf7_l4_reply.json` reads local `threads_comments`; it does not fetch Threads replies itself. A separate ingestion path must populate `threads_comments` before L4 can reply.
 7. **Text variation is dormant.** Migration 015 and `n8n/code/text_variation.js` exist, but current workflow JSONs do not call that helper or log `text_variations`.
-8. **Video vision skip is not cleanly wired.** `describeImage(publicUrl, mediaKind)` can skip `VIDEO`, but `services/kb/server.js` currently calls `describeImage(im.public_url)` without selecting/passing `media_kind`.
+8. **~~Video vision skip is not cleanly wired~~ — RESOLVED.** `services/kb/server.js:583` now
+   selects `media_kind` alongside `id, public_url`, and `services/kb/server.js:585` passes it
+   through as `describeImage(im.public_url, im.media_kind)`, so `VIDEO` rows skip the vision call
+   as designed. Covered by `services/kb/lib/products.test.js`.
 9. **~~Cosmetic: stale log message in `set_secrets.sh`~~ — RESOLVED.** The script now prints
    `"threads_creds + l4_reply updated"` (`scripts/set_secrets.sh:141`), matching the keys the SQL
    actually writes.
