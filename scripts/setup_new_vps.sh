@@ -117,21 +117,41 @@ if [ -f ".env" ]; then
   warn ".env already exists, skipping generation"
   warn "Edit infra/.env manually if you need to change settings"
 else
-  # Generate secure random values
-  PG_PASSWORD=$(openssl rand -base64 24 | tr -d '\n')
-  N8N_ENCRYPTION_KEY=$(openssl rand -hex 32 | tr -d '\n')
-  IP_SALT=$(openssl rand -hex 16 | tr -d '\n')
-  N8N_PASSWORD=$(openssl rand -base64 16 | tr -d '\n')
-  KB_PASSWORD=$(openssl rand -base64 16 | tr -d '\n')
-  
-  # Copy template and replace placeholders
+  # Generate secure random values.
+  #
+  # IMPORTANT: use hex, not base64. base64 emits '/', '+' and '=', which
+  #   (a) break the `sed s/…/…/` replacements below (a '/' closes the s-command),
+  #       and (b) corrupt DATABASE_URL, since postgres://user:PASS@host parses
+  #       '/' and '@' as URL delimiters.
+  # hex is [0-9a-f] only, so it is safe in both sed and a URL userinfo field.
+  # 32 hex chars = 128 bits of entropy; 48 hex = 192 bits.
+  PG_PASSWORD=$(openssl rand -hex 24)
+  N8N_ENCRYPTION_KEY=$(openssl rand -hex 32)
+  IP_SALT=$(openssl rand -hex 16)
+  N8N_PASSWORD=$(openssl rand -hex 16)
+  KB_PASSWORD=$(openssl rand -hex 16)
+
+  # Copy template and replace placeholders.
   cp .env.example .env
-  
-  sed -i "s/change_me_long_random/$PG_PASSWORD/" .env
-  sed -i "s/generate_with_openssl_rand_hex_32/$N8N_ENCRYPTION_KEY/" .env
-  sed -i "s/generate_with_openssl_rand_hex_16/$IP_SALT/" .env
-  sed -i "s/^N8N_PASSWORD=change_me$/N8N_PASSWORD=$N8N_PASSWORD/" .env
-  sed -i "s/^KB_PASSWORD=change_me$/KB_PASSWORD=$KB_PASSWORD/" .env
+
+  # Anchor on the key name and use '|' as the delimiter so the value is never
+  # re-parsed as part of the sed expression.
+  set_env() {
+    local key="$1" val="$2"
+    if grep -q "^${key}=" .env; then
+      sed -i "s|^${key}=.*|${key}=${val}|" .env
+    else
+      printf '%s=%s\n' "$key" "$val" >> .env
+    fi
+  }
+
+  set_env PG_PASSWORD       "$PG_PASSWORD"
+  set_env N8N_ENCRYPTION_KEY "$N8N_ENCRYPTION_KEY"
+  set_env IP_SALT           "$IP_SALT"
+  set_env N8N_PASSWORD      "$N8N_PASSWORD"
+  set_env KB_PASSWORD       "$KB_PASSWORD"
+  # DATABASE_URL embeds the same password and must be kept in sync.
+  set_env DATABASE_URL      "postgres://threadsflow:${PG_PASSWORD}@postgres:5432/threadsflow"
   
   success ".env created with secure random passwords"
   
@@ -219,29 +239,19 @@ log "Step 6/8: Configuring LLM settings..."
 # Step 7: Import n8n workflows
 # ─────────────────────────────────────────────────────────────────────────────
 
-log "Step 7/8: Importing n8n workflows..."
+log "Step 7/8: Bootstrapping n8n (owner, credential, workflows)..."
 
-# Wait for n8n to be ready
-log "  Waiting for n8n to be ready..."
-for i in {1..30}; do
-  if curl -s http://localhost:5678/healthz &> /dev/null; then
-    success "n8n is ready"
-    break
-  fi
-  if [ $i -eq 30 ]; then
-    warn "n8n not responding yet, workflows can be imported manually later"
-    break
-  fi
-  sleep 2
-done
-
-# Import workflows via n8n API (if available)
-if command -v node &> /dev/null && [ -f "scripts/populate_workflows.js" ]; then
-  log "  Running workflow importer..."
-  node scripts/populate_workflows.js || warn "Workflow import failed, import manually from n8n/workflows/"
+# Previously this step only ran populate_workflows.js, which merely rewrites the
+# local JSON files — it never talked to n8n, so nothing was actually imported.
+# It also probed http://localhost:5678, which can never respond because
+# docker-compose.yml publishes no ports (Cloudflare Tunnel only).
+# bootstrap_n8n.sh does the real work: creates the owner account, imports the
+# Postgres credential as id=PG (which every workflow node already references),
+# and imports the workflow definitions via the n8n CLI.
+if [ -x "scripts/bootstrap_n8n.sh" ]; then
+  ./scripts/bootstrap_n8n.sh || warn "n8n bootstrap incomplete — rerun ./scripts/bootstrap_n8n.sh after fixing the issue"
 else
-  warn "Node.js not found or populate_workflows.js missing"
-  warn "Import workflows manually: n8n UI → Import from File → select n8n/workflows/*.json"
+  warn "scripts/bootstrap_n8n.sh missing; import workflows manually in the n8n UI"
 fi
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -270,15 +280,12 @@ echo "  3. Access n8n dashboard & Review Queue:"
 echo "     - n8n: https://$(grep N8N_HOST infra/.env | cut -d= -f2)"
 echo "     - Review Queue: https://kb.$(grep N8N_HOST infra/.env | cut -d= -f2 | cut -d. -f2-)/queue.html"
 echo ""
-echo "  4. Import workflows (if not auto-imported):"
-echo "     n8n UI → Import from File → select n8n/workflows/*.json"
-echo "     Assign 'Postgres threadsflow' credential to all Postgres nodes"
+echo "  4. Workflows were imported automatically with the 'Postgres threadsflow'"
+echo "     credential already bound. Verify in the n8n UI, or re-run:"
+echo "     ./scripts/bootstrap_n8n.sh"
 echo ""
-echo "  5. Activate workflows in this order:"
-echo "     - wf0_token_refresh (immediately)"
-echo "     - wf6_persona (day 1, for warm-up)"
-echo "     - wf3_publish (day 1, publishes queued posts)"
-echo "     - wf7_l4_reply (day 1, replies to comments)"
+echo "  5. Activate workflows once the Threads token is in place:"
+echo "     ./scripts/bootstrap_n8n.sh --activate    (wf0, wf6, wf3, wf7)"
 echo "     - wf2_generate (after 14 days, when warm-up phase ends)"
 echo "     - wf4_evaluate (after first posts are published)"
 echo ""

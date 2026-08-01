@@ -66,6 +66,7 @@ docs/
   09-wf6-l4-improvements.md  psychology techniques + time-of-day awareness
   10-malaysian-dataset.md    177 Malaysian persona snippets across 9 domains
   11-quick-start.md          one-click setup for new VPS or update existing
+  14-agent-autonomous-deploy.md  what an agent can deploy unattended, and what needs a human
 
 db/                          PostgreSQL: schema, seeds, migrations, queries
 
@@ -84,6 +85,8 @@ infra/
 scripts/
   setup_new_vps.sh           one-click setup for fresh VPS (installs Docker, DB, everything)
   update_existing_vps.sh     one-click update for running VPS (migrations, seeds, restart)
+  bootstrap_n8n.sh           n8n owner + Postgres credential + workflow import (+ --activate)
+  set_secrets.sh             write Threads token / Shopee keys into the DB settings table
   init_db.sh                 initialize database schema + migrations + seeds
   import_malaysian_datasets.sh import Malaysian snippets from HuggingFace
   refresh_persona_topics.sh  refresh persona topics via Perplexity Sonar

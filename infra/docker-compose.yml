@@ -41,7 +41,13 @@ services:
         limits: { memory: 512M }
 
   n8n:
-    image: docker.n8n.io/n8nio/n8n:latest
+    # Pinned deliberately. `:latest` now resolves to n8n v2.x, whose breaking
+    # changes (workflow publish/unpublish replacing the active flag, task
+    # runners, blocked env access in Code nodes) can take a working deployment
+    # down on an unrelated `docker compose up -d`. This repo's workflows and
+    # tooling target the 1.x line. Bump on purpose, after reading:
+    #   https://docs.n8n.io/changelog/v20-breaking-changes
+    image: docker.n8n.io/n8nio/n8n:${N8N_VERSION:-1.123.67}
     restart: unless-stopped
     logging: *default-logging
     depends_on:
@@ -60,9 +66,11 @@ services:
       GENERIC_TIMEZONE: Asia/Kuala_Lumpur
       TZ: Asia/Kuala_Lumpur
       N8N_ENCRYPTION_KEY: ${N8N_ENCRYPTION_KEY}
-      N8N_BASIC_AUTH_ACTIVE: "true"
-      N8N_BASIC_AUTH_USER: ${N8N_USER}
-      N8N_BASIC_AUTH_PASSWORD: ${N8N_PASSWORD}
+      # NOTE: N8N_BASIC_AUTH_ACTIVE/USER/PASSWORD used to be set here. They were
+      # removed in n8n v1 and are ignored in v2, so they protected nothing.
+      # Access is now controlled by (a) the n8n owner account created by
+      # scripts/bootstrap_n8n.sh (login is N8N_USER/N8N_PASSWORD from .env) and
+      # (b) the Cloudflare Access policy on the n8n hostname.
       # ── memory + disk discipline on a small box
       EXECUTIONS_DATA_PRUNE: "true"
       EXECUTIONS_DATA_MAX_AGE: "168"
