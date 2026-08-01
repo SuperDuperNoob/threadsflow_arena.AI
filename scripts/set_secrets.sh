@@ -138,7 +138,7 @@ VALUES ('l4_reply', jsonb_build_object('threads_token', :'tok', 'enabled', false
 ON CONFLICT (key) DO UPDATE
   SET value = settings.value || jsonb_build_object('threads_token', :'tok');
 SQL
-  success "threads_creds + l4_config updated"
+  success "threads_creds + l4_reply updated"
   CHANGED=true
 fi
 

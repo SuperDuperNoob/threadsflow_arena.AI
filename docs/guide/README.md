@@ -30,7 +30,9 @@ not guessed around; they are documented as current live-code mismatches:
 6. **L4 comment ingestion source is incomplete.** `wf7_l4_reply.json` reads local `threads_comments`; it does not fetch Threads replies itself. A separate ingestion path must populate `threads_comments` before L4 can reply.
 7. **Text variation is dormant.** Migration 015 and `n8n/code/text_variation.js` exist, but current workflow JSONs do not call that helper or log `text_variations`.
 8. **Video vision skip is not cleanly wired.** `describeImage(publicUrl, mediaKind)` can skip `VIDEO`, but `services/kb/server.js` currently calls `describeImage(im.public_url)` without selecting/passing `media_kind`.
-9. **Cosmetic: stale log message in `set_secrets.sh`.** After writing both `threads_creds` and `l4_reply.threads_token` correctly, the script prints `"threads_creds + l4_config updated"` (`scripts/set_secrets.sh:141`) — `l4_config` is a leftover from before the key was renamed to `l4_reply`. Functionally harmless (the SQL writes the right key), but the operator-facing message is wrong and should say `l4_reply`.
+9. **~~Cosmetic: stale log message in `set_secrets.sh`~~ — RESOLVED.** The script now prints
+   `"threads_creds + l4_reply updated"` (`scripts/set_secrets.sh:141`), matching the keys the SQL
+   actually writes.
 
 Treat items 2, 3, 5 (partial), 6, 7, and 8 as engineering follow-up items before claiming full
 Phase 1/Phase 2 completion.
