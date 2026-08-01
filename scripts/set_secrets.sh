@@ -151,9 +151,14 @@ if [[ -n "$SHOPEE_APP_ID" || -n "$SHOPEE_SECRET" ]]; then
 INSERT INTO settings (key, value)
 VALUES ('shopee_app_id', to_jsonb(:'aid'::text))
 ON CONFLICT (key) DO UPDATE
-  SET value = settings.value || jsonb_build_object('app_id', :'aid', 'app_secret', :'sec');
+  SET value = EXCLUDED.value;
+
+INSERT INTO settings (key, value)
+VALUES ('shopee_app_secret', to_jsonb(:'sec'::text))
+ON CONFLICT (key) DO UPDATE
+  SET value = EXCLUDED.value;
 SQL
-  success "shopee app_id/app_secret updated"
+  success "shopee_app_id + shopee_app_secret updated"
   CHANGED=true
 fi
 

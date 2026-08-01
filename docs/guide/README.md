@@ -22,11 +22,10 @@ not guessed around; they are documented as current live-code mismatches:
 3. **Browser product page does not expose video upload.** The backend `POST /api/products` accepts MP4/MOV, but `services/kb/public/product.html` accepts only JPG/PNG and caps uploads at 4 images.
 4. **~~L4 token key mismatch~~ — RESOLVED.** `scripts/set_secrets.sh:135-141` now writes
    `settings.l4_reply.threads_token` directly, matching `wf7_l4_reply.json:234`.
-5. **Shopee DB key mismatch in helper — PARTIALLY resolved.** `scripts/set_secrets.sh --shopee-*`
-   now writes a `shopee_app_id` row (`scripts/set_secrets.sh:150-156`), matching
-   `services/kb/lib/shopee.js:58`. But it never writes a separate `shopee_app_secret` row, so
-   `readSetting('shopee_app_secret')` (`shopee.js:59`) still finds nothing via the settings table —
-   the secret is only reachable through the `SHOPEE_API_SECRET` env var today.
+5. **~~Shopee DB key mismatch in helper~~ — RESOLVED.** `scripts/set_secrets.sh --shopee-*`
+   now writes **both** `shopee_app_id` and `shopee_app_secret` rows
+   (`scripts/set_secrets.sh:150-161`), matching `services/kb/lib/shopee.js:58-59`.
+   The DB path now works alongside env vars.
 6. **L4 comment ingestion source is incomplete.** `wf7_l4_reply.json` reads local `threads_comments`; it does not fetch Threads replies itself. A separate ingestion path must populate `threads_comments` before L4 can reply.
 7. **Text variation is dormant.** Migration 015 and `n8n/code/text_variation.js` exist, but current workflow JSONs do not call that helper or log `text_variations`.
 8. **Video vision skip is not cleanly wired.** `describeImage(publicUrl, mediaKind)` can skip `VIDEO`, but `services/kb/server.js` currently calls `describeImage(im.public_url)` without selecting/passing `media_kind`.

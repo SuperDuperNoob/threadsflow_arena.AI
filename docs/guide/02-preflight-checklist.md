@@ -58,17 +58,8 @@ Follow this top to bottom before handing the VPS/repo to an agent for deployment
    infra/.env -> SHOPEE_API_APP_ID=...
    infra/.env -> SHOPEE_API_SECRET=...
    ```
-   `scripts/set_secrets.sh --shopee-app-id --shopee-secret` now writes a `shopee_app_id` settings row
-   (matching `services/kb/lib/shopee.js:58`), but it only ever inserts/updates that one row
-   (`scripts/set_secrets.sh:150-156`) — it never creates a separate `shopee_app_secret` row, so
-   `readSetting('shopee_app_secret')` (`services/kb/lib/shopee.js:59`) will not find the secret this
-   way. Until the script is extended to also `INSERT ... VALUES ('shopee_app_secret', ...)`, set the
-   secret via the `SHOPEE_API_SECRET` env var above (checked before the settings-table path) or add
-   the row by hand:
-   ```sql
-   INSERT INTO settings (key, value) VALUES ('shopee_app_secret', to_jsonb('YOUR_SECRET'::text))
-   ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value;
-   ```
+   `scripts/set_secrets.sh --shopee-app-id --shopee-secret` now writes **both** `shopee_app_id` and `shopee_app_secret` settings rows
+   (`scripts/set_secrets.sh:150-161`), matching `services/kb/lib/shopee.js:58-59`. The DB path now works alongside env vars.
 
 8. **Optional: create a Perplexity key for topic refresh** — see [Perplexity API key](01-credential-sourcing.md#cred-perplexity). Place:
    ```env
