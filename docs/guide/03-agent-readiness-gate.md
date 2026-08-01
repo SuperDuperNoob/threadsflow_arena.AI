@@ -125,7 +125,7 @@ if $COMPOSE exec -T postgres pg_isready -U threadsflow >/dev/null 2>&1; then
     l4_token_ok="$($COMPOSE exec -T postgres psql -U threadsflow -d threadsflow -Atc \
       "SELECT COALESCE((value->>'threads_token') <> '', false) FROM settings WHERE key='l4_reply';" 2>/dev/null || true)"
     if [[ "$l4_token_ok" != "t" ]]; then
-      fail "L4 is slated for activation but settings.l4_reply.threads_token is missing. Current wf7_l4_reply reads this key; patch it after set_secrets.sh or set REQUIRE_L4=false."
+      fail "L4 is slated for activation but settings.l4_reply.threads_token is missing. Run ./scripts/set_secrets.sh --threads-token TOKEN --threads-user-id ID to populate it (also writes threads_creds). Source: docs/guide/01-credential-sourcing.md#cred-threads."
     fi
   fi
 else
