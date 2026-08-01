@@ -11,7 +11,9 @@ This folder contains the persisted outputs from the Documentation & Architecture
 
 ## Open Questions / Code Mismatches Found
 
-Re-verified 2026-08-01 against current `main` (after commits `46ae8d1` and `464300e`). These were
+Re-verified 2026-08-01 against current `main` (at commit `5f94ba2`, after commits `e4e7b53`
+"fix(scripts): write shopee_app_secret row in set_secrets.sh" and `2bef5af`
+"fix(kb): pass media_kind to describeImage()"). These were
 not guessed around; they are documented as current live-code mismatches:
 
 1. **~~System Settings Control Board not present~~ — RESOLVED.** `/settings.html` is now a 6-tab
@@ -35,6 +37,7 @@ not guessed around; they are documented as current live-code mismatches:
 9. **~~Cosmetic: stale log message in `set_secrets.sh`~~ — RESOLVED.** The script now prints
    `"threads_creds + l4_reply updated"` (`scripts/set_secrets.sh:141`), matching the keys the SQL
    actually writes.
+10. **Persona Jupyter notebooks unreferenced.** `persona/dataset-2.ipynb` through `dataset-10.ipynb` (9 notebooks) exist in the tree with no reference from any script or doc. `docs/10-malaysian-dataset.md` only documents the older, already-deleted `persona/dataset-1.json`. Not a doc/code contradiction (nothing claims the directory is empty) — flagged as an unverifiable Open Question until a script or doc actually references them.
 
-Treat items 2, 3, 5 (partial), 6, 7, and 8 as engineering follow-up items before claiming full
+Treat items 2, 3, 6, 7, and 10 as engineering follow-up items before claiming full
 Phase 1/Phase 2 completion.
