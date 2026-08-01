@@ -16,6 +16,7 @@ import { sha256 } from './lib/pdf.js';
 import { startWorker } from './lib/worker.js';
 import { putImage, enrich, describeImage, shortId, getMediaKind, getExtension } from './lib/products.js';
 import { registerShopeePool, getShopeeAvailability } from './lib/shopee.js';
+import { registerApifyPool, getApifyAvailability } from './lib/apify_shopee.js';
 import { upsertConversionRows } from './lib/shopee_conversions.js';
 import { clearLlmConfigCache, getLlmConfig, normalizeLlmConfig, registerLlmPool } from './lib/llm.js';
 import { createLogger, hostOnly } from './lib/logger.js';
@@ -39,6 +40,7 @@ if (!KB_PASSWORD && KB_ALLOW_NO_PASSWORD !== 'true') {
 const pool = new pg.Pool({ connectionString: DATABASE_URL, max: 6 });
 // Let the Shopee and LLM clients read shared config from the `settings` table (repo convention).
 registerShopeePool(pool);
+registerApifyPool(pool);
 registerLlmPool(pool);
 const app = express();
 app.use(express.json({ limit: '1mb' }));
@@ -625,6 +627,11 @@ app.get('/api/shopee/status', requireAuth, async (_req, res) => {
   // `missing` is intentionally non-sensitive; it makes the no-credential fallback visible
   // without ever returning the App ID or API secret.
   res.json(await getShopeeAvailability());
+});
+
+app.get('/api/apify/status', requireAuth, async (_req, res) => {
+  // Safe operational visibility for the optional product-content fallback; never expose token.
+  res.json(await getApifyAvailability());
 });
 
 app.post('/api/import/conversions', requireAuth, async (req, res) => {

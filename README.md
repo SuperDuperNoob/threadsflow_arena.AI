@@ -149,6 +149,21 @@ can add the keys later and restart with `docker compose up -d`; keep the first w
 as described in the runbook. Code reads Shopee keys from `SHOPEE_API_APP_ID` /
 `SHOPEE_API_SECRET` first, then `settings` rows `shopee_app_id` / `shopee_app_secret`.
 
+### Optional Apify product-content fallback
+
+When the official Affiliate API is unavailable or its product lookup fails, product intake can
+optionally call `chartedsea/shopee-api-scraper` before the normal OpenGraph and user-input
+fallbacks. Set `APIFY_TOKEN` (or settings key `apify_token`) to enable it. It is used only for
+product content such as title, price, description, categories, variants and a small de-identified
+review sample — never for affiliate commissions or conversions.
+
+The KB reserves each Apify run atomically in Postgres before calling the actor. The hard cap is
+**25 runs per calendar month**, even if `APIFY_MONTHLY_MAX_RUNS` is set higher; that variable may
+only lower the cap. This deliberately conservative default keeps the optional integration below
+the actor's advertised US$5/1,000-request pricing. Missing credentials, missing migration,
+exhausted budget, timeout, or actor errors all fall through to OpenGraph/user input without
+blocking product creation. Check safe status at `GET /api/apify/status`.
+
 ## Resource budget (4GB / 2 vCPU)
 
 n8n 1.4GB · Postgres 512MB · kb 640MB · redirector 128MB · cloudflared 96MB ·
