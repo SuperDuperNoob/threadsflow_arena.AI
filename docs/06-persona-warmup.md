@@ -107,8 +107,9 @@ slots per day with zero product slots. That is exactly what you want for the fir
   are updated for levers; for the first launch, topic-level stats use the simpler
   `times_picked` counter.
 - **L4 reply loop** (docs/07-l4-reply-loop.md) — should be activated after the first few
-  persona posts are live, so it replies to people who comment on them. Use the "persona"
-  reply prompt (conversational, no product mention), not the "product" reply prompt.
+  persona posts are live, so it replies to people who comment on them. Current caveat:
+  `wf7_l4_reply.json` expects `settings.l4_reply.threads_token`; make sure that key is populated
+  before relying on automated replies.
 
 ## Files added / changed
 

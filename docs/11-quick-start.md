@@ -32,7 +32,7 @@ sudo ./scripts/setup_new_vps.sh
 3. ✅ Generates secure random passwords
 4. ✅ Creates `.env` configuration
 5. ✅ Starts all Docker services
-6. ✅ Runs all 17 database migrations
+6. ✅ Runs all current database migrations (`001` through `020`)
 7. ✅ Seeds 93+ techniques, levers, and 177 Malaysian snippets
 8. ✅ Configures LLM settings
 
@@ -121,13 +121,18 @@ cd /path/to/threadsflow_arena.AI
 
 ### After Update (2 minutes)
 
-1. **Import new workflows into n8n:**
-   - `wf7_l4_reply.json` (L4 reply loop — NEW)
-   - `wf6_persona.json` (updated with psychology + time-of-day)
+1. **Import/update workflows into n8n:**
+   ```bash
+   ./scripts/bootstrap_n8n.sh
+   ```
+   This imports `wf7_l4_reply.json`, `wf6_persona.json`, and the rest of the workflow JSONs with the `PG` Postgres credential already bound.
 
-2. **Activate `wf7_l4_reply` in n8n:**
-   - Assign **"Postgres threadsflow"** credential to all Postgres nodes
-   - Activate the workflow
+2. **Activate `wf7_l4_reply` only after the Threads token is available:**
+   ```bash
+   ./scripts/bootstrap_n8n.sh --activate
+   cd infra && docker compose restart n8n
+   ```
+   Current caveat: `wf7_l4_reply.json` reads `settings.l4_reply.threads_token`; ensure that key is populated before relying on L4 replies.
 
 3. **(Optional) Import more Malaysian datasets:**
    ```bash
@@ -148,8 +153,12 @@ You now have:
 
 | Feature | Status | Auto-Enabled |
 |---|---|---|
+| **Media schema** | ✅ 5 `posts.media_type` values: `TEXT`, `IMAGE`, `CAROUSEL`, `VIDEO`, `MIXED_CAROUSEL`; `product_images.media_kind` is `IMAGE`/`VIDEO` | Yes |
+| **Browser product media intake** | ✅ JPG/PNG images; backend API also accepts WebP/MP4/MOV | Yes |
+| **Video/mixed publishing** | ⚠️ Schema + bandit groundwork only; `wf3_publish.json` currently lacks VIDEO/MIXED routes and async status polling | No |
+| **Settings UI** | ⚠️ `/settings.html` edits LLM config only; no 5-tab System Settings Control Board in current code | Yes, LLM only |
 | **Persona warm-up (wf6)** | ✅ Running | Yes |
-| **L4 reply loop (wf7)** | ✅ Running | Yes |
+| **L4 reply loop (wf7)** | ⚠️ Workflow exists; needs `threads_comments` ingestion and `settings.l4_reply.threads_token` before live replies | Yes when activated |
 | **Psychology techniques** | ✅ Loaded | Yes |
 | **Malaysian snippets** | ✅ Seeded | Yes |
 | **Time-of-day affinity** | ✅ Active | Yes |

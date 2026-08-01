@@ -1,59 +1,55 @@
 # Loop L4 — On-Post Reply Engagement
 
-> **Pivot from Karma (`wf6_karma`):** External thread search and unsolicited commenting (`wf6_karma`)
-> are not supported by the official Threads API and carry a high risk of account suspension.
-> The **L4 Reply Loop** replaces karma by focusing on **high-ROI engagement on your own Threads posts**.
-
----
+> **Pivot from Karma (`wf6_karma`):** External thread search and unsolicited commenting are not supported by the official Threads API and carry a high account-risk profile. L4 focuses only on replies to comments on your own published posts.
 
 ## Purpose
 
-To build real account engagement and algorithm reach by responding to real user comments on your published Threads posts. 
+Build real account engagement and algorithm reach by responding to real user comments on your published Threads posts in everyday Malaysian Malay.
 
-When users ask questions (*"Berapa RM?", "Tahan lama tak?", "Beli kat mana?"*), Loop L4 drafts natural, persona-calibrated responses in everyday Malaysian Malay.
+## Current workflow behavior
 
----
+`n8n/workflows/wf7_l4_reply.json` currently does this every 4 hours:
 
-## How It Works
+1. Loads `settings.l4_reply`.
+2. Stops if `settings.l4_reply.enabled` is false.
+3. Reads comments from the local `threads_comments` table, not directly from the Threads API.
+4. Plans candidate replies with `n8n/code/l4_reply_plan.js`.
+5. Classifies intent with `n8n/code/l4_classify_intent.js`.
+6. Builds a reply prompt with `n8n/code/l4_draft_reply.js` and calls the configured LLM.
+7. Runs `n8n/code/l4_qa_reply.js`.
+8. Publishes a reply with `POST https://graph.threads.net/v1.0/{comment_id}/replies`.
+9. Inserts/updates `l4_replies` for published or QA-rejected replies.
 
-1. **Fetch Comments:** Every 4–6 hours, queries the official Threads API endpoint:
-   `GET https://graph.threads.net/v1.0/{media_id}/replies` for posts published in the last 7 days.
-2. **Filter Candidates:** Ignores bot comments, duplicate replies, and self-replies.
-3. **Persona Calibration:** Injects 1–3 persona snippets from `persona_snippets` / `dataset-1.json` (e.g. casual Facebook / IIUM Confession Malay cadence) into `prompts/reply_assistant.md`.
-4. **Draft Reply:** LLM produces a 1-sentence friendly, helpful response in everyday Malaysian Malay.
-5. **QA Gate:** Verifies length (<180 chars), blocks Indonesian words (*bisa*, *butuh*, *banget*), and ensures no unsolicited hard-selling.
-6. **Publish Reply:** Posts via `POST https://graph.threads.net/v1.0/{comment_id}/replies`.
+## Required upstream data
 
----
+L4 requires `threads_comments` rows. Migration 013 creates that table, but the current `wf7_l4_reply.json` does not itself call `GET /v1.0/{media_id}/replies` to populate it. Any live deployment must ensure comments are ingested into `threads_comments` before L4 can find candidates.
 
-## Persona Dataset Integration
+## Token caveat
 
-The `/persona` dataset (`dataset-1.json` to `dataset-10.ipynb` and `persona_snippets`) is integrated directly into L4 to ensure replies sound like an authentic Malaysian user (*orang biasa*) rather than a customer service bot:
+`wf7_l4_reply.json` reads the publish token from:
 
-- **Tone Alignment:** Uses casual conversational snippets for natural phrasing (*"Ha'ah, haritu I guna ok je..."*, *"Link I dah drop kat komen bawah tau"*).
-- **Domain Matching:** Uses tech review snippets (`amanz.my`) when answering questions about tech products, and lifestyle snippets (`iium`, `facebook`) for home/lifestyle products.
+```text
+settings.l4_reply.threads_token
+```
 
----
+`scripts/set_secrets.sh` currently writes the L4 copy to `settings.l4_config.threads_token` instead. Until the script/workflow are reconciled, add the token to `settings.l4_reply` manually if you activate L4.
 
-## Safety & Rate Limits
+## Safety & rate limits
 
-- **Daily Cap:** Max 10 replies/day across all active posts.
-- **Cooldown:** Max 1 reply per user per post.
-- **Human Approval Option:** Can be set to `status='pending_approval'` in `run_log` for manual review before publishing.
+Defaults from `settings.l4_reply`:
 
----
+- max 10 replies/day
+- max 5 replies/post
+- 24h cooldown per user
+- only posts from the last 7 days
+- min comment length 3
+- max reply length 180
+
+The `human_approval_required` setting exists in JSON, but there is no current L4 approval UI; the workflow publishes after QA.
 
 ## Official references
 
-**Threads API endpoints used by L4**
-
-- Reading replies on a post (`GET /v1.0/{media_id}/replies`, the endpoint that powers "Fetch Comments" in step 1): https://developers.facebook.com/docs/threads/reply-control
-- Posting a reply (`POST /v1.0/{comment_id}/replies` / `reply_to_id` parameter): https://developers.facebook.com/docs/threads/reply-control
-- Hiding/unhiding replies (used by moderation): https://developers.facebook.com/docs/threads/reply-control
-- Publishing reference (container/publish pattern applies to reply containers exactly like top-level posts): https://developers.facebook.com/docs/threads/reference/publishing
-- Posts overview (500-char limit applies to replies too; L4 enforces 180 chars as a stricter safety cap): https://developers.facebook.com/docs/threads/posts
-- Rate limiting (why we cap at 10 replies/day instead of hammering the API): https://developers.facebook.com/docs/threads/overview
-
-**LLM chat completions used for drafting replies**
-
-- OpenAI Chat Completions (all providers we support speak this shape): https://platform.openai.com/docs/api-reference/chat
+- Reading replies on a post (`GET /v1.0/{media_id}/replies`): https://developers.facebook.com/docs/threads/reply-control
+- Posting a reply (`POST /v1.0/{comment_id}/replies` / `reply_to_id`): https://developers.facebook.com/docs/threads/reply-control
+- Posts overview and character limits: https://developers.facebook.com/docs/threads/posts
+- Rate limiting: https://developers.facebook.com/docs/threads/overview

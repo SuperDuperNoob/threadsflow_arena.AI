@@ -3,12 +3,13 @@
 **Self-improving Shopee-affiliate posting system for Threads. Malaysian Malay, RM, KL time.**
 
 **What you do:** paste a Shopee affiliate link, optionally the full product URL for enrichment,
-plus photos *or* a written description.
+plus browser-uploaded product images (JPG/PNG), API-uploaded media (JPG/PNG/WebP/MP4/MOV),
+or a written description.
 **What it does:** writes posts in everyday Malay (a different style every time), posts 5×/day,
 puts the tracked link in the first comment, counts clicks and sales, and every 3 days shifts
 more posting slots to whatever actually made money. Runs until you stop it.
 
-**New?** Start with **[`docs/11-quick-start.md`](docs/11-quick-start.md)** — one-click setup for new VPS or update existing. Then **[`docs/00-START-HERE.md`](docs/00-START-HERE.md)** — plain language, no jargon. Then **[`docs/03-setup-runbook.md`](docs/03-setup-runbook.md)** — click-by-click setup that assumes you know nothing about Docker, Cloudflare, or the Threads API.
+**New?** Start with **[`docs/guide/README.md`](docs/guide/README.md)** for the audit-backed credential sourcing and preflight gate, then **[`docs/11-quick-start.md`](docs/11-quick-start.md)** for setup commands, **[`docs/00-START-HERE.md`](docs/00-START-HERE.md)** for the plain-language overview, and **[`docs/03-setup-runbook.md`](docs/03-setup-runbook.md)** for click-by-click setup.
 
 ---
 
@@ -28,6 +29,15 @@ cd /path/to/threadsflow_arena.AI
 **Full guide:** [`docs/11-quick-start.md`](docs/11-quick-start.md)
 
 ---
+
+## Current implementation status
+
+Ground truth from the current codebase:
+
+- **Media data model:** `posts.media_type` now allows five values after migration 020: `TEXT`, `IMAGE`, `CAROUSEL`, `VIDEO`, and `MIXED_CAROUSEL`; `product_images.media_kind` distinguishes `IMAGE` from `VIDEO`.
+- **Browser intake:** `/product.html` currently exposes JPG/PNG uploads only. The backend `POST /api/products` accepts JPG, PNG, WebP, MP4, and MOV under the `images` multipart field.
+- **Publishing:** the imported `wf3_publish.json` currently routes only `TEXT`, `IMAGE`, and image-only `CAROUSEL`. It does **not** yet have dedicated `VIDEO` or `MIXED_CAROUSEL` Threads container/polling nodes, so do not enable video media levers for live publishing until that workflow is extended.
+- **Settings UI:** `/settings.html` is currently an LLM endpoint settings page backed by `/api/config/llm`. A five-tab System Settings Control Board and `PUT /api/config/system/:key` route are not present in the live codebase.
 
 ## Why this isn't just "another n8n workflow"
 
@@ -100,11 +110,11 @@ prompts/                     the LLM prompts (writer, editor, persona_writer, re
 
 | Loop | Workflow | Runs | What it does |
 |---|---|---|---|
-| L0 intake | KB web UI | on demand | product + images → database row |
+| L0 intake | KB web UI/API | on demand | product + image/video assets or description → database row |
 | L1 generate | wf2_generate | 03:00 daily | pick levers → write → edit → QA → queue 5 posts |
 | L2 publish | wf3_publish | every 5 min | publish queued post → wait → CTA reply with tracked link |
 | L3 learn | wf4_evaluate | every 3 days | insights + clicks + orders → score → update arms → breed winners |
-| L4 reply | wf7_l4_reply | every 4 hours | answer user comments with psychology techniques + persona calibration |
+| L4 reply | wf7_l4_reply | every 4 hours | answer user comments with psychology techniques + persona calibration once `threads_comments` ingestion and `settings.l4_reply.threads_token` are in place |
 | L5 persona | wf6_persona | 03:30 daily | no-link persona posts for account warm-up (Thompson-sampled topics) |
 | L6 token | wf0_token_refresh | every 25 days | refresh Threads API token before it expires |
 
@@ -132,16 +142,17 @@ to `SHOPEE_API_APP_ID` / `SHOPEE_API_SECRET` (or the `settings` rows `shopee_app
   `node services/kb/bin/shopee.mjs check|sync|query`.
 
 **You do not need to wait for Shopee Open API approval to set up, generate drafts, publish, or
-track clicks.** Without approved API keys, product intake falls back to your description/photos
+track clicks.** Without approved API keys, product intake falls back to your description/media
 and best-effort page metadata, while the conversion-sync service waits safely. Approval is needed
 only for authoritative Shopee price/commission enrichment and automatic order attribution. You
 can add the keys later and restart with `docker compose up -d`; keep the first week in draft mode
-as described in the runbook.
+as described in the runbook. Code reads Shopee keys from `SHOPEE_API_APP_ID` /
+`SHOPEE_API_SECRET` first, then `settings` rows `shopee_app_id` / `shopee_app_secret`.
 
 ## Resource budget (4GB / 2 vCPU)
 
 n8n 1.4GB · Postgres 512MB · kb 640MB · redirector 128MB · cloudflared 96MB ·
-images → Cloudflare R2 (zero local RAM)
+media assets → Cloudflare R2 (zero local RAM)
 ≈ 2.8GB ceiling. No local LLM — AI calls go to a configurable OpenAI-compatible endpoint.
 Hosted 9router (`https://9router.archxry.space/v1`) is the default; a VPS-host 9router uses
 `http://host.docker.internal:9000/v1` from Docker; direct providers like OpenAI also work.

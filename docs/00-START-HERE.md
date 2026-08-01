@@ -21,14 +21,14 @@ These words appear everywhere in this project. If you already know them, skip to
 | **PostgreSQL** (or "Postgres") | A database — a place where the system stores products, posts, clicks, and scores. It runs inside Docker. You talk to it by typing `psql` commands. |
 | **9router** | A small program that sits between the system and the AI companies (OpenAI, Google, Anthropic). Instead of the system talking directly to 3 different AI services, it can talk to 9router, and 9router forwards the request to whichever AI model is cheapest or best for the job. Hosted 9router is the default, but you can also use a VPS-host 9router or any OpenAI-compatible provider from KB → LLM Settings. |
 | **LLM** | "Large Language Model" — the AI that writes the posts. When this doc says "the LLM writes a post," it means the system sends a prompt to an AI like GPT or Gemini and gets text back. |
-| **Cloudflare R2** | Cloudflare's version of cloud file storage. You upload images here and they get a public URL anyone can open. Free for the amount you will use. |
+| **Cloudflare R2** | Cloudflare's version of cloud file storage. You upload product media here and it gets a public URL Meta can fetch. The browser UI currently uploads JPG/PNG images; the backend API also accepts WebP, MP4, and MOV. |
 | **SigV4** | A way to prove to R2 that you are allowed to upload files. The code handles it automatically. You just paste in two strings (a key and a secret) from the Cloudflare dashboard. |
 
 ---
 
 ## 1. What this thing actually does
 
-You give it: **a Shopee affiliate link**, optionally the normal full product URL for enrichment, plus **photos or a written description** (either is fine).
+You give it: **a Shopee affiliate link**, optionally the normal full product URL for enrichment, plus **product media or a written description** (either is fine). In the current browser UI, product media means JPG/PNG images; the backend API accepts JPG/PNG/WebP images and MP4/MOV videos.
 
 It then does this forever, by itself:
 
@@ -71,24 +71,29 @@ confirmed working.
 
 ---
 
-## 3. Three ways to add a product
+## 3. Ways to add a product
 
-| What you give it | Works? | What you get |
+| What you give it | Works? | Current behavior |
 |---|---|---|
-| Link + photos | Yes | Posts with photos |
-| Link + photos + description | Yes | Best results |
-| **Link + description only** | Yes | **Text-only posts. No photos needed at all.** |
-| Link by itself | No | Rejected — see below |
+| Link + browser images | Yes | `/product.html` accepts JPG/PNG images and creates image-capable products. |
+| Link + browser images + description | Yes | Best browser path; the description gives the writer concrete facts. |
+| **Link + description only** | Yes | **Text-only posts. No images needed at all.** |
+| Link + API media upload | Partly | `POST /api/products` accepts JPG/PNG/WebP/MP4/MOV, but the current n8n publisher only safely publishes `TEXT`, `IMAGE`, and image-only `CAROUSEL`. |
+| Link by itself | No | Rejected — see below. |
 
-**Why link-only is rejected:** with no photo and no words, the AI has nothing real to write about,
+**Why link-only is rejected:** with no media and no words, the AI has nothing real to write about,
 so it would invent things. Made-up details are exactly what makes affiliate posts look fake. If
 you have no photos, just write 2–3 real sentences about the product (size, price, how long you
 have used it) and that is enough.
 
 **Text-only posts are not second-best.** Threads is mostly a text app, and text posts often reach
 *more* people than photo posts. The system tries both and tells you which works better for your
-account. Even for products where you uploaded photos, about 15% of posts will be text-only, just
-to check.
+account. Even for products where you uploaded images, media products still draw some text-only
+posts to test whether the visual is helping.
+
+**Video caveat:** the database and bandit know about `VIDEO` and `MIXED_CAROUSEL`, but the shipped
+`wf3_publish.json` does not yet create Threads video containers or poll async video status. Do not
+let live generation pick video/mixed media until that workflow is extended.
 
 ---
 
@@ -143,10 +148,11 @@ them must be public**:
 | `n8n.yourdomain.com` | just you | Lock it | Your automation dashboard. If strangers see this, they can control your posts. |
 | `kb.yourdomain.com` | just you | Lock it | Where you add products and upload PDFs. |
 | `r.yourdomain.com` | **your buyers** | Must be open | The short link in your post comments. Buyers click this to reach Shopee. |
-| `cdn.yourdomain.com` | **Meta's servers** | Must be open | Meta fetches your product photos from here before publishing your post. |
+| `cdn.yourdomain.com` | **Meta's servers** | Must be open | Meta fetches your product media from here before publishing media posts. |
 
-If you lock the last two (`r.` and `cdn.`), buyers cannot click your links and photos will not
-upload. This is the number one reason setups silently do not work.
+If you lock the last two (`r.` and `cdn.`), buyers cannot click your links and media containers
+will fail because Meta cannot fetch the asset. This is the number one reason setups silently do
+not work.
 
 ### Step 3 — Copy-paste 7 code snippets (~15 minutes)
 
@@ -207,10 +213,10 @@ actually buy, and writing real specifics in the notes box.
 |---|---|
 | Weekly | Read 5 random posts. Anything robotic → add to blocked list |
 | After adding books | Read the new techniques, disable any you dislike |
-| Weekly | Add 1–2 new products (photos optional) |
+| Weekly | Add 1–2 new products (images optional; avoid videos until `wf3_publish` has video routing) |
 | Weekly | Check for errors: `SELECT * FROM run_log WHERE level='error'` |
 | Every 3 days | Read the report — but ignore it until day 12 |
-| Day 18+ | Check photos vs text performance |
+| Day 18+ | Check image vs text performance |
 | Every 25 days | Check the Meta token got renewed automatically |
 
 ---
@@ -219,19 +225,19 @@ actually buy, and writing real specifics in the notes box.
 
 | Part | Ready? |
 |---|---|
-| Database (17 migrations) | ✅ Yes — tested on a real database |
+| Database (20 migrations) | ✅ Yes — migrations `001` through `020` are applied by `scripts/init_db.sh` / `scripts/setup_new_vps.sh` |
 | Human-in-the-loop review queue | ✅ Yes — web dashboard at kb.yourdomain.com/queue.html |
 | Techniques (93 styles) | ✅ Yes — 43 built-in + 22 books + 11 Threads + 17 psychology |
 | Malaysian persona snippets (177) | ✅ Yes — 9 domains, all registers |
 | PDF reader (upload copywriting books) | ✅ Yes — fully tested |
-| Product upload page | ✅ Yes — all 3 input types tested |
+| Product upload page | ✅ Yes for browser JPG/PNG images + description/text-only; backend API also accepts WebP/MP4/MOV, but video publishing is not wired in `wf3_publish` |
 | Click tracking (the link shortener) | ✅ Yes — tested |
 | Posting automation (wf3_publish) | ✅ Yes — ready to import into n8n |
 | Key auto-renewal (wf0) | ✅ Yes — ready to import |
 | Writing automation (wf2_generate) | ✅ Yes — pre-populated with code blocks |
 | Learning automation (wf4_evaluate) | ✅ Yes — pre-populated with code blocks |
 | Persona warm-up (wf6_persona) | ✅ Yes — Thompson-sampled topics, time-of-day affinity |
-| L4 reply loop (wf7_l4_reply) | ✅ Yes — intent classification, psychology techniques, QA gate |
+| L4 reply loop (wf7_l4_reply) | ⚠️ Workflow exists — intent classification, psychology techniques, QA gate; requires `threads_comments` ingestion and `settings.l4_reply.threads_token` before live replies |
 | Psychology techniques (17) | ✅ Yes — Cialdini, Voss, Dhawan, Handley, Carnegie, Bacon |
 | Shopee sales import (wf5) | 🔧 Optional — pulls from Shopee Affiliate Open API (add keys when ready) |
 | Karma engagement (wf6_karma) | 📋 Draft — waiting for Meta public search API |
@@ -239,6 +245,10 @@ actually buy, and writing real specifics in the notes box.
 **Shopee Affiliate Open API:** The client (`lib/shopee.js`) is unit-tested and ready.
 Just add your App ID + API Key to `infra/.env` or via SQL when you have them. The system
 works without Shopee keys — it just won't import conversion data automatically.
+
+**Settings UI reality check:** `/settings.html` is currently an LLM endpoint settings page only
+(`GET/PUT /api/config/llm`). The intended five-tab System Settings Control Board and
+`PUT /api/config/system/:key` route are not present in the current codebase.
 
 **Everything else** was tested against a real database and a real running server.
 All workflows come pre-populated with code blocks — no copy-pasting needed.

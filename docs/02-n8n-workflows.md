@@ -1,20 +1,22 @@
 # n8n workflows — node by node
 
-Six workflows. Keep them separate; call each other with **Execute Workflow** so you can rerun
-one piece without touching the rest.
+Current automation surfaces. Some are n8n workflows; intake and conversion sync are services/CLI.
 
 ```
-wf0_token_refresh   Cron  50d      keep the Threads long-lived token alive
-wf1_intake          NOT AN N8N WORKFLOW — built into the KB service, see below
-wf2_generate        Cron 03:00     make tomorrow's 5 posts
-wf3_publish         Cron */5min    publish queue + CTA reply
-wf4_evaluate        Cron 3d 02:00  metrics → scores → bandit update → breeding
-wf5_conversions     Cron 12h       Shopee conversions → DB   (optional at first)
-wf6_karma           DRAFT (Cron 6h) no-link helpful comments for reach insurance (on hold for Meta public search API)
+wf0_token_refresh   n8n Cron 25d      keep the Threads long-lived token alive
+wf1_intake          NOT N8N           built into the KB service, see below
+wf2_generate        n8n Cron 03:00    make scheduled posts and send them to review
+wf3_publish         n8n Cron */5min   publish approved/auto-published posts + CTA reply
+wf4_evaluate        n8n Cron 3d 02:00 metrics → scores → bandit update → breeding
+wf5_conversions     Docker service    shopee-sync runs code/CLI every 12h (optional)
+wf6_persona         n8n Cron 03:30    no-link warm-up persona posts
+wf7_l4_reply        n8n Cron 4h       on-post comment replies
+wf6_karma           DRAFT only        on hold for Meta public search / third-party commenting API
 ```
 
-Credentials to create in n8n: `Postgres threadsflow`, `HTTP Header Auth threads`
-(not needed — token goes in query), `HTTP Request LLM` (9router/default or any OpenAI-compatible endpoint), `S3/R2`.
+`bootstrap_n8n.sh` creates/imports the n8n owner account, imports the `Postgres threadsflow`
+credential with fixed id `PG`, and imports workflow JSONs. No Threads or LLM n8n credential is
+required: Threads tokens live in the `settings` table and LLM HTTP nodes read `settings.llm`.
 Shopee conversions come from the **Shopee Affiliate Open API**, not an n8n credential —
 supply `SHOPEE_API_APP_ID` / `SHOPEE_API_SECRET` (env, or the `settings` rows
 `shopee_app_id` / `shopee_app_secret`); the sync runs from code/CLI, see wf5 below.
@@ -34,9 +36,10 @@ It accepts three shapes; only the affiliate link is universally required. The op
 
 | Shape | `media_mode` | Notes |
 |---|---|---|
-| affiliate link + images (1–4) | `images` | vision pass runs per image |
-| affiliate link + images + description | `images` | richest input |
-| affiliate link + description (≥80 chars) | `text` | no images anywhere in the pipeline |
+| affiliate link + browser images (1–4 JPG/PNG) | `images` | current browser UI path; vision pass runs per image |
+| affiliate link + browser images + description | `images` | richest browser input |
+| affiliate link + backend media upload (JPG/PNG/WebP/MP4/MOV, up to 20 files) | `images` | accepted by `POST /api/products`; video publishing is not yet safe in `wf3_publish` |
+| affiliate link + description (≥80 chars) | `text` | no media anywhere in the pipeline |
 | affiliate link alone | — | **rejected**, with a message explaining what to add |
 
 What it does internally:
@@ -50,14 +53,14 @@ validate            affiliate link required; optional product_url must be http(s
 INSERT products     uid, affiliate_url, product_url, media_mode, description, notes
                     ← transaction commits HERE
    ↓
-upload images       0-4 files -> Cloudflare R2 -> product_images   (skipped if none)
+upload media        browser: 0-4 JPG/PNG; API: 0-20 JPG/PNG/WebP/MP4/MOV -> Cloudflare R2 -> product_images(media_kind)
    ↓  (everything below is post-commit and allowed to fail)
 enrich              Shopee Open API (productOfferV2) when keys are set, using product_url
                     first when present; OG tags from product_url/affiliate_url + your
                     description + notes
                     -> {concrete_details[], sensory_details[], detail_confidence, price, persona}
    ↓
-vision pass         images only -> product_images.vision_desc
+vision pass         intended for images -> product_images.vision_desc; current server does not pass media_kind into describeImage()
 ```
 
 **Why the commit happens early:** Shopee blocks datacenter IPs frequently and vision calls can
@@ -90,12 +93,14 @@ inventing. A wrong specific is worse than a missing one.
 [Code: bandit pick]                              → product_id, format, angle, tone,
                                                     sell_intensity, length_band, media_type
                                                     (code/bandit.js)
-     media_type is gated by the product's real image count — the bandit can never
+     media_type is gated by product_images.media_kind counts — the bandit tries not to
      choose something the product cannot produce:
-       0 images -> TEXT            1 image -> TEXT | IMAGE
-       2+ images -> TEXT | IMAGE | CAROUSEL
-     Products WITH images still draw TEXT ~15% of the time. That is deliberate: it is
-     the only way to learn whether the photo was helping.
+       0 media files          -> TEXT
+       images only            -> TEXT | IMAGE | CAROUSEL (carousel needs 2+ images)
+       exactly 1 video only    -> TEXT | VIDEO
+       image+video mix         -> TEXT | IMAGE | VIDEO | CAROUSEL | MIXED_CAROUSEL
+     Products WITH media still draw TEXT sometimes. That is deliberate: it is
+     the only way to learn whether the visual was helping.
    ↓
 [Code: persona picker]                            → 1-3 Malaysian cadence snippets
                                                     (code/persona_picker.js, optional corpus)
@@ -119,8 +124,12 @@ inventing. A wrong specific is worse than a missing one.
 [HTTP LLM: EMBED]          text-embedding-3-small → vector
    ↓
 [Code: QA gate]            regex bans, length band, emoji cap, opener check,
-                           cosine similarity < 0.86       (code/qa.js)
-   ├─ FAIL → [Code: mutate arm] → loop back to WRITE (max 3), then pick a different arm
+                           cosine similarity threshold       (code/qa.js)
+                           settings.qa is loaded at the start. `qa.js` directly uses
+                           hashtag_probability, max_emoji, and max_similarity; the seeded
+                           max_chars, similarity_lookback, and max_retries values are present
+                           in config but not all are directly referenced by the current JS.
+   ├─ FAIL → log QA rejection; current JSON does not contain a full regenerate loop node chain
    └─ PASS ↓
 [Code: pick CTA]           random enabled cta_variant, least used first, LLM paraphrase 50%
    ↓
@@ -158,8 +167,8 @@ Do not paraphrase it."*
    ↓
 [Postgres: Fetch due post + timeout sweep]
            - Updates overdue pending_review posts (past review_timeout_at and not locked) to 'auto_published'
-           - Selects posts WHERE status='queued' AND scheduled_at <= now() AND rev.status IN ('approved', 'auto_published')
-             AND (rev.review_locked_until IS NULL OR rev.review_locked_until < now())
+           - Selects posts WHERE status IN ('approved', 'auto_published') AND scheduled_at <= now()
+             AND (review_locked_until IS NULL OR review_locked_until < now())
            ORDER BY scheduled_at LIMIT 1
    ↓ (no rows → NoOp)
 [HTTP GET] graph.threads.net/v1.0/{user_id}/threads_publishing_limit?fields=quota_usage,config
@@ -169,22 +178,23 @@ Do not paraphrase it."*
 [Postgres: status='publishing']    ← lock, prevents double-post if a run overlaps
    ↓
 [Code: Quota guard]  resolves the FINAL media_type. Trusts posts.media_type but verifies
-                     against the image URLs that actually resolved:
-                       claims IMAGE/CAROUSEL but 0 urls  → downgrade to TEXT
-                       claims CAROUSEL but only 1 url    → downgrade to IMAGE
-                       claims IMAGE but >1 url           → truncate to 1
+                     against the public URLs that actually resolved:
+                       any non-TEXT type with 0 urls  → downgrade to TEXT
+                       CAROUSEL with only 1 url       → downgrade to IMAGE
+                       IMAGE with >1 url              → truncate to 1
                      A dead CDN link costs you nothing; the post still ships as text.
+                     NOTE: this code does not distinguish image_url vs video_url.
    ↓
 [Switch: Route by media type]
  ├─ TEXT     → POST /threads  media_type=TEXT&text=body
  ├─ CAROUSEL → [Code: Split images] → POST /threads media_type=IMAGE&is_carousel_item=true&image_url=..
  │             → POST /threads media_type=CAROUSEL&children=id1,id2,..&text=body
- └─ IMAGE    → POST /threads  media_type=IMAGE&image_url=..&text=body
+ └─ fallback output named IMAGE
+              → POST /threads  media_type=IMAGE&image_url=..&text=body
    ↓
-[Merge container id]   (3 inputs, one per branch)
+[Merge container id]   (3 inputs: TEXT, IMAGE, CAROUSEL)
    ↓
-[Wait]  35s for IMAGE/CAROUSEL, 3s for TEXT — only media needs async processing,
-        so text posts publish ~30s faster
+[Wait]  35s for IMAGE/CAROUSEL fallback, 3s for TEXT — fixed wait only; no container status polling
    ↓
 [HTTP POST] /threads_publish?creation_id=...   → media_id
    ├─ error → [Postgres: status='failed', fail_reason] + [run_log] → end
@@ -205,9 +215,21 @@ Do not paraphrase it."*
         ← no-op for TEXT posts, since image_ids is empty
 ```
 
-**The DB is the last line of defence.** `posts_media_consistency_chk` enforces
-`TEXT ⇒ 0 images`, `IMAGE ⇒ exactly 1`, `CAROUSEL ⇒ 2–20`. A malformed post cannot be inserted
-by wf2, so it can never reach the Threads API and fail opaquely 30 seconds later.
+**Video/mixed gap in the current workflow:** migration 020 and `bandit.js` can produce `VIDEO`
+and `MIXED_CAROUSEL`, but `wf3_publish.json` has no `Create VIDEO container` node, no mixed
+carousel child splitter that chooses `image_url` vs `video_url`, and no async status polling loop.
+A correct video implementation needs:
+
+1. `VIDEO` branch → `POST /threads` with `media_type=VIDEO` and `video_url=<public url>`.
+2. `MIXED_CAROUSEL` branch → create child containers with `media_type=IMAGE` or `VIDEO` plus
+   `is_carousel_item=true`, then parent `POST /threads media_type=CAROUSEL&children=...`.
+3. Poll `GET /v1.0/{container_id}?fields=status,error_message` until `status == 'FINISHED'`
+   before calling `/threads_publish`, with timeout and error logging.
+
+**The DB is the last line of defence.** After migration 020, `posts_media_consistency_chk` enforces
+`TEXT ⇒ 0 assets`, `IMAGE ⇒ exactly 1`, `CAROUSEL ⇒ 2–20`, `VIDEO ⇒ exactly 1`, and
+`MIXED_CAROUSEL ⇒ 2–20`. The constraint does not validate whether the referenced asset id is an
+image or a video; `wf2_generate` does that with `product_images.media_kind` filters.
 
 Base URL: `https://graph.threads.net/v1.0` (Meta also serves `graph.threads.com`).
 Always send the token as `access_token` query param. Enable **Retry On Fail** (3×, 5s) on every
