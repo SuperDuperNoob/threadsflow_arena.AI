@@ -8,6 +8,7 @@ This folder contains the persisted outputs from the Documentation & Architecture
 2. [`01-credential-sourcing.md`](01-credential-sourcing.md) — code-derived credential/account inventory, Tier A/B/C classification, and zero-to-credential sourcing table.
 3. [`02-preflight-checklist.md`](02-preflight-checklist.md) — ordered first-time-user checklist from no accounts/secrets to agent-ready deployment.
 4. [`03-agent-readiness-gate.md`](03-agent-readiness-gate.md) — copy-paste preflight gate that verifies required `.env` and DB-held secrets before deployment/activation.
+5. [`04-refresh-prompt.md`](04-refresh-prompt.md) — this refresh workflow prompt (versioned artifact, evolves with repo per §5).
 
 ## Open Questions / Code Mismatches Found
 
