@@ -158,6 +158,21 @@ WHERE text ~* '\b(banget|nggak|gak|aja|udah|bikin|gimana|kalian|doang|cowok|cewe
 
 ---
 
+## Archived reference: `persona/*.ipynb` (dataset-2 through dataset-10)
+
+The Jupyter notebooks `persona/dataset-2.ipynb` through `dataset-10.ipynb` are **archived data collection scripts** retained for reference only. They:
+
+- Reference external JSONL files from HuggingFace datasets that are **not included in this repository**
+- Were used during initial dataset exploration and curation (2024-2025)
+- Do **not** contain actual snippet data — they are processing pipelines
+- Are **not** executed by any current script or workflow
+
+**Do not run these notebooks expecting them to produce data** — the `scripts/import_malaysian_datasets.sh` importer (using `bin/persona_dataset.mjs`) is the current, supported method for importing fresh Malaysian snippets from HuggingFace.
+
+These notebooks are kept in the repo for historical reference and potential future adaptation if dataset sources change.
+
+---
+
 ## References
 
 - Malaysian-Dataset (GitHub): https://github.com/malaysia-ai/malaysian-dataset
