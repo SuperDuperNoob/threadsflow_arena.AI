@@ -238,7 +238,7 @@ app.get('/api/config/llm', requireAuth, async (_req, res) => {
 
 // ─────────────────────────────────────────── Generic System Settings (Step 3 Control Board)
 // Allowlist built strictly from Step 0 ground-truth (dynamic keys only).
-const SYSTEM_SETTINGS_ALLOWLIST = new Set(['posting', 'bandit', 'qa', 'l4_reply', 'warmup', 'scoring']);
+const SYSTEM_SETTINGS_ALLOWLIST = new Set(['posting', 'bandit', 'qa', 'l4_reply', 'warmup']);
 
 function validateSystemSetting(key, body, current = {}) {
   const next = { ...current, ...body };
