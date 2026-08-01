@@ -233,6 +233,72 @@ app.get('/api/config/llm', requireAuth, async (_req, res) => {
   res.json({ ...publicLlmConfig(cfg), source: rows.length ? 'settings.llm' : 'env/default', presets: LLM_PRESETS });
 });
 
+// ─────────────────────────────────────────── Generic System Settings (Step 3 Control Board)
+// Allowlist built strictly from Step 0 ground-truth (dynamic keys only).
+const SYSTEM_SETTINGS_ALLOWLIST = new Set(['posting', 'bandit', 'qa', 'l4_reply', 'warmup', 'scoring']);
+
+function validateSystemSetting(key, body, current = {}) {
+  const next = { ...current, ...body };
+  const errors = [];
+  if (key === 'posting') {
+    if (next.skip_probability != null && (next.skip_probability < 0 || next.skip_probability > 1)) errors.push('skip_probability must be 0-1');
+    if (next.carousel_probability != null && (next.carousel_probability < 0 || next.carousel_probability > 1)) errors.push('carousel_probability must be 0-1');
+    if (next.jitter_minutes != null && next.jitter_minutes < 0) errors.push('jitter_minutes >= 0');
+  }
+  if (key === 'bandit' || key === 'scoring') {
+    const s = key === 'scoring' ? next : next;
+    if (s.epsilon != null && (s.epsilon < 0 || s.epsilon > 1)) errors.push('epsilon 0-1');
+    if (s.decay != null && (s.decay < 0 || s.decay > 1)) errors.push('decay 0-1');
+    if (s.loser_bottom_pct != null && (s.loser_bottom_pct < 0 || s.loser_bottom_pct > 1)) errors.push('loser_bottom_pct 0-1');
+    if (s.winner_top_pct != null && (s.winner_top_pct < 0 || s.winner_top_pct > 1)) errors.push('winner_top_pct 0-1');
+  }
+  if (key === 'qa') {
+    if (next.max_similarity != null && (next.max_similarity < 0 || next.max_similarity > 1)) errors.push('max_similarity 0-1');
+    if (next.max_reply_length != null && next.max_reply_length < 1) errors.push('max_reply_length >= 1');
+  }
+  if (key === 'l4_reply') {
+    ['max_replies_per_day','max_replies_per_post','cooldown_hours_per_user','post_age_days','min_comment_length'].forEach(f => {
+      if (next[f] != null && next[f] < 0) errors.push(`${f} >= 0`);
+    });
+  }
+  if (key === 'warmup') {
+    if (next.persona_skip_prob != null && (next.persona_skip_prob < 0 || next.persona_skip_prob > 1)) errors.push('persona_skip_prob 0-1');
+  }
+  if (errors.length) {
+    const e = new Error(errors.join('; '));
+    e.status = 400;
+    throw e;
+  }
+  return next;
+}
+
+app.get('/api/config/system/:key', requireAuth, async (req, res) => {
+  const { key } = req.params;
+  if (!SYSTEM_SETTINGS_ALLOWLIST.has(key)) return res.status(404).json({ error: 'unknown setting key' });
+  const { rows } = await pool.query('SELECT value FROM settings WHERE key=$1', [key]);
+  const value = rows[0]?.value || {};
+  // Never return secrets (threads_creds etc. are already excluded from allowlist)
+  res.json({ key, value });
+});
+
+app.put('/api/config/system/:key', requireAuth, async (req, res) => {
+  const { key } = req.params;
+  if (!SYSTEM_SETTINGS_ALLOWLIST.has(key)) return res.status(404).json({ error: 'unknown setting key' });
+  try {
+    const currentRow = await pool.query('SELECT value FROM settings WHERE key=$1', [key]);
+    const current = currentRow.rows[0]?.value || {};
+    const next = validateSystemSetting(key, req.body ?? {}, current);
+    await pool.query(
+      `INSERT INTO settings (key, value) VALUES ($1, $2::jsonb)
+       ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value`,
+      [key, JSON.stringify(next)]
+    );
+    res.json({ ok: true, key, value: next });
+  } catch (e) {
+    res.status(e.status || 500).json({ error: e.message });
+  }
+});
+
 app.put('/api/config/llm', requireAuth, async (req, res) => {
   try {
     const cfg = await llmConfigFromRequest(req.body ?? {});
