@@ -16,6 +16,8 @@ Re-verified 2026-08-01 against current `main` (at commit `5f94ba2`, after commit
 "fix(kb): pass media_kind to describeImage()"). These were
 not guessed around; they are documented as current live-code mismatches:
 
+**Re-verified 2026-08-01 (second pass, against `main` at `5f94ba2`, no new commits).** All 5 open items persist; guide files updated for resolved L4/Shopee mismatches and Control Board status; Apify credential added to inventory.
+
 1. **~~System Settings Control Board not present~~ — RESOLVED.** `/settings.html` is now a 6-tab
    board. The LLM tab still uses `/api/config/llm`; the other five (`posting`, `bandit`, `qa`,
    `l4_reply`, `warmup`) plus `scoring` use the generic `GET/PUT /api/config/system/:key` route,

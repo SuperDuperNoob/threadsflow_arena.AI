@@ -29,6 +29,14 @@ claim these two commits could have changed and updated the affected doc rows bel
   `id, public_url`, and `services/kb/server.js:585` passes it through as
   `describeImage(im.public_url, im.media_kind)`, so `VIDEO` rows skip the vision call
   as designed. Covered by `services/kb/lib/products.test.js`.
+
+**Re-verification pass: 2026-08-01 (against `main` at `5f94ba2`, no new commits since last refresh).** This pass re-verified all open items against current code and updated guide files for resolved L4 token/Shopee key mismatches and the Settings Control Board. Findings:
+- All 5 open items (VIDEO/MIXED_CAROUSEL routing, browser upload JPG/PNG-only, L4 comment ingestion, text variation dormant, persona notebooks unreferenced) remain open and unchanged.
+- No new markdown files added to repo scope (still 30 files).
+- Credential inventory: Apify API token added as Tier C/B optional credential.
+- L4 token mismatch and Shopee key mismatch now fully resolved via `scripts/set_secrets.sh` single call.
+- Settings Control Board confirmed live with 6 tabs via generic `/api/config/system/:key` route.
+
 - **Still open, unchanged by either commit** (re-confirmed against current code): VIDEO/MIXED_CAROUSEL
   routing absent from `wf3_publish.json`; browser `product.html` still JPG/PNG-only, 4-image cap;
   no workflow inserts into `threads_comments` (L4 ingestion gap); `text_variation.js` still uncalled
@@ -132,3 +140,4 @@ The `docs/guide/*.md` files were generated after discovery as the requested pers
 - Re-ran grep checks for stale `TEXT, IMAGE, CAROUSEL`-only claims, stale migration counts, and unsupported System Settings Control Board claims.
 - Ran a Markdown link/code-fence sanity script after edits (see session log).
 - **Refresh pass:** re-read `services/kb/server.js`, `scripts/set_secrets.sh`, `n8n/workflows/wf3_publish.json`, `n8n/code/bandit.js`, `services/kb/public/product.html`, `n8n/workflows/wf7_l4_reply.json`, `services/kb/lib/shopee.js`, `services/kb/lib/products.test.js` against commits `e4e7b53` and `2bef5af`.
+- **Re-verification pass:** re-read `n8n/workflows/wf3_publish.json`, `services/kb/public/product.html`, `n8n/workflows/wf7_l4_reply.json`, `n8n/code/text_variation.js`, `persona/*.ipynb`, `scripts/set_secrets.sh`, `services/kb/server.js:238,275-300`, `infra/.env.example`, `infra/docker-compose.yml` against `main` at `5f94ba2`; confirmed all 5 open items persist, no new markdown files, Apify credential added.
