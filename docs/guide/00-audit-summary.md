@@ -1,6 +1,32 @@
 # Documentation & Architecture Audit Summary
 
-Audit date: 2026-08-01.
+Audit date: 2026-08-01. Re-verified 2026-08-01 (later same day, after commits `46ae8d1`
+"fix(credentials): canonicalize Shopee + L4 token keys" and `464300e` "feat(settings): implement
+System Settings Control Board" landed on `main`). The re-verification pass re-read the live code
+for every claim these two commits could have changed and updated the affected doc rows below plus
+the corresponding source files (`README.md`, `docs/00-START-HERE.md`, `docs/01-architecture.md`,
+`docs/03-setup-runbook.md`, `docs/07-l4-reply-loop.md`, `docs/09-wf6-l4-improvements.md`,
+`docs/11-quick-start.md`, `docs/14-agent-autonomous-deploy.md`, `docs/guide/README.md`,
+`docs/guide/02-preflight-checklist.md`). Findings:
+
+- **Settings Control Board: now live.** `/settings.html` has 6 tabs; 5 of them (`posting`, `bandit`,
+  `qa`, `l4_reply`, `warmup`) plus `scoring` read/write through `GET/PUT /api/config/system/:key`
+  (`services/kb/server.js:238`, `275-300`). Confirmed by reading the route handlers and the
+  allowlist directly — not inferred from the commit message.
+- **L4 token key mismatch: fixed.** `scripts/set_secrets.sh` now writes `l4_reply.threads_token`
+  directly (`scripts/set_secrets.sh:135-141`), matching `wf7_l4_reply.json:234`. Confirmed by
+  reading both files.
+- **Shopee key mismatch: only half-fixed.** `scripts/set_secrets.sh --shopee-app-id/--shopee-secret`
+  now writes a `shopee_app_id` row (`scripts/set_secrets.sh:150-156`), matching
+  `services/kb/lib/shopee.js:58`. But the script never inserts a separate `shopee_app_secret` row —
+  only `shopee_app_id` is ever created/updated — so `readSetting('shopee_app_secret')`
+  (`shopee.js:59`) still finds nothing via the settings-table path; this is a **newly identified**
+  gap distinct from the original "wrong key name" bug, found by tracing the script's single `INSERT`
+  statement rather than trusting the fix commit's own message.
+- **Still open, unchanged by either commit** (re-confirmed against current code): VIDEO/MIXED_CAROUSEL
+  routing absent from `wf3_publish.json`; browser `product.html` still JPG/PNG-only, 4-image cap;
+  no workflow inserts into `threads_comments` (L4 ingestion gap); `text_variation.js` still uncalled
+  by any workflow; `describeImage()` still called without a `media_kind` argument.
 
 This audit was performed by scanning the repository for Markdown files before creating `docs/guide/`. The pre-existing Markdown scope was:
 
@@ -43,11 +69,11 @@ The `docs/guide/*.md` files were generated after discovery as the requested pers
 | Media intake | Server accepts image/jpeg, image/png, image/webp, video/mp4, video/quicktime with a 20-file limit and inserts `media_kind` (`services/kb/server.js:400-409`, `436-489`). Browser `/product.html` still accepts only JPG/PNG and caps at 4 images (`services/kb/public/product.html:88-112`). |
 | Media generation | `wf2_generate` loads image/video counts and picks assets by `product_images.media_kind` (`n8n/workflows/wf2_generate.json:27`, `88`). `n8n/code/bandit.js` can choose `VIDEO` and `MIXED_CAROUSEL` for media-capable products (`n8n/code/bandit.js:180-198`). |
 | Publishing | `wf3_publish.json` currently has route branches for `TEXT`, image-only `CAROUSEL`, and fallback `IMAGE`; there are no `VIDEO` / `MIXED_CAROUSEL` nodes and no status polling loop (node list/route in `n8n/workflows/wf3_publish.json`; `Route by media type`, `Create IMAGE container`, `Create carousel items`, `Create CAROUSEL container`, `Wait for media processing`). |
-| Settings UI | Now a full Control Board: LLM tab + 5 dynamic tabs (posting, bandit, qa, l4_reply, warmup) served by generalized `/api/config/system/:key` routes with validation & auth. Original LLM contract unchanged. See STEP0_GROUND_TRUTH.md. |
+| Settings UI | Full Control Board: LLM tab + 5 dynamic tabs (posting, bandit, qa, l4_reply, warmup) served by generalized `/api/config/system/:key` routes with validation & auth, allowlisted to `{posting, bandit, qa, l4_reply, warmup, scoring}` (`services/kb/server.js:238`, `275-300`, `240-273`). Original LLM contract unchanged. See STEP0_GROUND_TRUTH.md. |
 | Settings keys | Live workflow/service keys include `llm`, `qa`, `posting`, `bandit`, `scoring`, `warmup`, `l4_reply`, `next_cycle_plan`, `threads_creds`, `text_variation`, `locale`, `redirect_base_url`, and Shopee rows (`db/seed_levers_my.sql:131-158`; migrations 008/010/011/015/017; workflows grep). |
 | L4 reply | `wf7_l4_reply` loads `settings.l4_reply`, reads local `threads_comments`, publishes replies with `settings.l4_reply.threads_token`, and writes `l4_replies` (`n8n/workflows/wf7_l4_reply.json:20`, `56`, `70`, `233-285`). |
-| Token helper mismatch | `scripts/set_secrets.sh` writes `threads_creds` and `l4_config.threads_token`, but `wf7_l4_reply` reads `l4_reply.threads_token` (`scripts/set_secrets.sh:125-139`; `n8n/workflows/wf7_l4_reply.json:233-234`). |
-| Shopee key mismatch | Shopee code reads env vars then `settings` rows `shopee_app_id` / `shopee_app_secret` (`services/kb/lib/shopee.js:14-18`, `55-61`); `scripts/set_secrets.sh --shopee-*` writes key `shopee`, which is not read (`scripts/set_secrets.sh:150-155`). |
+| Token helper mismatch | **Resolved.** `scripts/set_secrets.sh` writes `threads_creds` and `l4_reply.threads_token` in the same call (`scripts/set_secrets.sh:135-141`), matching what `wf7_l4_reply` reads (`n8n/workflows/wf7_l4_reply.json:233-234`). |
+| Shopee key mismatch | **Half-resolved.** Shopee code reads env vars then `settings` rows `shopee_app_id` / `shopee_app_secret` (`services/kb/lib/shopee.js:14-18`, `58-59`). `scripts/set_secrets.sh --shopee-*` now writes a `shopee_app_id` row (`scripts/set_secrets.sh:150-156`), but never inserts a separate `shopee_app_secret` row, so the secret still isn't reachable via the settings-table path — only via the `SHOPEE_API_SECRET` env var. |
 | Text variation | Migration and helper exist, but no workflow JSON contains active Text Variation nodes (`db/migrations/015_text_variation_settings.sql`; `n8n/code/text_variation.js`; grep of `n8n/workflows/*.json`). |
 | Deployment env | Required service env and secrets are defined in `.env.example` and consumed by compose (`infra/.env.example:1-140`; `infra/docker-compose.yml:21-203`). |
 
@@ -55,15 +81,15 @@ The `docs/guide/*.md` files were generated after discovery as the requested pers
 
 | File | Outcome | Dimensions checked and result |
 |---|---|---|
-| `README.md` | **Updated** | Added `docs/guide/README.md` link; corrected media support to distinguish schema/API/browser/publisher status; documented actual `/settings.html` LLM-only surface; updated L0 wording and Shopee settings rows. Traceable to migration 020, `services/kb/server.js`, `product.html`, `wf3_publish.json`, `services/kb/server.js:165-277`, and `services/kb/lib/shopee.js:55-61`. |
-| `docs/00-START-HERE.md` | **Updated** | Replaced photo-only product language with media-aware language; documented browser JPG/PNG vs backend MP4/MOV support; added video/mixed publishing caveat; corrected migration count 17 → 20; documented settings UI as LLM-only. Traceable to `db/migrations/020_video_mixed_carousel.sql`, `services/kb/server.js:400-489`, `product.html:88-112`, and `wf3_publish.json`. |
-| `docs/01-architecture.md` | **Updated** | Rebuilt component map to match docker-compose; expanded loops; changed media lever count/set to five values; documented `product_images.media_kind`; documented actual/absent VIDEO/MIXED publish flow and required polling; added settings table key matrix and noted absent `/api/config/system/:key`. Traceable to `infra/docker-compose.yml`, migration 020, `n8n/code/bandit.js`, workflow JSON, seeds/migrations/settings routes. |
+| `README.md` | **Updated (re-verified)** | Original pass added media/settings corrections. Re-verification pass replaced the now-stale "LLM endpoint settings page only" claim with the live 6-tab Control Board description. Traceable to `services/kb/server.js:238`, `275-300`. |
+| `docs/00-START-HERE.md` | **Updated (re-verified)** | Original pass added media-aware language and migration count. Re-verification pass replaced the "not present" Control Board claim with the live tab list, allowlist, and validation rules. Traceable to `services/kb/server.js:238-300`. |
+| `docs/01-architecture.md` | **Updated (re-verified)** | Original pass rebuilt the component map and media lever set. Re-verification pass replaced the "not present" `/api/config/system/:key` note with the live route description, allowlist, and per-key validation rules. Traceable to `services/kb/server.js:238-300`. |
 | `docs/02-n8n-workflows.md` | **Updated** | Corrected workflow inventory; removed obsolete n8n credential guidance; updated intake shapes; updated media gating; documented `settings.qa` actually loaded vs directly used; corrected wf3 fetch status and route graph; added explicit VIDEO/MIXED gap and required future polling loop. Traceable to `bootstrap_n8n.sh`, `wf2_generate.json`, `wf3_publish.json`, `n8n/code/qa.js`. |
-| `docs/03-setup-runbook.md` | **Updated** | Corrected container list and migration count 9/017 → 20; documented current LLM-only settings UI; marked System Settings Control Board as absent; documented browser product intake JPG/PNG and backend video caveat; added L4 token key mismatch note; clarified credential assignment when `bootstrap_n8n.sh` is used. Traceable to scripts, compose, server routes, `product.html`, and `wf7_l4_reply.json`. |
+| `docs/03-setup-runbook.md` | **Updated (re-verified)** | Original pass corrected container/migration counts and added an L4 token workaround. Re-verification pass removed that now-obsolete workaround (the script writes the correct key directly) and replaced the "LLM-only settings, Control Board absent" claim with the live 6-tab description. Traceable to `scripts/set_secrets.sh:135-141`, `services/kb/server.js:238-300`. |
 | `docs/04-technique-library.md` | **No changes required** | Checked technique-library descriptions against `db/schema_techniques.sql`, `services/kb/server.js` upload/mining routes, and KB worker convention. No media/settings/schema enum claims requiring change. |
 | `docs/05-books.md` | **No changes required** | Checked book-mining and anti-pattern discussion against seed/migration files and prompts. Existing claims are historical/technique-library oriented; no Phase 1/2 media/settings claims found. |
 | `docs/06-persona-warmup.md` | **Updated** | Added L4 token caveat because current `wf7_l4_reply` expects `settings.l4_reply.threads_token`. Other persona warm-up flow remained aligned with `wf6_persona.json`, `persona_slot_plan.js`, `qa_persona.js`, and migration 010. |
-| `docs/07-l4-reply-loop.md` | **Updated** | Rewrote workflow description to match current JSON: reads `threads_comments` table, not direct API fetch; publishes through `/replies`; documented required upstream comment ingestion and token mismatch. Traceable to `wf7_l4_reply.json` and migration 013. |
+| `docs/07-l4-reply-loop.md` | **Updated (re-verified)** | Original pass documented the comment-ingestion gap and token mismatch (ingestion gap re-confirmed still open). Re-verification pass marked the token mismatch resolved now that `set_secrets.sh` writes the matching key. Traceable to `scripts/set_secrets.sh:135-141`; ingestion gap re-confirmed by grepping all workflow JSON for `INSERT INTO threads_comments` (no matches). |
 | `docs/08-72h-canary.md` | **Updated** | Changed prerequisite wording from image hosting to media hosting. Checked logging/redaction claims against compose log rotation and logger usage; no further media/settings corrections needed. |
 | `docs/09-wf6-l4-improvements.md` | **Updated** | Rewrote stale implementation summary. Corrected `settings.l4_reply.enabled` default, noted `wf7_l4_reply.json` exists, documented `persona_topic_feedback` as schema groundwork not active wf4 updates, and documented token mismatch. Traceable to migration 011, wf6/wf7 JSON, `scripts/bootstrap_n8n.sh`, `scripts/set_secrets.sh`. |
 | `docs/10-malaysian-dataset.md` | **No changes required** | Checked dataset/persona snippet claims against migration 012 and persona views. No media/settings/deployment instructions present. |

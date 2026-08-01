@@ -32,7 +32,8 @@ L4 requires `threads_comments` rows. Migration 013 creates that table, but the c
 settings.l4_reply.threads_token
 ```
 
-`scripts/set_secrets.sh` currently writes the L4 copy to `settings.l4_config.threads_token` instead. Until the script/workflow are reconciled, add the token to `settings.l4_reply` manually if you activate L4.
+`scripts/set_secrets.sh` writes the L4 copy directly to `settings.l4_reply.threads_token`
+(`scripts/set_secrets.sh:135-141`), matching this read — no manual reconciliation needed.
 
 ## Safety & rate limits
 

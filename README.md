@@ -37,7 +37,7 @@ Ground truth from the current codebase:
 - **Media data model:** `posts.media_type` now allows five values after migration 020: `TEXT`, `IMAGE`, `CAROUSEL`, `VIDEO`, and `MIXED_CAROUSEL`; `product_images.media_kind` distinguishes `IMAGE` from `VIDEO`.
 - **Browser intake:** `/product.html` currently exposes JPG/PNG uploads only. The backend `POST /api/products` accepts JPG, PNG, WebP, MP4, and MOV under the `images` multipart field.
 - **Publishing:** the imported `wf3_publish.json` currently routes only `TEXT`, `IMAGE`, and image-only `CAROUSEL`. It does **not** yet have dedicated `VIDEO` or `MIXED_CAROUSEL` Threads container/polling nodes, so do not enable video media levers for live publishing until that workflow is extended.
-- **Settings UI:** `/settings.html` is currently an LLM endpoint settings page backed by `/api/config/llm`. A five-tab System Settings Control Board and `PUT /api/config/system/:key` route are not present in the live codebase.
+- **Settings UI:** `/settings.html` is a tabbed System Settings Control Board. The LLM tab is backed by `/api/config/llm`; the Posting Schedule, Bandit / Scoring, Content / QA, Auto-Reply Loop, and Warmup tabs are backed by the generic `GET/PUT /api/config/system/:key` route, restricted to the `posting, bandit, qa, l4_reply, warmup, scoring` allowlist so secret rows (e.g. `threads_creds`) are never exposed.
 
 ## Why this isn't just "another n8n workflow"
 

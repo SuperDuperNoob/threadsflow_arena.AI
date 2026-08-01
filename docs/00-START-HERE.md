@@ -246,9 +246,12 @@ actually buy, and writing real specifics in the notes box.
 Just add your App ID + API Key to `infra/.env` or via SQL when you have them. The system
 works without Shopee keys — it just won't import conversion data automatically.
 
-**Settings UI reality check:** `/settings.html` is currently an LLM endpoint settings page only
-(`GET/PUT /api/config/llm`). The intended five-tab System Settings Control Board and
-`PUT /api/config/system/:key` route are not present in the current codebase.
+**Settings UI reality check:** `/settings.html` is now a tabbed System Settings Control Board
+(LLM, Posting Schedule, Bandit / Scoring, Content / QA, Auto-Reply Loop, Warmup). The LLM tab keeps
+its original `GET/PUT /api/config/llm` contract; the other five tabs read/write through the generic
+`GET/PUT /api/config/system/:key` route (`services/kb/server.js:275-300`), gated by the allowlist
+`posting, bandit, qa, l4_reply, warmup, scoring` (`services/kb/server.js:238`). Secret-bearing keys
+(`threads_creds`, etc.) are excluded from that allowlist and are never exposed through this route.
 
 **Everything else** was tested against a real database and a real running server.
 All workflows come pre-populated with code blocks — no copy-pasting needed.

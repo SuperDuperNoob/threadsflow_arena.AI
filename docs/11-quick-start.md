@@ -156,7 +156,7 @@ You now have:
 | **Media schema** | ✅ 5 `posts.media_type` values: `TEXT`, `IMAGE`, `CAROUSEL`, `VIDEO`, `MIXED_CAROUSEL`; `product_images.media_kind` is `IMAGE`/`VIDEO` | Yes |
 | **Browser product media intake** | ✅ JPG/PNG images; backend API also accepts WebP/MP4/MOV | Yes |
 | **Video/mixed publishing** | ⚠️ Schema + bandit groundwork only; `wf3_publish.json` currently lacks VIDEO/MIXED routes and async status polling | No |
-| **Settings UI** | ⚠️ `/settings.html` edits LLM config only; no 5-tab System Settings Control Board in current code | Yes, LLM only |
+| **Settings UI** | ✅ `/settings.html` is a 6-tab System Settings Control Board (LLM, Posting Schedule, Bandit / Scoring, Content / QA, Auto-Reply Loop, Warmup) backed by `/api/config/llm` and the generic `/api/config/system/:key` route | Yes |
 | **Persona warm-up (wf6)** | ✅ Running | Yes |
 | **L4 reply loop (wf7)** | ⚠️ Workflow exists; needs `threads_comments` ingestion and `settings.l4_reply.threads_token` before live replies | Yes when activated |
 | **Psychology techniques** | ✅ Loaded | Yes |

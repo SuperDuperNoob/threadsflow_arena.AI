@@ -312,7 +312,7 @@ N8N_PASSWORD=pick_a_secure_password
 KB_PASSWORD=pick_a_secure_password
 
 # ═══ AI / LLM settings ═══
-# Default hosted 9router. You can change this later at https://kb.yourdomain.com/settings.html (current UI: LLM settings only).
+# Default hosted 9router. You can change this later at https://kb.yourdomain.com/settings.html (LLM tab of the System Settings Control Board).
 LLM_BASE_URL=https://9router.archxry.space/v1
 LLM_API_KEY=
 LLM_MODEL_WRITE=gemini-2.5-flash
@@ -420,15 +420,9 @@ Preferred helper:
 ./scripts/set_secrets.sh --threads-token 'YOUR_LONG_TOKEN' --threads-user-id 'YOUR_USER_ID'
 ```
 
-Current code caveat: `wf7_l4_reply.json` reads `settings.l4_reply.threads_token`, while
-`scripts/set_secrets.sh` writes `settings.l4_config.threads_token`. Until that mismatch is fixed,
-add the token into `settings.l4_reply` too if you activate wf7:
-
-```bash
-docker compose -f infra/docker-compose.yml exec -T postgres psql -U threadsflow -d threadsflow \
-  -v tok='YOUR_LONG_TOKEN' \
-  -c "UPDATE settings SET value = value || jsonb_build_object('threads_token', :'tok') WHERE key='l4_reply';"
-```
+`scripts/set_secrets.sh` writes the token to both `threads_creds` and `settings.l4_reply.threads_token`
+in the same call, matching what `wf7_l4_reply.json` reads — no separate manual step is needed to
+activate wf7.
 
 Manual SQL path if you prefer to inspect the rows yourself:
 
@@ -446,7 +440,7 @@ INSERT INTO settings (key, value) VALUES
 ('threads_creds', '{"token":"YOUR_LONG_TOKEN","user_id":"YOUR_USER_ID","expires_at":"2026-09-25"}');
 
 -- LLM settings: where to send OpenAI-compatible AI calls.
--- You can also edit this later at https://kb.yourdomain.com/settings.html.
+-- You can also edit this later at https://kb.yourdomain.com/settings.html (LLM tab).
 INSERT INTO settings (key, value) VALUES
 ('llm', '{"base_url":"https://9router.archxry.space/v1",
           "api_key":"",
@@ -897,13 +891,18 @@ Authorization: Bearer {{ $json.cfg.llm.api_key }}
 
 So you normally do **not** edit the HTTP nodes one by one. Change the endpoint in one place:
 
-- Browser: `https://kb.yourdomain.com/settings.html` — current UI title is **LLM Settings**. It has preset/base-url/API-key/model fields plus **Save config**, **Test /models**, and **Clear saved API key** buttons.
+- Browser: `https://kb.yourdomain.com/settings.html` — the **LLM** tab of the System Settings
+  Control Board. It has preset/base-url/API-key/model fields plus **Save config**, **Test /models**,
+  and **Clear saved API key** buttons.
 - CLI: `./scripts/configure_llm.sh --local-9router` or `./scripts/configure_llm.sh --base-url ...`
 - SQL: update the `settings` row where `key='llm'`
 
-There is not currently a five-tab System Settings Control Board, and there is no
-`PUT /api/config/system/:key` route in `services/kb/server.js`; other settings rows are edited by
-SQL or workflow/script logic.
+`/settings.html` also has five more tabs — **Posting Schedule**, **Bandit / Scoring**,
+**Content / QA**, **Auto-Reply Loop**, and **Warmup** — that read/write the `posting`, `bandit`,
+`qa`, `l4_reply`, `warmup`, and `scoring` settings rows through the generic
+`GET/PUT /api/config/system/:key` route (`services/kb/server.js:275-300`). Any key outside that
+six-key allowlist (`services/kb/server.js:238`) 404s, so secret-bearing rows such as `threads_creds`
+can never be reached this way — those still require SQL or `scripts/set_secrets.sh`.
 
 If you imported an older workflow, re-import `n8n/workflows/wf2_generate.json` or manually change
 its LLM HTTP nodes to read from `cfg.llm` instead of hard-coded URLs.

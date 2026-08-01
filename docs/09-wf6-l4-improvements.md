@@ -67,7 +67,7 @@ Persona posts remain `media_type='TEXT'`, `sell_intensity=0`, and `purpose='pers
 
 ## Important current mismatches
 
-### 1. L4 token storage mismatch
+### 1. L4 token storage mismatch — resolved
 
 `wf7_l4_reply.json` publishes replies with:
 
@@ -75,17 +75,9 @@ Persona posts remain `media_type='TEXT'`, `sell_intensity=0`, and `purpose='pers
 $('Load L4 config').first().json.value?.threads_token
 ```
 
-That means it expects the token inside `settings.l4_reply.threads_token`.
-
-However, `scripts/set_secrets.sh` currently writes the L4 copy to `settings.l4_config.threads_token`, while `wf7_l4_reply` loads `settings.l4_reply`. Until code is reconciled, operators must either:
-
-```sql
-UPDATE settings
-SET value = value || jsonb_build_object('threads_token', 'YOUR_LONG_TOKEN')
-WHERE key = 'l4_reply';
-```
-
-or change the workflow/script to use the same key.
+That means it expects the token inside `settings.l4_reply.threads_token`. `scripts/set_secrets.sh`
+now writes the L4 copy directly to `settings.l4_reply.threads_token` (`scripts/set_secrets.sh:135-141`),
+matching what the workflow reads, so no manual reconciliation step is needed anymore.
 
 ### 2. `persona_topic_feedback` is schema groundwork
 
@@ -129,4 +121,4 @@ WHERE key='l4_reply';
 - `n8n/code/persona_slot_plan.js`, `persona_topic_pick.js`, `qa_persona.js` — persona logic.
 - `n8n/code/l4_reply_plan.js`, `l4_classify_intent.js`, `l4_draft_reply.js`, `l4_qa_reply.js` — L4 logic.
 - `scripts/bootstrap_n8n.sh` — imports and optionally activates wf0/wf6/wf3/wf7.
-- `scripts/set_secrets.sh` — writes `threads_creds` and currently writes L4 token to `l4_config`.
+- `scripts/set_secrets.sh` — writes `threads_creds` and the L4 token to `l4_reply.threads_token`.
