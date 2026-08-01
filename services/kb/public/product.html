@@ -41,6 +41,7 @@
   <h1>Add Product</h1>
   <a href="/">← Knowledge Base</a>
   <a href="/settings.html">LLM Settings</a>
+  <a href="/research.html">Product Research</a>
 </header>
 <main>
   <p class="hint">Only the Shopee affiliate link is required. Add the full product URL when you
@@ -96,6 +97,11 @@
 
 <script>
 const $=s=>document.querySelector(s);
+// Research may prefill only enrichment fields. The affiliate/buyer URL intentionally remains blank.
+const researchParams=new URLSearchParams(location.search);
+$('#productUrl').value=researchParams.get('product_url')||'';
+$('#name').value=researchParams.get('name')||'';
+$('#price').value=researchParams.get('price_myr')||'';
 let files=[];
 
 const drop=$('#imgdrop'), input=$('#imgs');

@@ -1,167 +1,61 @@
-/**
- * Optional Apify/Charted Sea product-content fallback.
- *
- * This is deliberately not an affiliate-data client: commissions, offer links and conversion
- * reports remain the responsibility of the official Shopee Affiliate Open API.
- * It is best-effort only and never throws into product intake.
- */
-
-const ACTOR = 'chartedsea~shopee-api-scraper';
-const ENDPOINT = `https://api.apify.com/v2/acts/${ACTOR}/run-sync-get-dataset-items`;
-const DEFAULT_MONTHLY_MAX_RUNS = 25; // conservative: well below the advertised $5/1k request pricing
+/** Optional Apify client shared by product enrichment and discovery. */
+const DEFAULT_PER_KEY_MONTHLY_RUNS = 25;
 const TIMEOUT_MS = 45_000;
+let _explicit = {}, _pool = null;
+const nonBlank = v => typeof v === 'string' ? v.trim() : v;
+export function configureApify(cfg = {}) { _explicit = { ..._explicit, ...cfg }; return _explicit; }
+export function registerApifyPool(pool) { _pool = pool; }
 
-let _explicit = {};
-let _pool = null;
-const nonBlank = (value) => typeof value === 'string' ? value.trim() : value;
-
-export function configureApify(cfg = {}) {
-  _explicit = { ..._explicit, ...cfg };
-  return _explicit;
+async function legacyToken() {
+  if (_explicit.token) return nonBlank(_explicit.token);
+  if (process.env.APIFY_TOKEN) return nonBlank(process.env.APIFY_TOKEN);
+  if (!_pool) return '';
+  try { const { rows } = await _pool.query("SELECT value FROM settings WHERE key='apify_token'"); const v = rows[0]?.value; return nonBlank(typeof v === 'string' ? v : v?.secret ?? v?.value); } catch { return ''; }
 }
+function limit() { const n = Number(_explicit.monthlyMaxRuns ?? process.env.APIFY_MONTHLY_MAX_RUNS); return Number.isInteger(n) && n > 0 ? Math.min(n, DEFAULT_PER_KEY_MONTHLY_RUNS) : DEFAULT_PER_KEY_MONTHLY_RUNS; }
 
-export function registerApifyPool(pool) {
-  _pool = pool;
-}
-
-async function readSetting(key) {
-  if (!_pool) return null;
-  try {
-    const { rows } = await _pool.query('SELECT value FROM settings WHERE key=$1', [key]);
-    const value = rows[0]?.value;
-    if (typeof value === 'string') return value;
-    return value?.v ?? value?.value ?? value?.secret ?? null;
-  } catch { return null; }
-}
-
-export async function getApifyConfig() {
-  const token = nonBlank(_explicit.token) || nonBlank(process.env.APIFY_TOKEN) || nonBlank(await readSetting('apify_token'));
-  const configuredLimit = Number(_explicit.monthlyMaxRuns ?? process.env.APIFY_MONTHLY_MAX_RUNS);
-  // This integration is deliberately free-tier-safe. The environment can lower the cap, but
-  // cannot silently raise it beyond 25 runs/month; raising the hard cap needs a code review.
-  const monthlyMaxRuns = Number.isInteger(configuredLimit) && configuredLimit > 0
-    ? Math.min(configuredLimit, DEFAULT_MONTHLY_MAX_RUNS) : DEFAULT_MONTHLY_MAX_RUNS;
-  return { token: token || '', monthlyMaxRuns };
-}
-
-export async function getApifyAvailability() {
-  const { token, monthlyMaxRuns } = await getApifyConfig();
-  return { configured: Boolean(token), missing: token ? [] : ['token'], actor: 'chartedsea/shopee-api-scraper', monthly_max_runs: monthlyMaxRuns };
-}
-
-/** Parse only full Shopee product pages. Affiliate short links intentionally return null. */
-export function parseShopeeProductIds(value) {
-  try {
-    const url = new URL(value);
-    if (!/(^|\.)shopee\.(com\.my|sg|co\.id|co\.th|ph|vn|tw)$/i.test(url.hostname)) return null;
-    const path = decodeURIComponent(url.pathname);
-    let match = path.match(/\/product\/(\d+)\/(\d+)/i) || path.match(/(?:^|\.)i\.(\d+)\.(\d+)(?:[-/?#]|$)/i);
-    if (!match) match = path.match(/\.(\d+)\.(\d+)(?:[-/?#]|$)/);
-    if (!match) return null;
-    return { shopId: Number(match[1]), itemId: Number(match[2]) };
-  } catch { return null; }
-}
-
-async function reserveRun() {
-  const { monthlyMaxRuns } = await getApifyConfig();
-  // A DB-backed atomic counter makes the limit hold across KB replicas/restarts. If a legacy
-  // installation has not applied the migration, fail closed rather than risking surprise bills.
-  if (!_pool) return { ok: false, reason: 'usage_store_unavailable' };
-  try {
-    const { rows } = await _pool.query(
-      `INSERT INTO apify_monthly_usage (month, runs)
-       VALUES (date_trunc('month', now())::date, 1)
-       ON CONFLICT (month) DO UPDATE SET runs = apify_monthly_usage.runs + 1
-         WHERE apify_monthly_usage.runs < $1
-       RETURNING runs`,
-      [monthlyMaxRuns],
-    );
-    return rows[0] ? { ok: true, runs: rows[0].runs, limit: monthlyMaxRuns } : { ok: false, reason: 'monthly_limit_reached' };
-  } catch { return { ok: false, reason: 'usage_store_unavailable' }; }
-}
-
-const number = (value) => {
-  const n = Number(value);
-  return Number.isFinite(n) ? n : null;
-};
-const text = (value, max = 2000) => typeof value === 'string' ? value.replace(/\s+/g, ' ').trim().slice(0, max) || null : null;
-
-function imageUrl(value, domain = 'my') {
-  if (!value) return null;
-  if (/^https?:\/\//i.test(value)) return value;
-  return `https://down-${domain}.img.susercontent.com/file/${value}`;
-}
-
-/** Remove direct identifiers before a review can reach persistence or the copy prompt. */
-function reviews(raw) {
-  const list = raw?.data?.ratings ?? raw?.ratings ?? raw?.data?.product_review?.ratings ?? raw?.product_review?.ratings ?? [];
-  return (Array.isArray(list) ? list : []).map((review) => text(review.comment ?? review.content, 280))
-    .filter(Boolean).slice(0, 3);
-}
-
-function mapResult(row, ids) {
-  const data = row?.data ?? row ?? {};
-  const item = data.item ?? data.item_basic ?? data;
-  if (!item || typeof item !== 'object') return null;
-  const domain = 'my';
-  const price = number(item.price ?? item.price_min ?? data.price);
-  // Shopee low-level prices are often stored in hundred-thousandths. Do not blindly divide
-  // normal MYR values; only normalize implausibly large integer minor-unit values.
-  const money = (v) => v != null && Math.abs(v) > 100000 ? v / 100000 : v;
-  const rawImages = item.images ?? item.image_list ?? (item.image ? [item.image] : []);
-  const images = (Array.isArray(rawImages) ? rawImages : []).map((x) => imageUrl(x, domain)).filter(Boolean).slice(0, 12);
-  const rating = data.product_review?.rating_star ?? item.rating_star ?? item.item_rating?.rating_star;
-  const ratingCount = data.product_review?.rating_count ?? item.item_rating?.rating_count?.[0] ?? null;
-  return {
-    ok: true,
-    source: 'apify_chartedsea',
-    item_id: number(item.item_id ?? item.itemid ?? ids.itemId),
-    shop_id: number(item.shop_id ?? item.shopid ?? ids.shopId),
-    name: text(item.title ?? item.name),
-    description: text(item.description, 6000),
-    price_min: money(number(item.price_min ?? price)),
-    price_max: money(number(item.price_max ?? price)),
-    rating: number(rating),
-    rating_count: number(ratingCount),
-    sales: number(item.historical_sold ?? item.sold),
-    image_url: images[0] ?? null,
-    images,
-    categories: (item.fe_categories ?? item.categories ?? []).map((x) => text(x?.display_name ?? x?.name, 120)).filter(Boolean).slice(0, 6),
-    seller: { name: text(data.shop_detailed?.name ?? item.shop_name, 240), username: text(data.shop_detailed?.username, 120), rating: number(data.shop_detailed?.rating_star) },
-    variants: (item.models ?? []).slice(0, 30).map((m) => ({ name: text(m.name, 180), price: money(number(m.price)), stock: number(m.stock) })),
-    top_reviews: reviews(row),
-  };
-}
-
-export async function enrichProductFromApify(productUrl) {
-  const { token } = await getApifyConfig();
-  if (!token) return { ok: false, reason: 'not_configured' };
-  const ids = parseShopeeProductIds(productUrl);
-  if (!ids) return { ok: false, reason: 'no_product_ids' };
-
-  const usage = await reserveRun();
-  if (!usage.ok) return { ok: false, reason: usage.reason };
-  const input = {
-    requests: [{ url: `https://shopee.com.my/api/v4/pdp/get_pc?shop_id=${ids.shopId}&item_id=${ids.itemId}` }],
-    productDetail_mode: 'FROM_CACHE_AND_CORRECTED',
-    productDetail_outOfStockPriceCorrectionStrategy: 'SET_NULL',
-    productDetail_crawlProductRatings: ['WITH_COMMENTS'],
-    productRatings_enrichUrlQuery_pageSize: 10,
-    productRatings_crawlNextPages: false,
-    productRatings_crawlNextPages_maxResults: 10,
-  };
-  try {
-    const response = await fetch(ENDPOINT, {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify(input),
-      signal: AbortSignal.timeout(TIMEOUT_MS),
-    });
-    const body = await response.json().catch(() => null);
-    if (!response.ok) return { ok: false, reason: `api_error:${response.status}` };
-    const result = mapResult(Array.isArray(body) ? body[0] : null, ids);
-    return result ?? { ok: false, reason: 'empty_result' };
-  } catch (error) {
-    return { ok: false, reason: error?.name === 'TimeoutError' ? 'timeout' : 'request_failed' };
+async function keys() {
+  if (_pool) {
+    try { const { rows } = await _pool.query(`SELECT id,label,token FROM apify_api_keys WHERE active AND (disabled_until IS NULL OR disabled_until < now()) ORDER BY priority,id`); const usable=rows.filter(k=>nonBlank(k.token)); if (usable.length) return usable; } catch { /* migration absent: legacy only */ }
   }
+  const token = await legacyToken();
+  return token ? [{ id: null, label: 'environment/legacy', token }] : [];
 }
+export async function getApifyAvailability() {
+  const available = await keys();
+  return { configured: available.length > 0, missing: available.length ? [] : ['token'], actor: 'chartedsea/shopee-api-scraper', active_keys: available.map(k => ({ id: k.id, label: k.label })), per_key_monthly_run_cap: limit() };
+}
+export function parseShopeeProductIds(value) {
+  try { const u = new URL(value); if (!/(^|\.)shopee\.(com\.my|sg|co\.id|co\.th|ph|vn|tw)$/i.test(u.hostname)) return null; const p = decodeURIComponent(u.pathname); const m = p.match(/\/product\/(\d+)\/(\d+)/i) || p.match(/(?:^|\.)i\.(\d+)\.(\d+)(?:[-/?#]|$)/i) || p.match(/\.(\d+)\.(\d+)(?:[-/?#]|$)/); return m ? { shopId: Number(m[1]), itemId: Number(m[2]) } : null; } catch { return null; }
+}
+async function reserve(key) {
+  if (!key.id) return { ok: true }; // legacy env token is backwards compatible; DB keys are strongly budgeted.
+  if (!_pool) return { ok: false, reason: 'usage_store_unavailable' };
+  const { rows } = await _pool.query(`INSERT INTO apify_key_monthly_usage(key_id,month,runs) VALUES($1,date_trunc('month',now())::date,1) ON CONFLICT(key_id,month) DO UPDATE SET runs=apify_key_monthly_usage.runs+1 WHERE apify_key_monthly_usage.runs < $2 RETURNING runs`, [key.id, limit()]);
+  return rows[0] ? { ok: true } : { ok: false, reason: 'key_monthly_limit_reached' };
+}
+async function disableQuotaKey(key) { if (key.id && _pool) await _pool.query("UPDATE apify_api_keys SET disabled_until=date_trunc('month',now()) + interval '1 month', updated_at=now() WHERE id=$1", [key.id]).catch(() => {}); }
+
+/** Run an actor using the first usable key. 402/429/401 rotate to the next key. */
+export async function runApifyActor(actor, input) {
+  const candidates = await keys();
+  if (!candidates.length) return { ok: false, reason: 'not_configured' };
+  let last = 'key_monthly_limit_reached';
+  for (const key of candidates) {
+    const r = await reserve(key); if (!r.ok) { last = r.reason; continue; }
+    try {
+      const response = await fetch(`https://api.apify.com/v2/acts/${actor}/run-sync-get-dataset-items`, { method: 'POST', headers: { Authorization: `Bearer ${key.token}`, 'Content-Type': 'application/json' }, body: JSON.stringify(input), signal: AbortSignal.timeout(TIMEOUT_MS) });
+      const data = await response.json().catch(() => null);
+      if (response.ok) return { ok: true, data, keyLabel: key.label };
+      last = `api_error:${response.status}`;
+      if ([401, 402, 429].includes(response.status)) { await disableQuotaKey(key); continue; }
+      return { ok: false, reason: last };
+    } catch (e) { last = e?.name === 'TimeoutError' ? 'timeout' : 'request_failed'; }
+  }
+  return { ok: false, reason: last };
+}
+const num = v => Number.isFinite(Number(v)) ? Number(v) : null;
+const clean = (v, n = 2000) => typeof v === 'string' ? v.replace(/\s+/g, ' ').trim().slice(0, n) || null : null;
+const image = v => !v ? null : /^https?:/i.test(v) ? v : `https://down-my.img.susercontent.com/file/${v}`;
+function map(row, ids) { const d=row?.data??row??{}, i=d.item??d; if (!i || typeof i !== 'object') return null; const money=v=>v!=null&&Math.abs(v)>100000?v/100000:v; const images=(Array.isArray(i.images)?i.images:(i.image?[i.image]:[])).map(image).filter(Boolean).slice(0,12); const reviews=(d.product_review?.ratings??d.ratings??[]).map(x=>clean(x.comment,280)).filter(Boolean).slice(0,3); return { ok:true,source:'apify_chartedsea',item_id:num(i.item_id??i.itemid??ids.itemId),shop_id:num(i.shop_id??i.shopid??ids.shopId),name:clean(i.title??i.name),description:clean(i.description,6000),price_min:money(num(i.price_min??i.price)),price_max:money(num(i.price_max??i.price)),rating:num(d.product_review?.rating_star??i.rating_star),rating_count:num(d.product_review?.rating_count),sales:num(i.historical_sold??i.sold),image_url:images[0]??null,images,categories:(i.fe_categories??[]).map(x=>clean(x.display_name??x.name,120)).filter(Boolean),seller:{name:clean(d.shop_detailed?.name),username:clean(d.shop_detailed?.username),rating:num(d.shop_detailed?.rating_star)},variants:(i.models??[]).slice(0,30).map(x=>({name:clean(x.name,180),price:money(num(x.price)),stock:num(x.stock)})),top_reviews:reviews }; }
+export async function enrichProductFromApify(productUrl) { const ids=parseShopeeProductIds(productUrl); if (!ids) return {ok:false,reason:'no_product_ids'}; const input={requests:[{url:`https://shopee.com.my/api/v4/pdp/get_pc?shop_id=${ids.shopId}&item_id=${ids.itemId}`}],productDetail_mode:'FROM_CACHE_AND_CORRECTED',productDetail_crawlProductRatings:['WITH_COMMENTS'],productRatings_enrichUrlQuery_pageSize:10,productRatings_crawlNextPages:false,productRatings_crawlNextPages_maxResults:10}; const out=await runApifyActor('chartedsea~shopee-api-scraper',input); return out.ok ? (map(out.data?.[0],ids) ?? {ok:false,reason:'empty_result'}) : out; }

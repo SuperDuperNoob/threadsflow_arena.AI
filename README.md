@@ -157,12 +157,14 @@ fallbacks. Set `APIFY_TOKEN` (or settings key `apify_token`) to enable it. It is
 product content such as title, price, description, categories, variants and a small de-identified
 review sample — never for affiliate commissions or conversions.
 
-The KB reserves each Apify run atomically in Postgres before calling the actor. The hard cap is
-**25 runs per calendar month**, even if `APIFY_MONTHLY_MAX_RUNS` is set higher; that variable may
-only lower the cap. This deliberately conservative default keeps the optional integration below
-the actor's advertised US$5/1,000-request pricing. Missing credentials, missing migration,
-exhausted budget, timeout, or actor errors all fall through to OpenGraph/user input without
-blocking product creation. Check safe status at `GET /api/apify/status`.
+The KB reserves each Apify run atomically in Postgres before calling an actor. Each active API key
+has a hard cap of **25 runs per calendar month**; `APIFY_MONTHLY_MAX_RUNS` may only lower it.
+Keys rotate in priority order, so a quota/rate-limited key is disabled until the next month and the
+next active key is used. This deliberately conservative per-key cap keeps the optional integration
+below the actor's advertised entry pricing. Missing credentials, missing migration, exhausted key
+budgets, timeout, or actor errors all fall through to OpenGraph/user input without blocking product
+creation. Manage multiple write-only keys and check safe status in Product Research or at
+`GET /api/apify/status`.
 
 ## Resource budget (4GB / 2 vCPU)
 
