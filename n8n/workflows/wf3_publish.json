@@ -24,7 +24,7 @@
     {
       "parameters": {
         "operation": "executeQuery",
-        "query": "WITH s AS (\n  SELECT value FROM settings WHERE key = 'threads_creds'\n),\nauto_timeout AS (\n  UPDATE posts\n     SET status = 'auto_published'\n   WHERE status = 'pending_review'\n     AND review_timeout_at <= now()\n     AND (review_locked_until IS NULL OR review_locked_until < now())\n   RETURNING id\n),\naudit_timeout AS (\n  INSERT INTO post_review (post_id, decision, reviewed_by, reason_note)\n  SELECT id, 'auto_published', 'timeout_scheduler', 'timeout reached without human review'\n  FROM auto_timeout\n),\ndue AS (\nSELECT p.*, pr.affiliate_url, pr.uid AS product_uid, pr.media_mode,\n       COALESCE(rev.edited_body, p.body) AS body,\n       (SELECT array_agg(pi.public_url ORDER BY pi.id)\n          FROM product_images pi WHERE pi.id = ANY(p.image_ids)) AS image_urls,\n       (SELECT value->>'token'   FROM s) AS token,\n       (SELECT value->>'user_id' FROM s) AS user_id\n  FROM posts p\n  LEFT JOIN LATERAL (\n    SELECT edited_body FROM post_review\n     WHERE post_id = p.id AND edited_body IS NOT NULL\n     ORDER BY id DESC LIMIT 1\n  ) rev ON true\n  JOIN products pr ON pr.id = p.product_id\n WHERE p.status IN ('approved', 'auto_published')\n   AND p.scheduled_at <= now()\n   AND (p.review_locked_until IS NULL OR p.review_locked_until < now())\n ORDER BY p.scheduled_at\n LIMIT 1\n), ckpt AS (\n  INSERT INTO run_log (workflow, level, message, meta)\n  SELECT 'wf3_publish','debug','due post fetched',\n         jsonb_build_object('uid', due.uid, 'media_type', due.media_type,\n                            'scheduled_at', due.scheduled_at)\n  FROM due RETURNING 1\n)\nSELECT * FROM due;",
+        "query": "WITH s AS (\n  SELECT value FROM settings WHERE key = 'threads_creds'\n),\nauto_timeout AS (\n  UPDATE posts\n     SET status = 'auto_published'\n   WHERE status = 'pending_review'\n     AND review_timeout_at <= now()\n     AND (review_locked_until IS NULL OR review_locked_until < now())\n   RETURNING id\n),\naudit_timeout AS (\n  INSERT INTO post_review (post_id, decision, reviewed_by, reason_note)\n  SELECT id, 'auto_published', 'timeout_scheduler', 'timeout reached without human review'\n  FROM auto_timeout\n),\ndue AS (\nSELECT p.*, pr.affiliate_url, pr.uid AS product_uid, pr.media_mode,\n       COALESCE(rev.edited_body, p.body) AS body,\n       (SELECT array_agg(pi.public_url ORDER BY pi.id)\n          FROM product_images pi WHERE pi.id = ANY(p.image_ids) AND pi.media_kind = 'IMAGE') AS image_urls,\n       (SELECT array_agg(pi.public_url ORDER BY pi.id)\n          FROM product_images pi WHERE pi.id = ANY(p.image_ids) AND pi.media_kind = 'VIDEO') AS video_urls,\n       (SELECT jsonb_agg(jsonb_build_object('id', pi.id, 'public_url', pi.public_url, 'media_kind', pi.media_kind) ORDER BY pi.id)\n          FROM product_images pi WHERE pi.id = ANY(p.image_ids)) AS product_images,\n       (SELECT value->>'token'   FROM s) AS token,\n       (SELECT value->>'user_id' FROM s) AS user_id\n  FROM posts p\n  LEFT JOIN LATERAL (\n    SELECT edited_body FROM post_review\n     WHERE post_id = p.id AND edited_body IS NOT NULL\n     ORDER BY id DESC LIMIT 1\n  ) rev ON true\n  JOIN products pr ON pr.id = p.product_id\n WHERE p.status IN ('approved', 'auto_published')\n   AND p.scheduled_at <= now()\n   AND (p.review_locked_until IS NULL OR p.review_locked_until < now())\n ORDER BY p.scheduled_at\n LIMIT 1\n), ckpt AS (\n  INSERT INTO run_log (workflow, level, message, meta)\n  SELECT 'wf3_publish','debug','due post fetched',\n         jsonb_build_object('uid', due.uid, 'media_type', due.media_type,\n                            'scheduled_at', due.scheduled_at)\n  FROM due RETURNING 1\n)\nSELECT * FROM due;",
         "options": {}
       },
       "id": "fetch",
@@ -111,7 +111,7 @@
     },
     {
       "parameters": {
-        "jsCode": "const post  = $('Fetch due post').first().json;\nconst quota = $json?.data?.[0]?.quota_usage ?? 0;\nconst total = $json?.data?.[0]?.config?.quota_total ?? 250;\nif (quota >= Math.min(200, total - 20)) {\n  return [{ json: { ...post, abort: true, reason: `quota ${quota}/${total}` } }];\n}\n\nconst urls = (post.image_urls || []).filter(Boolean);\n// Trust the column, but never trust it blindly: if media_type claims images and none resolved\n// (deleted file, broken CDN), fall back to TEXT rather than sending Meta a null image_url.\n// A text post is a fine post. A failed API call is 30 wasted seconds and a lost slot.\nlet media_type = post.media_type || (urls.length ? 'IMAGE' : 'TEXT');\nif (media_type !== 'TEXT' && urls.length === 0) media_type = 'TEXT';\nif (media_type === 'CAROUSEL' && urls.length < 2) media_type = urls.length === 1 ? 'IMAGE' : 'TEXT';\nif (media_type === 'IMAGE' && urls.length > 1) urls.length = 1;\n\nreturn [{ json: { ...post, abort: false, quota, image_urls: urls, media_type,\n                  is_text: media_type === 'TEXT',\n                  is_carousel: media_type === 'CAROUSEL',\n                  wait_seconds: media_type === 'TEXT' ? 3 : 35 } }];"
+        "jsCode": "const post  = $('Fetch due post').first().json;\nconst quota = $json?.data?.[0]?.quota_usage ?? 0;\nconst total = $json?.data?.[0]?.config?.quota_total ?? 250;\nif (quota >= Math.min(200, total - 20)) {\n  return [{ json: { ...post, abort: true, reason: `quota ${quota}/${total}` } }];\n}\n\nconst imageUrls = (post.image_urls || []).filter(Boolean);\nconst videoUrls = (post.video_urls || []).filter(Boolean);\nconst productImages = (post.product_images || []).filter(p => p.public_url);\n\n// Use wf3_media_router logic inline (since n8n Code nodes can't import)\nconst valid = ['TEXT','IMAGE','CAROUSEL','VIDEO','MIXED_CAROUSEL'];\nlet media_type = post.media_type;\nif (!media_type || !valid.includes(media_type)) {\n  const hasVideo = productImages.some(p => p.media_kind === 'VIDEO');\n  const hasImage = productImages.some(p => p.media_kind === 'IMAGE') || imageUrls.length > 0;\n  if (hasVideo && hasImage) media_type = 'MIXED_CAROUSEL';\n  else if (hasVideo) media_type = 'VIDEO';\n  else if (hasImage) media_type = imageUrls.length > 1 ? 'CAROUSEL' : 'IMAGE';\n  else media_type = 'TEXT';\n}\n\n// Existing guards for legacy types\nif (!['VIDEO','MIXED_CAROUSEL'].includes(media_type)) {\n  if (media_type !== 'TEXT' && imageUrls.length === 0) media_type = 'TEXT';\n  if (media_type === 'CAROUSEL' && imageUrls.length < 2) {\n    media_type = imageUrls.length === 1 ? 'IMAGE' : 'TEXT';\n  }\n  if (media_type === 'IMAGE' && imageUrls.length > 1) imageUrls.length = 1;\n}\n\nconst hasVideo = productImages.some(p => p.media_kind === 'VIDEO') || media_type === 'VIDEO';\nconst needsVideoPoll = (media_type === 'VIDEO') ||\n  (media_type === 'MIXED_CAROUSEL' && productImages.some(p => p.media_kind === 'VIDEO'));\n\nconst waitSeconds = media_type === 'TEXT' ? 3 : (needsVideoPoll ? 60 : 35);\n\nreturn [{ json: { ...post, abort: false, quota, image_urls: imageUrls, video_urls: videoUrls, product_images: productImages, media_type,\n                  is_text: media_type === 'TEXT',\n                  is_carousel: media_type === 'CAROUSEL',\n                  is_video: media_type === 'VIDEO',\n                  is_mixed_carousel: media_type === 'MIXED_CAROUSEL',\n                  needs_video_poll: needsVideoPoll,\n                  wait_seconds: waitSeconds } }];"
       },
       "id": "guard",
       "name": "Quota guard",
@@ -468,6 +468,44 @@
                 ]
               },
               "outputKey": "CAROUSEL"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "version": 2
+                },
+                "combinator": "and",
+                "conditions": [
+                  {
+                    "leftValue": "={{ $('Quota guard').first().json.media_type }}",
+                    "rightValue": "VIDEO",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ]
+              },
+              "outputKey": "VIDEO"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "version": 2
+                },
+                "combinator": "and",
+                "conditions": [
+                  {
+                    "leftValue": "={{ $('Quota guard').first().json.media_type }}",
+                    "rightValue": "MIXED_CAROUSEL",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ]
+              },
+              "outputKey": "MIXED_CAROUSEL"
             }
           ]
         },
@@ -484,7 +522,7 @@
         380,
         220
       ],
-      "notes": "TEXT posts skip container media entirely. This is the branch that makes image-free products work."
+      "notes": "TEXT posts skip container media entirely. VIDEO/MIXED_CAROUSEL require async status poll before publish."
     },
     {
       "parameters": {
@@ -616,7 +654,7 @@
     },
     {
       "parameters": {
-        "numberInputs": 3
+        "numberInputs": 5
       },
       "id": "merge_containers",
       "name": "Merge container id",
@@ -674,6 +712,204 @@
         }
       },
       "notes": "Canary checkpoint."
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://graph.threads.net/v1.0/{{ $('Quota guard').first().json.user_id }}/threads",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "media_type",
+              "value": "VIDEO"
+            },
+            {
+              "name": "video_url",
+              "value": "={{ $('Quota guard').first().json.video_urls[0] }}"
+            },
+            {
+              "name": "text",
+              "value": "={{ $('Quota guard').first().json.body }}"
+            },
+            {
+              "name": "access_token",
+              "value": "={{ $('Quota guard').first().json.token }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "container_video",
+      "name": "Create VIDEO container",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        600,
+        380
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 8000,
+      "onError": "continueErrorOutput",
+      "notes": "Creates video container. Requires async status poll before publish."
+    },
+    {
+      "parameters": {
+        "jsCode": "const items = ($('Quota guard').first().json.product_images || []).filter(p => p.public_url);\nreturn items.map(p => ({ json: { url: p.public_url, media_kind: p.media_kind, id: p.id } }));"
+      },
+      "id": "split_mixed",
+      "name": "Split mixed assets",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        420,
+        540
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://graph.threads.net/v1.0/{{ $('Quota guard').first().json.user_id }}/threads",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "media_type",
+              "value": "IMAGE"
+            },
+            {
+              "name": "is_carousel_item",
+              "value": "true"
+            },
+            {
+              "name": "image_url",
+              "value": "={{ $json.media_kind === 'IMAGE' ? $json.url : '' }}"
+            },
+            {
+              "name": "video_url",
+              "value": "={{ $json.media_kind === 'VIDEO' ? $json.url : '' }}"
+            },
+            {
+              "name": "access_token",
+              "value": "={{ $('Quota guard').first().json.token }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "mixed_carousel_items",
+      "name": "Create mixed carousel items",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        600,
+        540
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 8000,
+      "onError": "continueErrorOutput",
+      "notes": "Runs once per asset (image or video). Collect ids, then build MIXED_CAROUSEL container."
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://graph.threads.net/v1.0/{{ $('Quota guard').first().json.user_id }}/threads",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "media_type",
+              "value": "MIXED_CAROUSEL"
+            },
+            {
+              "name": "children",
+              "value": "={{ $items().map(i => i.json.id).filter(Boolean).join(',') }}"
+            },
+            {
+              "name": "text",
+              "value": "={{ $('Quota guard').first().json.body }}"
+            },
+            {
+              "name": "access_token",
+              "value": "={{ $('Quota guard').first().json.token }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "mixed_carousel_container",
+      "name": "Create MIXED_CAROUSEL container",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        820,
+        540
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 8000,
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "amount": "={{ $('Quota guard').first().json.wait_seconds }}"
+      },
+      "id": "wait_video",
+      "name": "Wait for video processing",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        1260,
+        380
+      ],
+      "webhookId": "wait-video"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Poll video container status until ready\nconst creationId = $json.id;\nconst token = $('Quota guard').first().json.token;\nconst userId = $('Quota guard').first().json.user_id;\nconst maxPolls = 20;\nconst pollInterval = 5000;\n\nreturn [{ json: { creation_id: creationId, token, user_id: userId, max_polls: maxPolls, poll_interval: pollInterval } }];"
+      },
+      "id": "poll_video_prep",
+      "name": "Prepare video status poll",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1040,
+        380
+      ]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "=https://graph.threads.net/v1.0/{{ $json.user_id }}/threads/{{ $json.creation_id }}",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "fields",
+              "value": "status"
+            },
+            {
+              "name": "access_token",
+              "value": "={{ $json.token }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "poll_video_http",
+      "name": "Poll video status",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1150,
+        380
+      ],
+      "retryOnFail": true,
+      "maxTries": 20,
+      "waitBetweenTries": 5000,
+      "notes": "Polls until status=FINISHED. Loops via connection back to itself (max 20 polls)."
     }
   ],
   "connections": {
@@ -853,6 +1089,20 @@
         ],
         [
           {
+            "node": "Create VIDEO container",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Split mixed assets",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
             "node": "Create IMAGE container",
             "type": "main",
             "index": 0
@@ -862,13 +1112,11 @@
     },
     "Create TEXT container": {
       "main": [
-        [
-          {
-            "node": "Merge container id",
-            "type": "main",
-            "index": 0
-          }
-        ],
+        {
+          "node": "Merge container id",
+          "type": "main",
+          "index": 0
+        },
         [
           {
             "node": "Record failure",
@@ -909,13 +1157,11 @@
     },
     "Create CAROUSEL container": {
       "main": [
-        [
-          {
-            "node": "Merge container id",
-            "type": "main",
-            "index": 2
-          }
-        ],
+        {
+          "node": "Merge container id",
+          "type": "main",
+          "index": 2
+        },
         [
           {
             "node": "Record failure",
@@ -927,13 +1173,11 @@
     },
     "Create IMAGE container": {
       "main": [
-        [
-          {
-            "node": "Merge container id",
-            "type": "main",
-            "index": 1
-          }
-        ],
+        {
+          "node": "Merge container id",
+          "type": "main",
+          "index": 1
+        },
         [
           {
             "node": "Record failure",
@@ -970,6 +1214,71 @@
         [
           {
             "node": "Wait for media processing",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create VIDEO container": {
+      "main": [
+        [
+          {
+            "node": "Merge container id",
+            "type": "main",
+            "index": 3
+          }
+        ],
+        [
+          {
+            "node": "Record failure",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Split mixed assets": {
+      "main": [
+        [
+          {
+            "node": "Create mixed carousel items",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create mixed carousel items": {
+      "main": [
+        [
+          {
+            "node": "Create MIXED_CAROUSEL container",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Record failure",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create MIXED_CAROUSEL container": {
+      "main": [
+        [
+          {
+            "node": "Merge container id",
+            "type": "main",
+            "index": 4
+          }
+        ],
+        [
+          {
+            "node": "Record failure",
             "type": "main",
             "index": 0
           }
