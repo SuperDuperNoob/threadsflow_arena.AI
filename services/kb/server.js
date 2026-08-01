@@ -238,7 +238,7 @@ app.get('/api/config/llm', requireAuth, async (_req, res) => {
 
 // ─────────────────────────────────────────── Generic System Settings (Step 3 Control Board)
 // Allowlist built strictly from Step 0 ground-truth (dynamic keys only).
-const SYSTEM_SETTINGS_ALLOWLIST = new Set(['posting', 'bandit', 'qa', 'l4_reply', 'warmup', 'scoring']);
+const SYSTEM_SETTINGS_ALLOWLIST = new Set(['posting', 'bandit', 'qa', 'l4_reply', 'warmup']);
 
 function validateSystemSetting(key, body, current = {}) {
   const next = { ...current, ...body };
@@ -597,6 +597,8 @@ app.post('/api/products', requireAuth, mediaUpload.array('images', 20), async (r
 
     res.json({ ok: true, product_uid: p.uid, product_id: p.id,
                images: files.length, media_mode: mediaMode,
+               image_count: files.filter(f => getMediaKind(f.mimetype) === 'IMAGE').length,
+               video_count: files.filter(f => getMediaKind(f.mimetype) === 'VIDEO').length,
                product_url: productUrl || null });
   } catch (e) {
     await client.query('ROLLBACK').catch(() => {});

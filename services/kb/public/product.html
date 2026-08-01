@@ -86,9 +86,9 @@
   <div class="hint">Write concrete facts a machine cannot know: real measurements, how long you've
     used it, who it's for, what's genuinely wrong with it. Generic notes produce generic copy.</div>
 
-  <label>Images (optional, up to 4)</label>
-  <div id="imgdrop">Drop images or click &middot; JPG/PNG &middot; max 8&nbsp;MB each &middot; or skip entirely
-    <input type="file" id="imgs" accept="image/jpeg,image/png" multiple hidden></div>
+  <label>Images & videos (optional, up to 20)</label>
+  <div id="imgdrop">Drop images/videos or click &middot; JPG/PNG/WebP/MP4/MOV &middot; max 8&nbsp;MB each &middot; or skip entirely
+    <input type="file" id="imgs" accept="image/jpeg,image/png,image/webp,video/mp4,video/quicktime" multiple hidden></div>
   <div id="thumbs"></div>
 
   <button id="go" disabled>Add product &amp; start posting</button>
@@ -113,9 +113,9 @@ input.onchange=()=>add(input.files);
 
 function add(list){
   for(const f of list){
-    if(!/^image\/(jpeg|png)$/.test(f.type)) continue;
+    if(!/^image\/(jpeg|png|webp)$/.test(f.type) && !/^video\/(mp4|quicktime)$/.test(f.type)) continue;
     if(f.size>8*1024*1024){alert(`${f.name} is over 8 MB — Threads will reject it`);continue}
-    if(files.length>=4){alert('Maximum 4 images');break}
+    if(files.length>=20){alert('Maximum 20 files');break}
     files.push(f);
   }
   render();
@@ -124,10 +124,23 @@ function render(){
   $('#thumbs').innerHTML='';
   files.forEach((f,i)=>{
     const d=document.createElement('div');d.className='th';
-    const im=document.createElement('img');im.src=URL.createObjectURL(f);
+    const isVideo = f.type.startsWith('video/');
+    if (isVideo) {
+      const vid=document.createElement('video');
+      vid.src=URL.createObjectURL(f);
+      vid.controls = true;
+      vid.muted = true;
+      vid.style.width='100%';
+      vid.style.height='100%';
+      d.append(vid);
+    } else {
+      const im=document.createElement('img');
+      im.src=URL.createObjectURL(f);
+      d.append(im);
+    }
     const x=document.createElement('b');x.textContent='×';
     x.onclick=()=>{files.splice(i,1);render()};
-    d.append(im,x);$('#thumbs').append(d);
+    d.append(x);$('#thumbs').append(d);
   });
   validate();
 }
@@ -142,9 +155,11 @@ function validate(){
   const productUrlOk=!productUrl || httpUrlOk(productUrl);
   const desc=$('#description').value.trim();
   const n=files.length;
+  const nImages = files.filter(f => f.type.startsWith('image/')).length;
+  const nVideos = files.filter(f => f.type.startsWith('video/')).length;
 
   // Mirror the server rule exactly: affiliate link is always required; a description is
-  // required only when there are no images. Tell the user which mode they are in as they type.
+  // required only when there are no images/videos. Tell the user which mode they are in as they type.
   let title,hint,ok=false;
   if(!hasUrl){
     title='Choose your input'; hint='Paste the Shopee affiliate link to begin.';
@@ -152,25 +167,33 @@ function validate(){
     title='Check product URL'; hint='The optional full product URL must start with http:// or https://, or be blank.';
   } else if(n===0 && desc.length<MIN_DESC){
     title='Text-only post — description needed';
-    hint=`No images, so a description of at least ${MIN_DESC} characters is required `+
+    hint=`No media, so a description of at least ${MIN_DESC} characters is required `+
          `(${desc.length}/${MIN_DESC}). Include sizes, materials, price, who it is for.`;
   } else if(n===0){
     title='Link + description';
     hint='Text-only posts. Threads is a text-first feed — these often out-reach image posts.';
     ok=true;
   } else if(desc.length>0){
-    title=`Link + ${n} image${n>1?'s':''} + description`;
-    hint='Richest input. The system will mix text-only and image posts and learn which earns more.';
+    let mediaDesc = '';
+    if (nImages && nVideos) mediaDesc = `${nImages} image${nImages>1?'s':''} + ${nVideos} video${nVideos>1?'s':''}`;
+    else if (nImages) mediaDesc = `${nImages} image${nImages>1?'s':''}`;
+    else mediaDesc = `${nVideos} video${nVideos>1?'s':''}`;
+    title=`Link + ${mediaDesc} + description`;
+    hint='Richest input. The system will mix text-only, image, video, and mixed posts and learn which earns more.';
     ok=true;
   } else {
-    title=`Link + ${n} image${n>1?'s':''}`;
-    hint=n>1?'Will alternate single-image and carousel posts.':'Single-image posts.';
+    let mediaDesc = '';
+    if (nImages && nVideos) mediaDesc = `${nImages} image${nImages>1?'s':''} + ${nVideos} video${nVideos>1?'s':''}`;
+    else if (nImages) mediaDesc = `${nImages} image${nImages>1?'s':''}`;
+    else mediaDesc = `${nVideos} video${nVideos>1?'s':''}`;
+    title=`Link + ${mediaDesc}`;
+    hint='Will test text-only, image, video, and mixed carousel variants.';
     ok=true;
   }
   $('#modeTitle').textContent=title;
   $('#modeHint').textContent=hint;
   $('#mode').className='box'+(ok?' ok':'');
-  $('#descReq').textContent = n===0 ? '(required — no images)' : '(optional)';
+  $('#descReq').textContent = n===0 ? '(required — no media)' : '(optional)';
   $('#go').disabled=!ok;
 }
 $('#url').oninput=validate;
@@ -191,10 +214,19 @@ $('#go').onclick=async()=>{
     const r=await fetch('/api/products',{method:'POST',body:fd});
     const j=await r.json();
     if(!r.ok) throw new Error(j.error||'failed');
+    let mediaMsg = '';
+    if (j.media_mode === 'text') {
+      mediaMsg = 'No media — will post as text-only.';
+    } else {
+      const nImages = j.image_count || 0;
+      const nVideos = j.video_count || 0;
+      if (nImages && nVideos) mediaMsg = `${nImages} image${nImages>1?'s':''} + ${nVideos} video${nVideos>1?'s':''} stored publicly.`;
+      else if (nImages) mediaMsg = `${nImages} image${nImages>1?'s':''} stored publicly.`;
+      else mediaMsg = `${nVideos} video${nVideos>1?'s':''} stored publicly.`;
+      mediaMsg += ' Text-only, image, video, and mixed variants will also be tested.';
+    }
     $('#out').innerHTML=`<div class="box ok"><b>Product added.</b><br>
-      ${j.media_mode==='text'
-        ? 'No images — will post as text-only.'
-        : `${j.images} image${j.images>1?'s':''} stored publicly. Text-only variants will also be tested.`}<br>
+      ${mediaMsg}<br>
       ${j.product_url ? 'Full product URL saved for enrichment. Buyer links still use your affiliate URL.<br>' : ''}
       First post is scheduled for the next generation run (03:00 Malaysia time).<br>
       Tracking slug base: <code>${j.product_uid}</code></div>`;
