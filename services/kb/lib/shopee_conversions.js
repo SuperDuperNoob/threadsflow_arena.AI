@@ -11,7 +11,7 @@
  * `*_idr` names are generated read-only mirrors and must not be INSERTed into.
  */
 
-import { getConversions, getValidatedReport } from './shopee.js';
+import { getConversions, getValidatedReport, isConfigured } from './shopee.js';
 
 const num = (v) => {
   const n = Number(v);
@@ -127,6 +127,12 @@ export async function pullConversions({
   validationId = null,
   limit = 200,
 } = {}) {
+  // Conversion import is an optional learning signal. A first-time deployment commonly has
+  // no Affiliate Open API credentials, and must not fail its scheduled job or touch the DB.
+  if (!(await isConfigured())) {
+    return { fetched: 0, rows: 0, inserted: 0, updated: 0, skipped: 'not_configured' };
+  }
+
   const now = Math.floor(Date.now() / 1000);
   const start = now - Math.max(1, lookbackDays) * 86400;
 

@@ -15,7 +15,7 @@ import pg from 'pg';
 import { sha256 } from './lib/pdf.js';
 import { startWorker } from './lib/worker.js';
 import { putImage, enrich, describeImage, shortId, getMediaKind, getExtension } from './lib/products.js';
-import { registerShopeePool, isConfigured } from './lib/shopee.js';
+import { registerShopeePool, getShopeeAvailability } from './lib/shopee.js';
 import { upsertConversionRows } from './lib/shopee_conversions.js';
 import { clearLlmConfigCache, getLlmConfig, normalizeLlmConfig, registerLlmPool } from './lib/llm.js';
 import { createLogger, hostOnly } from './lib/logger.js';
@@ -622,7 +622,9 @@ app.get('/api/products', requireAuth, async (_, res) => {
 // path for when you would rather POST a normalized CSV.
 
 app.get('/api/shopee/status', requireAuth, async (_req, res) => {
-  res.json({ configured: await isConfigured() });
+  // `missing` is intentionally non-sensitive; it makes the no-credential fallback visible
+  // without ever returning the App ID or API secret.
+  res.json(await getShopeeAvailability());
 });
 
 app.post('/api/import/conversions', requireAuth, async (req, res) => {

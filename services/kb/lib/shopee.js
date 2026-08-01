@@ -52,18 +52,33 @@ async function readSetting(key) {
   }
 }
 
+const nonBlank = (value) => typeof value === 'string' ? value.trim() : value;
+
 export async function getShopeeConfig() {
-  // Treat blank env values as absent. docker-compose commonly passes optional variables as
-  // empty strings; using nullish coalescing here used to select "" as the fetch URL.
-  const appId = _explicit.appId || process.env.SHOPEE_API_APP_ID || (await readSetting('shopee_app_id'));
-  const secret = _explicit.secret || process.env.SHOPEE_API_SECRET || (await readSetting('shopee_app_secret'));
-  const url = _explicit.url || process.env.SHOPEE_OPENAPI_URL || SHOPEE_OPENAPI_DEFAULT_URL;
+  // Treat blank (including whitespace-only) values as absent. docker-compose commonly passes
+  // optional variables as empty strings; using nullish coalescing here used to select "" as a
+  // credential or fetch URL.
+  const appId = nonBlank(_explicit.appId) || nonBlank(process.env.SHOPEE_API_APP_ID) || nonBlank(await readSetting('shopee_app_id'));
+  const secret = nonBlank(_explicit.secret) || nonBlank(process.env.SHOPEE_API_SECRET) || nonBlank(await readSetting('shopee_app_secret'));
+  const url = nonBlank(_explicit.url) || nonBlank(process.env.SHOPEE_OPENAPI_URL) || SHOPEE_OPENAPI_DEFAULT_URL;
   return { appId: appId || '', secret: secret || '', url };
 }
 
-export async function isConfigured() {
+/**
+ * Credential state suitable for health/status endpoints. Never exposes either credential.
+ * Keeping this separate from callShopee lets optional features skip the network entirely when
+ * a deployment has not yet been approved for the Affiliate Open API.
+ */
+export async function getShopeeAvailability() {
   const { appId, secret } = await getShopeeConfig();
-  return Boolean(appId && secret);
+  const missing = [];
+  if (!appId) missing.push('app_id');
+  if (!secret) missing.push('secret');
+  return { configured: missing.length === 0, missing };
+}
+
+export async function isConfigured() {
+  return (await getShopeeAvailability()).configured;
 }
 
 // ─────────────────────────────────────────── errors
@@ -234,6 +249,9 @@ const num = (v) => {
 };
 
 export async function searchProductOffers(opts = {}) {
+  // Product lookup is optional enrichment. Do not make callers special-case a missing
+  // Affiliate Open API approval; [] naturally falls through to their scraper/manual data.
+  if (!(await isConfigured())) return [];
   const data = await callShopee(productOfferQuery(opts));
   return data?.productOfferV2?.nodes ?? [];
 }
@@ -247,6 +265,8 @@ export async function getProductOfferByUrl(url, opts = {}) {
 }
 
 export async function generateShortLink({ originUrl, subIds = [] } = {}) {
+  // The redirector can use the original affiliate URL, so no API key must not prevent a link.
+  if (!(await isConfigured())) return null;
   const query =
     `mutation { generateShortLink(input: { originUrl: ${gqlStr(originUrl)}, ` +
     `subIds: [${subIds.map(gqlStr).join(', ')}] }) { shortLink } }`;
@@ -255,11 +275,14 @@ export async function generateShortLink({ originUrl, subIds = [] } = {}) {
 }
 
 export async function getConversions(opts = {}) {
+  // An empty report is the safe fallback: the existing manual CSV import remains available.
+  if (!(await isConfigured())) return { nodes: [], pageInfo: {} };
   const data = await callShopee(conversionReportQuery(opts));
   return { nodes: data?.conversionReport?.nodes ?? [], pageInfo: data?.conversionReport?.pageInfo ?? {} };
 }
 
 export async function getValidatedReport(opts = {}) {
+  if (!(await isConfigured())) return { nodes: [], pageInfo: {} };
   const data = await callShopee(validatedReportQuery(opts));
   return { nodes: data?.validatedReport?.nodes ?? [], pageInfo: data?.validatedReport?.pageInfo ?? {} };
 }
