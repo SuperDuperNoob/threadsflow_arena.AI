@@ -8,11 +8,16 @@ This folder contains the persisted outputs from the Documentation & Architecture
 2. [`01-credential-sourcing.md`](01-credential-sourcing.md) — code-derived credential/account inventory, Tier A/B/C classification, and zero-to-credential sourcing table.
 3. [`02-preflight-checklist.md`](02-preflight-checklist.md) — ordered first-time-user checklist from no accounts/secrets to agent-ready deployment.
 4. [`03-agent-readiness-gate.md`](03-agent-readiness-gate.md) — copy-paste preflight gate that verifies required `.env` and DB-held secrets before deployment/activation.
+5. [`04-refresh-prompt.md`](04-refresh-prompt.md) — this refresh workflow prompt (versioned artifact, evolves with repo per §5).
 
 ## Open Questions / Code Mismatches Found
 
-Re-verified 2026-08-01 against current `main` (after commits `46ae8d1` and `464300e`). These were
+Re-verified 2026-08-01 against current `main` (at commit `5f94ba2`, after commits `e4e7b53`
+"fix(scripts): write shopee_app_secret row in set_secrets.sh" and `2bef5af`
+"fix(kb): pass media_kind to describeImage()"). These were
 not guessed around; they are documented as current live-code mismatches:
+
+**Re-verified 2026-08-01 (second pass, against `main` at `5f94ba2`, no new commits).** All 5 open items persist; guide files updated for resolved L4/Shopee mismatches and Control Board status; Apify credential added to inventory.
 
 1. **~~System Settings Control Board not present~~ — RESOLVED.** `/settings.html` is now a 6-tab
    board. The LLM tab still uses `/api/config/llm`; the other five (`posting`, `bandit`, `qa`,
@@ -35,6 +40,7 @@ not guessed around; they are documented as current live-code mismatches:
 9. **~~Cosmetic: stale log message in `set_secrets.sh`~~ — RESOLVED.** The script now prints
    `"threads_creds + l4_reply updated"` (`scripts/set_secrets.sh:141`), matching the keys the SQL
    actually writes.
+10. **Persona Jupyter notebooks unreferenced.** `persona/dataset-2.ipynb` through `dataset-10.ipynb` (9 notebooks) exist in the tree with no reference from any script or doc. `docs/10-malaysian-dataset.md` only documents the older, already-deleted `persona/dataset-1.json`. Not a doc/code contradiction (nothing claims the directory is empty) — flagged as an unverifiable Open Question until a script or doc actually references them.
 
-Treat items 2, 3, 5 (partial), 6, 7, and 8 as engineering follow-up items before claiming full
+Treat items 2, 3, 6, 7, and 10 as engineering follow-up items before claiming full
 Phase 1/Phase 2 completion.

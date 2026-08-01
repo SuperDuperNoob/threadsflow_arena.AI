@@ -46,12 +46,7 @@ Follow this top to bottom before handing the VPS/repo to an agent for deployment
    ```bash
    ./scripts/set_secrets.sh --threads-token 'TOKEN' --threads-user-id 'NUMERIC_ID'
    ```
-   Because of the current L4 mismatch, also add the token to `settings.l4_reply` before activating `wf7_l4_reply`:
-   ```sql
-   UPDATE settings
-   SET value = value || jsonb_build_object('threads_token', 'TOKEN')
-   WHERE key='l4_reply';
-   ```
+   This single command now populates both `settings.threads_creds` and `settings.l4_reply.threads_token` (`scripts/set_secrets.sh:135-141`), so no separate SQL patch is needed.
 
 7. **Optional: create Shopee Affiliate Open API credentials** — see [Shopee Affiliate Open API App ID/API Secret](01-credential-sourcing.md#cred-shopee). Place if/when approved:
    ```env
@@ -97,5 +92,5 @@ Optional for first launch:
 ## Current feature caveats to remember
 
 - Browser `/product.html` accepts JPG/PNG images only. Backend `POST /api/products` accepts WebP/MP4/MOV too, but live `wf3_publish` does not safely publish `VIDEO` or `MIXED_CAROUSEL` yet.
-- `/settings.html` currently edits only LLM endpoint settings. Other settings rows require SQL/scripts.
-- `wf7_l4_reply` needs `settings.l4_reply.threads_token`, not just `settings.threads_creds`.
+- `/settings.html` is a 6-tab Control Board (LLM, posting, bandit, qa, l4_reply, warmup, scoring) using generic `GET/PUT /api/config/system/:key`. All settings editable via UI.
+- `wf7_l4_reply` needs `settings.l4_reply.threads_token`; `scripts/set_secrets.sh` writes it alongside `threads_creds`.
