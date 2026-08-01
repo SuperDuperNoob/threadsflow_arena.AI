@@ -580,9 +580,9 @@ app.post('/api/products', requireAuth, mediaUpload.array('images', 20), async (r
           detail_confidence: e.detail_confidence ?? null,
         });
         const { rows: imgs } = await pool.query(
-          `SELECT id, public_url FROM product_images WHERE product_id=$1`, [p.id]);
+          `SELECT id, public_url, media_kind FROM product_images WHERE product_id=$1`, [p.id]);
         for (const im of imgs) {
-          const d = await describeImage(im.public_url);
+          const d = await describeImage(im.public_url, im.media_kind);
           if (d) await pool.query(`UPDATE product_images SET vision_desc=$2 WHERE id=$1`, [im.id, d]);
           if (d) log.debug('vision_desc_succeeded', { product_uid: uid, image_id: im.id });
           else log.warn('vision_desc_failed', { product_uid: uid, image_id: im.id });
