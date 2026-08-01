@@ -179,13 +179,28 @@ function pickArm({ levers, armStats, contextWeights, productUid, settings, plan,
     let options = levers.filter(l => l.kind === kind && l.enabled);
 
     // Restrict media_type to what this product can physically produce.
+    // 0 media -> TEXT only
+    // images only -> TEXT/IMAGE/CAROUSEL
+    // exactly 1 video, no images -> TEXT/VIDEO
+    // any mix of images+videos -> TEXT/IMAGE/VIDEO/CAROUSEL/MIXED_CAROUSEL
     if (kind === 'media_type') {
-      const n = plan?.imageCount ?? 0;
-      const allowed = n === 0 ? ['TEXT'] : (n === 1 ? ['TEXT', 'IMAGE'] : ['TEXT', 'IMAGE', 'CAROUSEL']);
+      const imageCount = plan?.imageCount ?? 0;
+      const videoCount = plan?.videoCount ?? 0;
+      let allowed;
+      if (imageCount === 0 && videoCount === 0) {
+        allowed = ['TEXT'];
+      } else if (imageCount > 0 && videoCount === 0) {
+        allowed = imageCount === 1 ? ['TEXT', 'IMAGE'] : ['TEXT', 'IMAGE', 'CAROUSEL'];
+      } else if (videoCount === 1 && imageCount === 0) {
+        allowed = ['TEXT', 'VIDEO'];
+      } else {
+        // Mix of images and videos
+        allowed = ['TEXT', 'IMAGE', 'VIDEO', 'CAROUSEL', 'MIXED_CAROUSEL'];
+      }
       options = options.filter(o => allowed.includes(o.code));
-      // Products WITH images should still mostly use them — they were uploaded for a reason.
-      // Cap pure-text at ~30% for image products so the bandit explores without overriding intent.
-      if (n > 0 && options.length > 1 && Math.random() > 0.30) {
+      // Products WITH media should still mostly use them — they were uploaded for a reason.
+      // Cap pure-text at ~30% for media products so the bandit explores without overriding intent.
+      if ((imageCount + videoCount) > 0 && options.length > 1 && Math.random() > 0.30) {
         options = options.filter(o => o.code !== 'TEXT');
       }
     }

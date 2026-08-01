@@ -14,7 +14,7 @@ import crypto from 'node:crypto';
 import pg from 'pg';
 import { sha256 } from './lib/pdf.js';
 import { startWorker } from './lib/worker.js';
-import { putImage, enrich, describeImage, shortId } from './lib/products.js';
+import { putImage, enrich, describeImage, shortId, getMediaKind, getExtension } from './lib/products.js';
 import { registerShopeePool, isConfigured } from './lib/shopee.js';
 import { upsertConversionRows } from './lib/shopee_conversions.js';
 import { clearLlmConfigCache, getLlmConfig, normalizeLlmConfig, registerLlmPool } from './lib/llm.js';
@@ -397,10 +397,16 @@ app.get('/api/kb/techniques-for-generation', async (req, res) => {
 // ═══════════════════════════════════════════ PRODUCT INTAKE
 // The other half of the app: you add a product here, the n8n flow does the rest.
 
-const imgUpload = multer({
+// Accept images (jpeg, png, webp) and videos (mp4, quicktime)
+const mediaUpload = multer({
   storage: multer.memoryStorage(),
-  limits: { fileSize: 8 * 1024 * 1024, files: 4 },
-  fileFilter: (_, f, cb) => cb(null, /^image\/(jpeg|png)$/.test(f.mimetype)),
+  limits: { fileSize: MAX_UPLOAD_MB * 1024 * 1024, files: 20 },
+  fileFilter: (_, f, cb) => {
+    const mt = f.mimetype?.toLowerCase() ?? '';
+    const isImage = /^image\/(jpeg|png|webp)$/.test(mt);
+    const isVideo = mt === 'video/mp4' || mt === 'video/quicktime';
+    cb(null, isImage || isVideo);
+  },
 });
 
 /**
@@ -427,7 +433,7 @@ function cleanHttpUrl(value) {
   }
 }
 
-app.post('/api/products', requireAuth, imgUpload.array('images', 4), async (req, res) => {
+app.post('/api/products', requireAuth, mediaUpload.array('images', 20), async (req, res) => {
   const { affiliate_url, product_url, name, price_myr, notes, description } = req.body ?? {};
   const files = req.files ?? [];
   const desc = (description ?? '').trim();
@@ -441,8 +447,10 @@ app.post('/api/products', requireAuth, imgUpload.array('images', 4), async (req,
     return res.status(400).json({ error: 'Product URL must be a valid http(s) URL, or blank.' });
   }
 
-  // Exactly one image is fine (posts as a single IMAGE). Two or more may become a carousel.
-  const mediaMode = files.length > 0 ? 'images' : 'text';
+  // Determine media mode: if any video present -> mixed, else images, else text
+  const hasVideo = files.some(f => getMediaKind(f.mimetype) === 'VIDEO');
+  const hasImage = files.some(f => getMediaKind(f.mimetype) === 'IMAGE');
+  const mediaMode = (hasVideo || hasImage) ? 'images' : 'text';
 
   // Text-only posts have no photo to carry specificity, so the description has to. 80 chars is
   // roughly one real sentence with a number in it — below that the writer has nothing to anchor
@@ -472,12 +480,13 @@ app.post('/api/products', requireAuth, imgUpload.array('images', 4), async (req,
 
     for (let i = 0; i < files.length; i++) {
       const f = files[i];
-      const ext = f.mimetype === 'image/png' ? 'png' : 'jpg';
+      const mediaKind = getMediaKind(f.mimetype);
+      const ext = getExtension(f.mimetype);
       const key = `${uid}/${i}-${sha256(f.buffer).slice(0, 8)}.${ext}`;
       const url = await putImage(f.buffer, key, f.mimetype);
       await client.query(
-        `INSERT INTO product_images (product_id, public_url, bytes) VALUES ($1,$2,$3)`,
-        [p.id, url, f.size]);
+        `INSERT INTO product_images (product_id, public_url, bytes, media_kind) VALUES ($1,$2,$3,$4)`,
+        [p.id, url, f.size, mediaKind]);
     }
     await client.query('COMMIT');
 

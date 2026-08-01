@@ -25,7 +25,35 @@ export const shortId = (n = 6) =>
   crypto.randomBytes(16).toString('hex').replace(/[^0-9a-f]/g, '')
     .split('').map(c => parseInt(c, 16).toString(36)).join('').slice(0, n);
 
-// ─────────────────────────────────────────── image storage
+// ─────────────────────────────────────────── media type helpers
+
+/**
+ * Determine media kind from MIME type.
+ * Returns 'VIDEO' for mp4/quicktime, else 'IMAGE'.
+ */
+export function getMediaKind(mimetype) {
+  if (!mimetype) return 'IMAGE';
+  const mt = mimetype.toLowerCase();
+  if (mt === 'video/mp4' || mt === 'video/quicktime') return 'VIDEO';
+  return 'IMAGE';
+}
+
+/**
+ * Get file extension from MIME type.
+ * Returns png/jpg/mp4/mov, 'bin' fallback.
+ */
+export function getExtension(mimetype) {
+  if (!mimetype) return 'bin';
+  const mt = mimetype.toLowerCase();
+  if (mt === 'image/jpeg' || mt === 'image/jpg') return 'jpg';
+  if (mt === 'image/png') return 'png';
+  if (mt === 'image/webp') return 'webp';
+  if (mt === 'video/mp4') return 'mp4';
+  if (mt === 'video/quicktime') return 'mov';
+  return 'bin';
+}
+
+// ─────────────────────────────────────────── image/video storage
 
 async function putLocal(buf, key) {
   const full = path.join(IMAGE_DIR, key);
@@ -199,8 +227,12 @@ ${textOnly
   }
 }
 
-/** Describe an image so the copy matches the photo it's attached to. Best-effort. */
-export async function describeImage(publicUrl) {
+/** Describe an image so the copy matches the photo it's attached to. Best-effort. 
+ * For VIDEO, skip vision call entirely (vision-LLM endpoints don't support video input). */
+export async function describeImage(publicUrl, mediaKind = 'IMAGE') {
+  // Skip vision for VIDEO - vision LLM endpoints don't support video input
+  if (mediaKind === 'VIDEO') return null;
+  
   try {
     const out = await complete(
       'Describe literally what is visible in this product photo in ONE Malay sentence. ' +
