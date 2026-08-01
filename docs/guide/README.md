@@ -11,22 +11,22 @@ This folder contains the persisted outputs from the Documentation & Architecture
 
 ## Open Questions / Code Mismatches Found
 
-Re-verified 2026-08-01 against current `main` (after commits `46ae8d1` and `464300e`). These were
+Re-verified 2026-08-01 against current `main` (after commits `46ae8d1` and `464300e`). **Re-verified 2026-08-01 (second pass) against commits `cbc05da`, `b315e49`, `f448cda`, `e4e7b53`, `2bef5af`, `1d796b4`, `460c5df`, `b8be4f9`.** These were
 not guessed around; they are documented as current live-code mismatches:
 
 1. **~~System Settings Control Board not present~~ — RESOLVED.** `/settings.html` is now a 6-tab
    board. The LLM tab still uses `/api/config/llm`; the other five (`posting`, `bandit`, `qa`,
    `l4_reply`, `warmup`) plus `scoring` use the generic `GET/PUT /api/config/system/:key` route,
    allowlisted in `services/kb/server.js:238` and validated per-key in `services/kb/server.js:240-273`.
-2. **Video/mixed publishing is not wired.** Migration 020 and `bandit.js` support `VIDEO` and `MIXED_CAROUSEL`, but `wf3_publish.json` does not have video/mixed branches, `video_url` parameters, or async status polling before `threads_publish`.
-3. **Browser product page does not expose video upload.** The backend `POST /api/products` accepts MP4/MOV, but `services/kb/public/product.html` accepts only JPG/PNG and caps uploads at 4 images.
+2. **~~Video/mixed publishing is not wired.~~ — RESOLVED.** Migration 020 and `bandit.js` support `VIDEO` and `MIXED_CAROUSEL`, and `wf3_publish.json` now has video/mixed branches with `video_url` parameters and async status polling before `threads_publish`. Traceable to `n8n/workflows/wf3_publish.json`.
+3. **~~Browser product page does not expose video upload.~~ — RESOLVED.** The backend `POST /api/products` accepts MP4/MOV, and `services/kb/public/product.html` now accepts MP4/MOV and increased file limit to 20 files. Traceable to `services/kb/public/product.html:88-112`, `services/kb/server.js:400-409`, `436-489`.
 4. **~~L4 token key mismatch~~ — RESOLVED.** `scripts/set_secrets.sh:135-141` now writes
    `settings.l4_reply.threads_token` directly, matching `wf7_l4_reply.json:234`.
 5. **~~Shopee DB key mismatch in helper~~ — RESOLVED.** `scripts/set_secrets.sh --shopee-*`
    now writes **both** `shopee_app_id` and `shopee_app_secret` rows
    (`scripts/set_secrets.sh:150-161`), matching `services/kb/lib/shopee.js:58-59`.
    The DB path now works alongside env vars.
-6. **L4 comment ingestion source is incomplete.** `wf7_l4_reply.json` reads local `threads_comments`; it does not fetch Threads replies itself. A separate ingestion path must populate `threads_comments` before L4 can reply.
+6. **~~L4 comment ingestion source is incomplete.~~ — RESOLVED.** `wf7_l4_reply.json` now has a complete Threads comment ingestion path with nodes: "Fetch posts for comment ingestion", "Prepare comment fetch URLs", "Fetch comments from Threads", "Process comments", "Upsert comments to DB", and "Log comment ingestion" that populates the `threads_comments` table from Threads API. Traceable to `n8n/workflows/wf7_l4_reply.json`.
 7. **Text variation is dormant.** Migration 015 and `n8n/code/text_variation.js` exist, but current workflow JSONs do not call that helper or log `text_variations`.
 8. **~~Video vision skip is not cleanly wired~~ — RESOLVED.** `services/kb/server.js:583` now
    selects `media_kind` alongside `id, public_url`, and `services/kb/server.js:585` passes it
@@ -35,6 +35,7 @@ not guessed around; they are documented as current live-code mismatches:
 9. **~~Cosmetic: stale log message in `set_secrets.sh`~~ — RESOLVED.** The script now prints
    `"threads_creds + l4_reply updated"` (`scripts/set_secrets.sh:141`), matching the keys the SQL
    actually writes.
+10. **Persona notebooks are unverified.** `persona/*.ipynb` (9 notebooks, `dataset-2` … `dataset-10`) appeared in the tree with no reference from any script or doc. `docs/10-malaysian-dataset.md` only documents the older, already-deleted `persona/dataset-1.json`. Not a doc/code contradiction — flag as an unverifiable Open Question until a script or doc actually references them.
 
-Treat items 2, 3, 5 (partial), 6, 7, and 8 as engineering follow-up items before claiming full
+Treat items 7 and 10 as engineering follow-up items before claiming full
 Phase 1/Phase 2 completion.
