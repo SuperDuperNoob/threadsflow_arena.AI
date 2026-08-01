@@ -101,38 +101,34 @@ const email = process.env.TF_EMAIL, password = process.env.TF_PASS;
 # 3. Postgres credential with the fixed id "PG"
 # ─────────────────────────────────────────────────────────────────────────────
 log "Importing Postgres credential (id=PG)..."
-TMP_CRED="$(mktemp)"
-trap 'rm -f "$TMP_CRED"' EXIT
-# Field names must match n8n's `postgres` credential type exactly.
-cat > "$TMP_CRED" <<JSON
+# Write credential file directly inside container as node user to avoid permission issues
+$COMPOSE exec -u node -T n8n sh -c "cat > /home/node/tf_cred.json << 'JSON'
 [
   {
-    "id": "PG",
-    "name": "Postgres threadsflow",
-    "type": "postgres",
-    "data": {
-      "host": "postgres",
-      "port": 5432,
-      "database": "threadsflow",
-      "user": "threadsflow",
-      "password": "${PG_PASSWORD}",
-      "ssl": "disable",
-      "allowUnauthorizedCerts": false,
-      "sshTunnel": false,
-      "maxConnections": 20
+    \"id\": \"PG\",
+    \"name\": \"Postgres threadsflow\",
+    \"type\": \"postgres\",
+    \"data\": {
+      \"host\": \"postgres\",
+      \"port\": 5432,
+      \"database\": \"threadsflow\",
+      \"user\": \"threadsflow\",
+      \"password\": \"${PG_PASSWORD}\",
+      \"ssl\": \"disable\",
+      \"allowUnauthorizedCerts\": false,
+      \"sshTunnel\": false,
+      \"maxConnections\": 20
     }
   }
 ]
-JSON
-
-$COMPOSE cp "$TMP_CRED" n8n:/tmp/tf_cred.json >/dev/null
+JSON"
 # n8n re-encrypts the plaintext values under N8N_ENCRYPTION_KEY on import.
-if $COMPOSE exec -T n8n n8n import:credentials --input=/tmp/tf_cred.json >/dev/null 2>&1; then
+if $COMPOSE exec -u node -T n8n n8n import:credentials --input=/home/node/tf_cred.json >/dev/null 2>&1; then
   success "credential 'Postgres threadsflow' imported as id=PG"
 else
-  error "credential import failed. Run manually: $COMPOSE exec n8n n8n import:credentials --input=/tmp/tf_cred.json"
+  error "credential import failed. Run manually: $COMPOSE exec -u node n8n n8n import:credentials --input=/home/node/tf_cred.json"
 fi
-$COMPOSE exec -T n8n rm -f /tmp/tf_cred.json >/dev/null 2>&1 || true
+$COMPOSE exec -u node -T n8n rm -f /home/node/tf_cred.json >/dev/null 2>&1 || true
 
 # ─────────────────────────────────────────────────────────────────────────────
 # 4. Workflows
@@ -145,20 +141,28 @@ if command -v node >/dev/null 2>&1; then
 fi
 
 log "Importing workflows..."
-$COMPOSE exec -T n8n mkdir -p /tmp/tf_wf >/dev/null 2>&1 || true
+# Create workflow directory and copy files as node user to avoid permission issues
+$COMPOSE exec -u node -T n8n mkdir -p /home/node/tf_wf >/dev/null 2>&1 || true
 # wf6_karma_draft is a spec stub waiting on the Meta API — do not import it.
 for f in n8n/workflows/*.json; do
   base="$(basename "$f")"
   [[ "$base" == "wf6_karma_draft.json" ]] && continue
-  $COMPOSE cp "$f" "n8n:/tmp/tf_wf/$base" >/dev/null
+  $COMPOSE cp "$f" "n8n:/home/node/tf_wf/$base" >/dev/null
 done
 
-if $COMPOSE exec -T n8n n8n import:workflow --separate --input=/tmp/tf_wf >/dev/null 2>&1; then
-  success "workflows imported (credentials already bound via id=PG)"
-else
-  error "workflow import failed. Try: $COMPOSE exec n8n n8n import:workflow --separate --input=/tmp/tf_wf"
-fi
-$COMPOSE exec -T n8n rm -rf /tmp/tf_wf >/dev/null 2>&1 || true
+# Import workflows one by one (--separate has a duplicate-key bug when run in batch)
+log "Importing workflows individually..."
+for f in n8n/workflows/*.json; do
+  base="$(basename "$f")"
+  [[ "$base" == "wf6_karma_draft.json" ]] && continue
+  if $COMPOSE exec -u node -T n8n n8n import:workflow --input=/home/node/tf_wf/"$base" >/dev/null 2>&1; then
+    log "  imported $base"
+  else
+    error "workflow import failed for $base. Try: $COMPOSE exec -u node n8n n8n import:workflow --input=/home/node/tf_wf/$base"
+  fi
+done
+success "workflows imported (credentials already bound via id=PG)"
+$COMPOSE exec -u node -T n8n rm -rf /home/node/tf_wf >/dev/null 2>&1 || true
 
 # ─────────────────────────────────────────────────────────────────────────────
 # 5. Optional activation
