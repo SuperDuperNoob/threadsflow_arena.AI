@@ -91,6 +91,8 @@ Optional for first launch:
 
 ## Current feature caveats to remember
 
-- Browser `/product.html` accepts JPG/PNG images only. Backend `POST /api/products` accepts WebP/MP4/MOV too, but live `wf3_publish` does not safely publish `VIDEO` or `MIXED_CAROUSEL` yet.
-- `/settings.html` is a 6-tab Control Board (LLM, posting, bandit, qa, l4_reply, warmup, scoring) using generic `GET/PUT /api/config/system/:key`. All settings editable via UI.
-- `wf7_l4_reply` needs `settings.l4_reply.threads_token`; `scripts/set_secrets.sh` writes it alongside `threads_creds`.
+- **Browser `/product.html` now accepts JPG/PNG/WebP/MP4/MOV with a 20-file limit.** Backend `POST /api/products` and frontend are aligned.
+- **`/settings.html` is a 6-tab Control Board** (LLM, posting, bandit, qa, l4_reply, warmup, scoring) served by `GET/PUT /api/config/system/:key`.
+- `wf7_l4_reply` now reads `settings.l4_reply.threads_token` written directly by `scripts/set_secrets.sh` — no separate patch step needed.
+- **`wf3_publish` now safely publishes `VIDEO` and `MIXED_CAROUSEL`** with async status polling before `threads_publish`.
+- **`wf7_l4_reply` now has a complete Threads comment ingestion path** that populates `threads_comments` from Threads API.
