@@ -30,12 +30,10 @@ ALTER TABLE product_images ADD COLUMN IF NOT EXISTS media_kind TEXT NOT NULL DEF
 -- 4. Create index for media_kind
 CREATE INDEX IF NOT EXISTS idx_product_images_media_kind ON product_images(media_kind);
 
--- 5. Insert new levers for VIDEO and MIXED_CAROUSEL media_type
+-- 5. Insert new levers for VIDEO and MIXED_CAROUSEL media_type (Malay only, matching seed_levers_my.sql pattern)
 INSERT INTO levers (kind, code, label, brief) VALUES
   ('media_type','VIDEO','Video','Video pendek (≤ 90s). Hook dalam 3 saat pertama, caption ringkas. Tak perlu cerita panjang.'),
-  ('media_type','MIXED_CAROUSEL','Campuran Gambar + Video','Carousel bercampur gambar dan video. Urutan visual mesti sokong narasi. Caption rujuk item berbeza.'),
-  ('media_type','VIDEO','Video','Short video (≤ 90s). Hook in first 3s, brief caption. No long story needed.'),
-  ('media_type','MIXED_CAROUSEL','Mixed Image + Video Carousel','Carousel mixing images and videos. Visual sequence must support narrative. Caption references different items.')
+  ('media_type','MIXED_CAROUSEL','Campuran Gambar + Video','Carousel bercampur gambar dan video. Urutan visual mesti sokong narasi. Caption rujuk item berbeza.')
 ON CONFLICT (kind, code) DO NOTHING;
 
 -- 6. Backfill existing product_images with default media_kind = 'IMAGE'

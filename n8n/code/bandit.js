@@ -445,7 +445,8 @@ const MODE = $json.mode ?? (input.scores ? 'update' : 'select');
 if (MODE === 'select') {
   const product = pickProduct(input);
   const imageCount = Number(product.image_count ?? product.images ?? 0) || 0;
-  const plan = { ...(input.plan ?? {}), imageCount };
+  const videoCount = Number(product.video_count ?? 0) || 0;
+  const plan = { ...(input.plan ?? {}), imageCount, videoCount };
   const arm = pickArm({ ...input, productUid: product.uid, plan });
   return [{ json: { ...$json, product, plan, ...arm } }];
 }
