@@ -68,7 +68,9 @@ LATERAL (VALUES
   ('Follow I, I follow back. Simple', 'follow_request', 'minimal', 'morning', 'reciprocity_first'),
   ('Jom connect. Follow I, I follow balik', 'follow_request', 'gaul', 'evening', 'liking_through_specificity'),
   ('New here. Follow back semua yang follow I', 'follow_request', 'minimal', 'afternoon', 'reciprocity_first')
-) AS v(topic, angle, tone, time_of_day, psychology_technique);
+) AS v(topic, angle, tone, time_of_day, psychology_technique)
+WHERE persona_topic_sources.slug = 'follow_request'
+ON CONFLICT (source_id, topic) DO NOTHING;
 
 -- Add settings for follow request frequency (every 3 days during warm-up)
 UPDATE settings

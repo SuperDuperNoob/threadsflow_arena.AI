@@ -55,31 +55,42 @@ sudo ./scripts/setup_new_vps.sh
    cd infra && docker compose up -d
    ```
 
-3. **Add your Threads token** (via SQL):
+3. **Add your Threads token** — use the helper, which validates the token
+   against the Threads API before storing it and also writes the copy that
+   `wf7_l4_reply` reads:
    ```bash
-   docker compose exec -T postgres psql -U threadsflow -d threadsflow <<EOF
-   INSERT INTO settings (key, value) VALUES
-   ('threads_creds', '{"token":"YOUR_THREADS_TOKEN","user_id":"YOUR_USER_ID"}'::jsonb)
-   ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value;
-   EOF
+   ./scripts/set_secrets.sh --threads-token 'THQVJ...' --threads-user-id '178414...'
+   ./scripts/set_secrets.sh --show     # confirm what is stored (masked)
    ```
+   Getting the token itself is a one-time manual step (Meta OAuth + Threads
+   Tester invite) — see `./scripts/set_secrets.sh --help` for the exact flow,
+   and `docs/14-agent-autonomous-deploy.md` for why it cannot be automated.
 
 4. **Access n8n dashboard & review queue:**
    - n8n dashboard: `https://n8n.yourdomain.com` (Password in `infra/.env` under `N8N_PASSWORD`)
    - **Human Review Queue:** `https://kb.yourdomain.com/queue.html` (Approve, reject, or edit generated posts before publication; log in with `KB_PASSWORD`)
 
-5. **Import workflows:**
-   - n8n UI → Import from File → select all `n8n/workflows/*.json`
-   - Assign **"Postgres threadsflow"** credential to every Postgres node
-   - Assign your **HTTP Header Auth** credential (with `Bearer YOUR_THREADS_TOKEN`) to every HTTP Request node
+5. **Import workflows** — `setup_new_vps.sh` already ran this via
+   `scripts/bootstrap_n8n.sh`, which creates the n8n owner account, imports the
+   Postgres credential as id `PG` (every workflow node references that id, so
+   they all bind automatically), and imports the workflow definitions. To re-run
+   or to import after a manual `docker compose up`:
+   ```bash
+   ./scripts/bootstrap_n8n.sh
+   ```
+   Threads API calls read their token from the database, not from an n8n
+   credential — there is no HTTP Header Auth credential to assign.
 
-6. **Activate workflows in this order:**
-   - ✅ `wf0_token_refresh` (immediately)
-   - ✅ `wf6_persona` (day 1, for warm-up)
-   - ✅ `wf3_publish` (day 1, publishes queued posts)
-   - ✅ `wf7_l4_reply` (day 1, replies to comments)
+6. **Activate workflows** once the Threads token is in place:
+   ```bash
+   ./scripts/bootstrap_n8n.sh --activate   # wf0, wf6, wf3, wf7
+   cd infra && docker compose restart n8n  # activation needs a restart
+   ```
    - ⏳ `wf2_generate` (after 14 days, when warm-up phase ends)
    - ⏳ `wf4_evaluate` (after first posts are published)
+
+   Activate *after* the token exists — otherwise `wf3_publish` logs a failed
+   execution every 5 minutes.
 
 ### Done! 🎉
 

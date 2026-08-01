@@ -92,7 +92,8 @@ FROM (VALUES
   ('Gaul lepak', 'Semalam lepak mamak sampai pukul 2 pagi. Borak kosong je, tapi best gila. Kawan aku cerita pasal ex dia, lagi satu cerita pasal boss dia yang annoying. Aku just dengar sambil minum teh tarik. Sometimes thats all you need, just vent out.'),
   ('Gaul shopping', 'Pergi Midvalley semalam, ingat nak window shopping je. Last-last terbeli kasut RM200, baju RM150. Dompet nangis, tapi hati happy. Sometimes retail therapy memang menjadi, dont judge.'),
   ('Gaul gym', 'Baru join gym dekat rumah. Bulan pertama semangat gila, pergi 5 kali seminggu. Bulan kedua dah 2 kali. Bulan ketiga bayar je tapi tak pergi. Typical Malaysian gym member, hahaha. Tapi still bayar sebab rasa bersalah kalau cancel.')
-) AS v(title, text);
+) AS v(title, text)
+ON CONFLICT (text_sha256) DO NOTHING;
 
 -- ═══════════════════════════════════════════════════════════════════════════
 -- IIUM REFLECTIVE (reflective, warm_sibling tones)
@@ -117,7 +118,8 @@ FROM (VALUES
   ('Kampung vs KL', 'Aku dari kampung, pindah KL untuk kerja. Rindu kampung, rindu mak masak, rindu udara segar. Tapi KL ada peluang, ada duit. Dilemma setiap anak rantau, hati kat kampung, badan kat kota.'),
   ('Kawan toksik', 'Ada kawan yang selalu pinjam duit, tapi tak pernah bayar. Bila aku minta, dia marah, kata aku kedekut. Last-last aku block, sebab mental health aku lagi penting. Kadang-kadang kena letak boundaries.'),
   ('Single parent', 'Aku single father, jaga 2 anak sorang. Masak, basuh baju, hantar sekolah. Penat, tapi bila anak peluk, cakap "I love you ayah", semua penat hilang. Aku buat ni untuk diaorang.')
-) AS v(title, text);
+) AS v(title, text)
+ON CONFLICT (text_sha256) DO NOTHING;
 
 -- ═══════════════════════════════════════════════════════════════════════════
 -- AMANZ TECH (informative, neutral tones)
@@ -142,7 +144,8 @@ FROM (VALUES
   ('Camera mirrorless', 'Camera mirrorless ni sensor APS-C, 26MP. Video 4K 60fps, autofocus laju. Body compact, 400g je. Harga RM3999 body only, lens beli asing. Untuk content creator, memang recommended.'),
   ('Drone mini', 'Drone mini 249g ni tak perlu daftar dengan CAAM. Kamera 4K, stabilizer 3-axis. Bateri 30 minit flight time. Harga RM2499, mahal tapi feature lengkap.'),
   ('Speaker Bluetooth', 'Speaker Bluetooth ni sound memang bass-heavy, best untuk dengar hip-hop. Waterproof IPX7, boleh bawak mandi. Bateri 12 jam. Harga RM199, berbaloi untuk quality macam ni.')
-) AS v(title, text);
+) AS v(title, text)
+ON CONFLICT (text_sha256) DO NOTHING;
 
 -- ═══════════════════════════════════════════════════════════════════════════
 -- TWITTER DEADPAN (neutral, deadpan tones)
@@ -177,7 +180,8 @@ FROM (VALUES
   ('Exercise', 'Jogging 5 minit, penat. Walk balik.'),
   ('Study', 'Study 30 minit, reward Netflix 3 jam.'),
   ('Cleaning', 'Kemas rumah 1 jam, bersepah balik dalam 30 minit.')
-) AS v(title, text);
+) AS v(title, text)
+ON CONFLICT (text_sha256) DO NOTHING;
 
 -- ═══════════════════════════════════════════════════════════════════════════
 -- LOWYAT MANGLISH (conversational, gaul tones)
@@ -202,7 +206,8 @@ FROM (VALUES
   ('Gym membership', 'Fitness First RM200 sebulan, Celebrity Fitness RM180. Korang rasa which one better? Equipment dan facility.'),
   ('Phone plan', 'Hotlink prepaid RM35 sebulan, unlimited call, 6GB data. Cukup tak untuk usage biasa?'),
   ('Car service', 'Myvi aku dah 100k km, patut buat major service. Workshop quote RM1500. Korang rasa fair tak?')
-) AS v(title, text);
+) AS v(title, text)
+ON CONFLICT (text_sha256) DO NOTHING;
 
 -- ═══════════════════════════════════════════════════════════════════════════
 -- MAMAK FOOD (conversational, warm_sibling tones)
@@ -227,7 +232,8 @@ FROM (VALUES
   ('Roti tissue', 'Roti tissue ni memang cantik, tinggi dan rangup. Letak gula dan susu pekat. RM4, sesuai untuk sharing.'),
   ('Maggi goreng', 'Maggi goreng mamak ni simple tapi sedap. Letak telur, sayur, fishcake. Pedas sikit, RM5, cepat dan kenyang.'),
   ('Tandoori chicken', 'Tandoori chicken sini memang juicy, marination dia perfect. Makan dengan naan, sedap gila. RM12 untuk half chicken.')
-) AS v(title, text);
+) AS v(title, text)
+ON CONFLICT (text_sha256) DO NOTHING;
 
 -- ═══════════════════════════════════════════════════════════════════════════
 -- PARENTING (reflective, warm_sibling, conversational tones)
@@ -252,7 +258,8 @@ FROM (VALUES
   ('Working mom guilt', 'Kerja 9-6, balik rumah anak dah tidur. Weekend je quality time. Rasa bersalah, macam tak cukup masa dengan anak. Tapi kena kerja, nak bagi dia hidup selesa.'),
   ('Anak picky eater', 'Anak hanya nak makan nugget dan fries. Sayur tak sentuh. Cuba hide sayur dalam food, dia detect. Kawan cakap phase ni akan berlalu. Harap-harap la.'),
   ('Sibling rivalry', 'Anak 2 orang, asyik gaduh. Berebut mainan, berebut TV. Kita penat jadi referee. Kawan cakap normal, diaorang akan rapat bila besar. Harap-harap.')
-) AS v(title, text);
+) AS v(title, text)
+ON CONFLICT (text_sha256) DO NOTHING;
 
 -- ═══════════════════════════════════════════════════════════════════════════
 -- COMMUTE (neutral, conversational, deadpan tones)
@@ -277,7 +284,8 @@ FROM (VALUES
   ('Traffic light', 'Traffic light dekat junction ni lama gila. 2 minit merah, 30 saat hijau. Queue sampai 20 kereta. Siapa design ni?'),
   ('Flood', 'Hujan 30 minit, jalan dah banjir. Kereta sedan confirm mati enjin. Nasib baik pakai SUV. KL drainage memang kena improve.'),
   ('E-hailing vs taxi', 'E-hailing RM15, taxi RM30 untuk jarak sama. Tapi e-hailing sometimes cancel, taxi confirm ambil. Depends on situasi la.')
-) AS v(title, text);
+) AS v(title, text)
+ON CONFLICT (text_sha256) DO NOTHING;
 
 -- ═══════════════════════════════════════════════════════════════════════════
 -- WORK (conversational, neutral, deadpan tones)
@@ -302,7 +310,8 @@ FROM (VALUES
   ('Kena scold', 'Kena scold depan team sebab mistake kecil. Rasa malu, tapi boss memang macam tu. Swallow pride, move on. Professional.'),
   ('Side hustle', 'Kerja 9-5, side hustle malam. Penat, tapi extra income RM2000 sebulan. Worth it untuk future. Sacrifice sekarang, enjoy later.'),
   ('Office politics', 'Office politics memang toxic. Kawan backstab untuk promotion. Kita just buat kerja, tak nak involve. Tapi susah nak avoid.')
-) AS v(title, text);
+) AS v(title, text)
+ON CONFLICT (text_sha256) DO NOTHING;
 
 COMMIT;
 
