@@ -654,6 +654,7 @@
     },
     {
       "parameters": {
+        "mode": "passThrough",
         "numberInputs": 5
       },
       "id": "merge_containers",
@@ -865,6 +866,35 @@
         380
       ],
       "webhookId": "wait-video"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "version": 2
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $('Quota guard').first().json.media_type }}",
+              "rightValue": "MIXED_CAROUSEL",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "route_video_merge",
+      "name": "Route video to merge index",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1380,
+        380
+      ]
     },
     {
       "parameters": {
@@ -1224,14 +1254,47 @@
       "main": [
         [
           {
-            "node": "Merge container id",
+            "node": "Prepare video status poll",
             "type": "main",
-            "index": 3
+            "index": 0
           }
         ],
         [
           {
             "node": "Record failure",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare video status poll": {
+      "main": [
+        [
+          {
+            "node": "Poll video status",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Poll video status": {
+      "main": [
+        [
+          {
+            "node": "Wait for video processing",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait for video processing": {
+      "main": [
+        [
+          {
+            "node": "Route video to merge index",
             "type": "main",
             "index": 0
           }
@@ -1271,9 +1334,9 @@
       "main": [
         [
           {
-            "node": "Merge container id",
+            "node": "Prepare video status poll",
             "type": "main",
-            "index": 4
+            "index": 0
           }
         ],
         [
@@ -1281,6 +1344,24 @@
             "node": "Record failure",
             "type": "main",
             "index": 0
+          }
+        ]
+      ]
+    },
+    "Route video to merge index": {
+      "main": [
+        [
+          {
+            "node": "Merge container id",
+            "type": "main",
+            "index": 4
+          }
+        ],
+        [
+          {
+            "node": "Merge container id",
+            "type": "main",
+            "index": 3
           }
         ]
       ]
