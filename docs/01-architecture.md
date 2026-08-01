@@ -3,17 +3,19 @@
 > **This is the technical deep-dive.** If you are setting up the system for the
 > first time, read `docs/00-START-HERE.md` and `docs/03-setup-runbook.md` instead.
 
-Goal: you drop **1 affiliate URL, optionally the full product URL for enrichment, plus images and/or a description** into a small web form.
-The system then runs forever by itself: writes non-templated copy, posts to Threads ~5×/day, drops the affiliate link in the
-first comment, measures what worked, and every 3 days re-invests posting slots into the winning
-styles — per product and globally.
+Goal: you drop **1 affiliate URL, optionally the full product URL for enrichment, plus media and/or a description** into a small web form or API.
+The browser form currently accepts JPG/PNG images; the backend intake API accepts JPG/PNG/WebP images and MP4/MOV videos.
+The system then writes non-templated copy, posts to Threads on schedule, drops the affiliate link in the first comment for product posts,
+measures what worked, and every 3 days re-invests posting slots into the winning styles — per product and globally.
+
+**Implementation caveat:** migration 020 added `VIDEO` and `MIXED_CAROUSEL` to the data model and bandit levers, but the shipped `n8n/workflows/wf3_publish.json` still routes only `TEXT`, `IMAGE`, and image-only `CAROUSEL`. Treat video/mixed publishing as schema/intake groundwork, not a safe live publisher, until `wf3_publish` gets video container creation and status polling.
 
 ---
 
 ## 0. The mental model (read this first)
 
 This is **not** "an n8n workflow that posts". It is a small **multi-armed bandit content machine**
-with 4 loops.
+with multiple cooperating loops.
 
 > **Multi-armed bandit:** imagine a row of slot machines. You have limited coins.
 > You do not know which machine pays best. So you try them all at first, and as
@@ -23,10 +25,13 @@ with 4 loops.
 
 | Loop | Period | What it does |
 |---|---|---|
-| **L0 Intake** | on demand | You submit product + images → normalized into `products`, images uploaded to public CDN |
-| **L1 Generate** | nightly 03:00 | Builds tomorrow's 5 post slots: picks product × angle × hook-family × tone via bandit, writes copy with LLM, QA-checks it, queues it |
-| **L2 Publish** | 5×/day (jittered) | Publishes container → post → waits → posts CTA + tracked affiliate link as **self-reply** |
-| **L3 Learn** | every 3 days 02:00 | Pulls insights + Shopee conversions, scores each post, updates bandit weights, kills losing arms, breeds variations of winners |
+| **L0 Intake** | on demand | You submit product + media/description → normalized into `products`; media assets are uploaded to public storage and recorded in `product_images` |
+| **L1 Generate** | nightly 03:00 | Builds post slots: picks product × angle × hook-family × tone via bandit, writes copy with LLM, QA-checks it, sends it to review |
+| **L2 Publish** | every 5 min scan | Publishes approved/auto-published due posts, then posts CTA + tracked affiliate link as **self-reply** for product posts with `sell_intensity != 0` |
+| **L3 Learn** | every 3 days 02:00 | Pulls insights + clicks + Shopee conversions, scores each post, updates bandit weights, kills losing arms, breeds variations of winners |
+| **L4 Reply** | every 4 hours | Replies to comments on your posts when enabled by `settings.l4_reply` |
+| **L5 Persona** | nightly 03:30 | Queues no-link persona warm-up posts from `persona_topics` |
+| **L6 Token** | every 25 days | Refreshes the long-lived Threads token in `settings.threads_creds` |
 
 Loop L3 is what makes it "not a poster". Everything the LLM produces is tagged with the
 **exact combination of levers** that produced it, so the scoring loop knows *what* worked, not
@@ -41,37 +46,38 @@ just *which post* worked.
                                    │
         ┌──────────────────────────┼───────────────────────────┐
         │                          │                           │
-   ui.yourdomain             n8n.yourdomain              r.yourdomain
-   (Caddy → UI)              (n8n editor, protected)     (link redirector)
+   kb.yourdomain             n8n.yourdomain              r.yourdomain
+   (KB web UI/API)           (n8n editor, protected)     (link redirector)
         │                          │                           │
    ┌────▼──────┐            ┌──────▼──────┐             ┌──────▼──────┐
-   │  ui       │            │    n8n      │             │ redirector  │
-   │ Node/Vite │            │  (queue     │             │  tiny Node  │
-   │  ~150MB   │            │   mode off) │             │   ~40MB     │
+   │    kb     │            │    n8n      │             │ redirector  │
+   │ Node app  │            │ workflow    │             │ tiny Node   │
+   │ ~640MB    │            │ engine      │             │ ~128MB      │
    └────┬──────┘            └──────┬──────┘             └──────┬──────┘
         │                          │                           │
         └───────────┬──────────────┴─────────────┬─────────────┘
                     │                            │
              ┌──────▼──────┐              ┌──────▼──────┐
              │ PostgreSQL  │              │ Cloudflare  │
-             │  ~400MB     │              │  R2 bucket  │  ← images must be PUBLIC URLs
+             │ app + n8n   │              │  R2 bucket  │  ← media URLs must be public HTTPS
              └─────────────┘              └─────────────┘
                     │
              ┌──────▼─────────────────────────────┐
-             │ LLM: OpenAI-compatible endpoint      │  ← default 9router → Gemini/GPT/Claude
+             │ OpenAI-compatible LLM endpoint       │  ← default hosted 9router or your provider
              └────────────────────────────────────┘
+
+  shopee-sync is a separate container using the kb image; it pulls Shopee conversions every 12h when keys exist.
 ```
 
-**RAM budget**: n8n 700MB–1GB, Postgres 400MB, UI 150MB, redirector 40MB,
-Caddy 30MB, cloudflared 40MB → ~2.1GB peak, leaves headroom. **Do not run a local LLM.**
+**RAM budget** from `infra/docker-compose.yml`: n8n 1.4GB, Postgres 512MB, kb 640MB,
+redirector 128MB, shopee-sync 160MB, cloudflared 96MB. **Do not run a local LLM.**
 Use the configurable OpenAI-compatible endpoint (9router by default, direct provider if preferred)
 to hit hosted models; a post costs fractions of a cent.
 
-> **Image hosting note (only matters if you upload images):** Threads fetches `image_url`
-> server-side, so images must be on a
+> **Media hosting note:** Threads fetches `image_url` / `video_url` server-side, so media must be on a
 > publicly reachable HTTPS URL. The system uses Cloudflare R2 with a public bucket
 > (free tier, 10 GB storage, zero egress cost — Meta's fetches cost you nothing).
-> Do **not** serve them from the VPS directly — you have no open ports and Meta needs to fetch.
+> Do **not** serve production assets from a private VPS path; Meta needs to fetch them.
 
 ---
 
@@ -92,15 +98,15 @@ and the LLM is forbidden from ever seeing a "template".
 | **tone** | deadpan, hyper-casual gaul, warm older-sibling, dry corporate-parody, chaotic gen-z, calm minimalist, over-enthusiastic | 7 |
 | **sell_intensity** | 0 = pure story/value (link still in comment), 1 = soft, 2 = direct | 3 |
 | **length_band** | micro (<120 chars), mid (120–260), long (260–480) | 3 |
-| **media_type** | TEXT, IMAGE, CAROUSEL — constrained by what the product actually has | 3 |
+| **media_type** | `TEXT`, `IMAGE`, `CAROUSEL`, `VIDEO`, `MIXED_CAROUSEL` — constrained by what the product actually has; current publisher is safe only for `TEXT`/`IMAGE`/image-only `CAROUSEL` | 5 |
 
-On top of the levers, each post also carries **1–2 "devices"** drawn from the 60-technique
-library (43 hand-written in Malay + 17 mined from your `Books/` folder). Devices are
+On top of the levers, each post also carries **1–2 "devices"** drawn from the technique
+library (built-in Malay, book-mined, 2026 Threads, and psychology rows). Devices are
 Thompson-sampled and scored exactly like levers, and 15% of posts deliberately get none so you
 can tell whether the library is helping at all. See `docs/04-technique-library.md` and
 `docs/05-books.md`.
 
-Combinatorial space = 12×9×7×3×3×3 = **20,412 arms**. You post ~150/month, so you will never repeat
+Combinatorial space with the five media values = 12×9×7×3×3×5 = **34,020 arms**. You post ~150/month, so you will never repeat
 a combination in practice. Plus each generation carries an **anti-repetition context**: the last
 20 posts' first 8 words + their embeddings; the QA node rejects anything with cosine similarity
 > 0.86 against the last 30 posts and regenerates.
@@ -140,26 +146,27 @@ POST /api/products   (multipart, served by the KB service)
 {
   affiliate_url: "https://s.shopee.com.my/xxxx",  // required buyer/money link
   product_url:   "https://shopee.com.my/product/...", // optional, enrichment only
-  images:        [file, ...],                     // 0-4. optional
-  description:   "...",                           // required only when images are absent (>=80 chars)
+  images:        [file, ...],                     // multipart field name; backend accepts 0-20 JPG/PNG/WebP/MP4/MOV
+  description:   "...",                           // required only when no media files are supplied (>=80 chars)
   name:          "optional, LLM fills if blank",
   price_myr:     "optional",
   notes:         "optional: 'untuk mak-mak, harga RM39, free shipping'"
 }
 ```
 
-**Three valid shapes.** `affiliate link + images`, `affiliate link + images + description`,
+**Three valid shapes.** `affiliate link + media`, `affiliate link + media + description`,
 `affiliate link + description`. The optional `product_url` may be added to any of them. Only
-`affiliate link` alone is rejected: with neither a photo nor words there is nothing concrete to
+`affiliate link` alone is rejected: with neither media nor words there is nothing concrete to
 write from, and the LLM would invent details — the exact failure this project exists to prevent.
 
 `products.affiliate_url` is always the buyer redirect target. `products.product_url` is optional
-and used only for enrichment/Open API item lookup. `products.media_mode` is set to `images` or
-`text` at intake and drives everything downstream.
+and used only for enrichment/Open API item lookup. `products.media_mode` is currently set to
+`images` whenever any media file exists and `text` otherwise; the individual file type is stored
+on `product_images.media_kind` as `IMAGE` or `VIDEO`.
 
 The KB service does:
-1. Upload any images → Cloudflare R2 (or local) → public URLs → `product_images`. **Skipped entirely
-   when none were supplied.**
+1. Upload any accepted media files → Cloudflare R2 (or local) → public URLs → `product_images`.
+   **Skipped entirely when none were supplied.**
 2. **Enrich**: if `product_url` exists, use that plain Shopee product page first; otherwise use
    the affiliate URL. The optional product URL helps the Shopee Open API parse the visible item id
    while preserving `affiliate_url` as the commission-bearing buyer link. The service fetches OG
@@ -171,9 +178,10 @@ The KB service does:
    `productOfferV2` query overlays *authoritative* `price_min`, `commission_rate`, `sales` and
    `rating` onto the enrichment (see `lib/shopee.js` → `enrichProductFromShopee`). The OG scrape
    remains the fallback, so absence of keys never degrades the product.
-3. **Vision pass (images only)**: each image → a cheap vision model → `product_images.vision_desc`
+3. **Vision pass:** intended for images → a cheap vision model → `product_images.vision_desc`
    ("close-up of the matte black handle, wooden table, warm light"), so copy **matches the image
-   it's paired with**.
+   it's paired with**. The helper can skip `media_kind='VIDEO'`, but the current server query does
+   not pass `media_kind` into `describeImage()`, so video vision handling is not yet cleanly wired.
    **Text-only path instead**: enrichment emits `sensory_details` — physical facts drawn strictly
    from your description that stand in for the missing photo. If the description doesn't support
    them it returns an empty array and sets `detail_confidence='low'`, and the writer is told to
@@ -193,12 +201,13 @@ Cron 03:00
          1. SELECT product  → weighted by product_score (Thompson sampling, see §4)
          2. SELECT arm      → epsilon-greedy 0.25 explore / 0.75 exploit over lever combos.
                               media_type is gated by what the product HAS:
-                                0 images → TEXT only
-                                1 image  → TEXT | IMAGE
-                                2+       → TEXT | IMAGE | CAROUSEL
-                              Products with images still draw TEXT ~15% of the time, so you
-                              learn whether the photo was even helping.
-         3. SELECT image    → fewest impressions first, round-robin. Skipped for TEXT.
+                                0 media files      → TEXT only
+                                images only        → TEXT | IMAGE | CAROUSEL (carousel needs 2+ images)
+                                exactly 1 video    → TEXT | VIDEO
+                                image+video mix    → TEXT | IMAGE | VIDEO | CAROUSEL | MIXED_CAROUSEL
+                              Products with media still draw TEXT sometimes, so you
+                              learn whether the visual was even helping.
+         3. SELECT media    → fewest impressions first, round-robin. Skipped for TEXT; media_kind filters image vs video choices.
          4. BUILD prompt    → system + product facts + lever instructions
                               + vision_desc (image posts) OR the no-image block (text posts)
                               + last-20-posts anti-repeat list + banned phrase list
@@ -220,18 +229,27 @@ Cost: 5 posts × 3 calls × ~1.5k tokens ≈ nothing (< $0.01/day on a cheap mod
 
 ```
 1. GET /{threads-user-id}/threads_publishing_limit   → abort if quota_usage > 200
-2. Branch on posts.media_type:
+2. `Quota guard` resolves the final media type from `posts.media_type` and resolved `image_urls`:
+     - no resolved URL for non-text media → downgrade to `TEXT`
+     - `CAROUSEL` with one URL → downgrade to `IMAGE`
+     - `IMAGE` with multiple URLs → truncate to one URL
+3. Current `Route by media type` branches in `wf3_publish.json`:
      TEXT     → POST /threads  media_type=TEXT & text=<copy>
      IMAGE    → POST /threads  media_type=IMAGE & image_url=<public url> & text=<copy>
      CAROUSEL → POST /threads  media_type=IMAGE & is_carousel_item=true  (once per image)
                 then POST /threads media_type=CAROUSEL & children=<ids> & text=<copy>
-   If media_type claims images but none resolve (deleted file, dead CDN), downgrade to TEXT.
-3. WAIT 35s for IMAGE/CAROUSEL, 3s for TEXT   (only media needs async processing)
-4. POST /v1.0/{user-id}/threads_publish?creation_id=...   → media_id
-5. WAIT 45–120s (random) — looks human, and lets the post get initial distribution
-6. Create reply container: media_type=TEXT, text=<cta + tracked link>, reply_to_id=<media_id>
-7. Publish reply → reply_id
-8. UPDATE posts SET status='published', threads_media_id, threads_reply_id, published_at
+4. WAIT 35s for IMAGE/CAROUSEL, 3s for TEXT. There is no status-poll loop in the current workflow.
+5. POST /v1.0/{user-id}/threads_publish?creation_id=...   → media_id
+6. WAIT 45–120s (random) — looks human, and lets the post get initial distribution
+7. Create reply container: media_type=TEXT, text=<cta + tracked link>, reply_to_id=<media_id>
+8. Publish reply → reply_id
+9. UPDATE posts SET status='published', threads_media_id, threads_reply_id, published_at
+
+**Not yet implemented in `wf3_publish.json`:** `VIDEO` should create a Threads container with
+`media_type=VIDEO` and `video_url=<url>`, then poll `GET /v1.0/{container_id}?fields=status,error_message`
+until `status == 'FINISHED'` before `threads_publish`. `MIXED_CAROUSEL` should create child
+items with `media_type=IMAGE` or `media_type=VIDEO` plus `is_carousel_item=true`, wait/poll video
+children, then group children under a parent `CAROUSEL` container. Those nodes are absent today.
 ```
 
 **Why link in the comment:** Threads suppresses reach on posts with outbound links in the body.
@@ -252,7 +270,31 @@ Cron */3 days
 
 ---
 
-## 4. Scoring — the part that decides whether you make money
+## 4. Settings table and live configuration
+
+`settings` is a generic `key TEXT PRIMARY KEY, value JSONB` table. Current code reads these keys:
+
+| Key | Current reader/writer | Reload behavior |
+|---|---|---|
+| `llm` | `services/kb/lib/llm.js`, `wf2_generate`, `wf6_persona`; edited by `/settings.html` via `GET/PUT /api/config/llm` and `scripts/configure_llm.sh` | KB caches for ~5 seconds; n8n reads at workflow execution time. |
+| `qa` | `wf2_generate`, `wf6_persona`, `n8n/code/qa.js`, `n8n/code/qa_persona.js` | Read at workflow execution time. |
+| `posting` | `wf2_generate`, `wf4_evaluate`, seed defaults | Read at workflow execution time. |
+| `bandit` | `wf2_generate`, `wf4_evaluate`, `wf6_persona` | Read at workflow execution time. |
+| `scoring` | `wf4_evaluate`, `n8n/code/scoring.js` | Read at workflow execution time. |
+| `warmup` | `wf6_persona` | Read at workflow execution time. |
+| `l4_reply` | `wf7_l4_reply` | Read at workflow execution time. Current workflow also expects `l4_reply.value.threads_token` for reply publishing. |
+| `next_cycle_plan` | `wf2_generate` reads it; `wf4_evaluate` writes it | Updated every evaluation cycle. |
+| `threads_creds` | `wf0_token_refresh`, `wf3_publish`, `wf4_evaluate`; written by `scripts/set_secrets.sh` | Read at workflow execution time. |
+| `text_variation` | Seeded by migration 015 and used by `n8n/code/text_variation.js` only if a workflow node is added | Not wired into current workflow JSONs. |
+| `locale`, `redirect_base_url`, `shopee_app_id`, `shopee_app_secret` | Seed/config support keys; Shopee code reads `shopee_app_id` / `shopee_app_secret` after env vars | Mixed; service-level code reads on demand. |
+
+**Not present in current code:** there is no `PUT /api/config/system/:key` endpoint and no five-tab
+System Settings Control Board. `/settings.html` currently edits only `settings.llm` through
+`/api/config/llm`.
+
+---
+
+## 5. Scoring — the part that decides whether you make money
 
 Do **not** optimize likes. Optimize money, with engagement as an early proxy while conversion
 data is sparse.
@@ -316,7 +358,7 @@ converge in ~4–6 cycles. Full-combo stats are only used once a combo has n ≥
 
 ---
 
-## 5. Tracking (this is where most people fail)
+## 6. Tracking (this is where most people fail)
 
 You cannot read Shopee clicks from Threads. Build a 40-line redirector — it is the highest ROI
 component in this whole system.
@@ -346,13 +388,13 @@ CSV by hand, POST normalized rows to `POST /api/import/conversions`
 (`{ "rows": [ { order_id, post_uid, commission, status, ... } ] }`) — that is the manual fallback
 path and needs no API keys.
 
-Also track, per post: hour-of-day, day-of-week, image_id, media_type (TEXT/IMAGE/CAROUSEL), character count,
+Also track, per post: hour-of-day, day-of-week, asset ids, media_type (`TEXT`/`IMAGE`/`CAROUSEL`/`VIDEO`/`MIXED_CAROUSEL`), character count,
 emoji count, whether a hashtag was used, seconds between post and CTA reply. All of these become
 extra levers you can analyze later — store them even before you optimize them.
 
 ---
 
-## 6. Anti-ban / account-safety rules (bake these into the workflow)
+## 7. Anti-ban / account-safety rules (bake these into the workflow)
 
 - Max 5 posts/day even though the API allows 250. Never burst.
 - Jitter every schedule ±18 min; skip a slot entirely 8% of the time (real humans are irregular).
@@ -368,14 +410,14 @@ extra levers you can analyze later — store them even before you optimize them.
 
 ---
 
-## 7. What you build, in order (don't build it all at once)
+## 8. What you build, in order (don't build it all at once)
 
 | Phase | Days | Deliverable | Stop-and-check |
 |---|---|---|---|
 | **P0** | 1 | Meta app + Threads tester access + long-lived token, post one **text** post manually via curl | A post appears on your profile |
 | **P1** | 1 | Postgres schema + docker-compose up | `psql` shows tables |
 | **P2** | 1 | Redirector service + Cloudflare tunnel hostname | `r.domain/p/test` redirects & logs |
-| **P3** | 0 | Intake — **already built** into the KB service; just open `/product.html` | Product row created; images optional |
+| **P3** | 0 | Intake — **already built** into the KB service; open `/product.html` for JPG/PNG images or call `POST /api/products` for backend media formats | Product row created; images/description optional as allowed by validation |
 | **P4** | 2 | `wf2_generate` with levers + QA | 5 queued posts that read like a human wrote them |
 | **P5** | 1 | `wf3_publish` with reply CTA | Live posts with link in comment |
 | **P6** | 2 | `wf4_evaluate` + bandit + dashboard | First cycle report after 3 days |
@@ -386,7 +428,7 @@ do not pay you.
 
 ---
 
-## 8. Honest risk list
+## 9. Honest risk list
 
 1. **Meta App Review.** `threads_content_publish` + `threads_manage_insights` need review for
    production. For a single account (yours), add yourself as a **Threads Tester** — no review

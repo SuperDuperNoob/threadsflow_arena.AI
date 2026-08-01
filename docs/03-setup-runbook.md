@@ -312,7 +312,7 @@ N8N_PASSWORD=pick_a_secure_password
 KB_PASSWORD=pick_a_secure_password
 
 # ═══ AI / LLM settings ═══
-# Default hosted 9router. You can change this later in KB → LLM Settings.
+# Default hosted 9router. You can change this later at https://kb.yourdomain.com/settings.html (current UI: LLM settings only).
 LLM_BASE_URL=https://9router.archxry.space/v1
 LLM_API_KEY=
 LLM_MODEL_WRITE=gemini-2.5-flash
@@ -367,12 +367,13 @@ Save and exit (`Ctrl+O`, `Enter`, `Ctrl+X`).
 docker compose up -d
 ```
 
-This starts three containers and one tunnel:
+This starts the application containers and the tunnel:
 
 - **postgres** — the database (stores products, posts, clicks, scores)
 - **n8n** — the automation engine (you will open this in your browser)
 - **redirector** — the link shortener + click tracker
-- **kb** — the Knowledge Base service (product upload form, PDF upload)
+- **kb** — the Knowledge Base service (product upload form, PDF upload, settings page)
+- **shopee-sync** — optional conversion sync loop; it waits safely if Shopee keys are missing
 - **cloudflared** — the Cloudflare Tunnel daemon
 
 Wait 30 seconds for everything to start, then check:
@@ -399,19 +400,37 @@ Instead of running multiple sql scripts manually, we have provided an automated 
 ./scripts/init_db.sh
 ```
 
-This script automatically executes all schemas, seeds, and **all 9 migrations** in the correct numerical order:
+This script automatically executes all schemas, seeds, and **all 20 migrations currently present** in `db/migrations/` in lexical/numerical order:
 1. **Core schemas** (`schema.sql`, `schema_techniques.sql`, `schema_kb.sql`)
 2. **Seeds** (`seed_levers_my.sql`, `seed_techniques_my.sql`, `mining_questions.sql`)
-3. **Migrations 001 through 017** (adding compatible media, localizations, contextual bandit weights, human-in-the-loop review queue, text variations, etc.)
-4. **Books techniques seed** (`seed_techniques_books.sql`)
+3. **Migrations 001 through 020** (including optional media, localisation, contextual bandit weights, persona warm-up, L4 replies, review queue, text variation tables, generation JSONB, draft statuses, and video/mixed-carousel schema groundwork)
+4. **Books / 2026 Threads / psychology technique seeds**
 5. **LLM config sync** from `infra/.env` into `settings.llm`
 
 > **What does each file do?** Think of `schema.sql` as creating empty tables (like empty Excel sheets). The `seed_*.sql` files fill those tables with starting data — the levers (writing styles), the techniques (copywriting patterns), and the banned phrases. The migrations make updates and add improvements over time.
 
 ### 2.5 — Store your Threads token in the database
 
-The workflows read secrets from the database, not from the `.env` file. This
+The workflows read Threads secrets from the database, not from the `.env` file. This
 lets wf0 (the token refresh workflow) update the token automatically.
+
+Preferred helper:
+
+```bash
+./scripts/set_secrets.sh --threads-token 'YOUR_LONG_TOKEN' --threads-user-id 'YOUR_USER_ID'
+```
+
+Current code caveat: `wf7_l4_reply.json` reads `settings.l4_reply.threads_token`, while
+`scripts/set_secrets.sh` writes `settings.l4_config.threads_token`. Until that mismatch is fixed,
+add the token into `settings.l4_reply` too if you activate wf7:
+
+```bash
+docker compose -f infra/docker-compose.yml exec -T postgres psql -U threadsflow -d threadsflow \
+  -v tok='YOUR_LONG_TOKEN' \
+  -c "UPDATE settings SET value = value || jsonb_build_object('threads_token', :'tok') WHERE key='l4_reply';"
+```
+
+Manual SQL path if you prefer to inspect the rows yourself:
 
 Log into the database interactively:
 
@@ -878,21 +897,28 @@ Authorization: Bearer {{ $json.cfg.llm.api_key }}
 
 So you normally do **not** edit the HTTP nodes one by one. Change the endpoint in one place:
 
-- Browser: `https://kb.yourdomain.com/settings.html`
+- Browser: `https://kb.yourdomain.com/settings.html` — current UI title is **LLM Settings**. It has preset/base-url/API-key/model fields plus **Save config**, **Test /models**, and **Clear saved API key** buttons.
 - CLI: `./scripts/configure_llm.sh --local-9router` or `./scripts/configure_llm.sh --base-url ...`
 - SQL: update the `settings` row where `key='llm'`
+
+There is not currently a five-tab System Settings Control Board, and there is no
+`PUT /api/config/system/:key` route in `services/kb/server.js`; other settings rows are edited by
+SQL or workflow/script logic.
 
 If you imported an older workflow, re-import `n8n/workflows/wf2_generate.json` or manually change
 its LLM HTTP nodes to read from `cfg.llm` instead of hard-coded URLs.
 
 ### 4.5 — Assign credentials to each workflow
 
-For every **Postgres** node in every workflow:
+If you used `scripts/bootstrap_n8n.sh`, this is already done: the script imports the Postgres
+credential with id `PG`, and the workflow JSONs reference that id.
+
+Manual fallback only: for every **Postgres** node in every workflow:
 1. Double-click the node
 2. Under **Credential to connect with**, select `Postgres threadsflow`
 3. Click outside to save
 
-Each workflow has multiple Postgres nodes. Go through them all.
+Each workflow has multiple Postgres nodes. Go through them all only if you imported manually.
 
 ---
 
@@ -975,7 +1001,7 @@ The KB service has web pages at `https://kb.yourdomain.com`:
 | Page | URL | What it does |
 |---|---|---|
 | Review Queue | `https://kb.yourdomain.com/queue.html` | Human-in-the-loop review dashboard (approve/reject/edit posts) |
-| Product intake | `https://kb.yourdomain.com/product.html` | Add products with images and/or description |
+| Product intake | `https://kb.yourdomain.com/product.html` | Add products with JPG/PNG images and/or description |
 | Knowledge Base | `https://kb.yourdomain.com/` | Upload copywriting PDFs to grow the technique library |
 
 Open the product page. You will go through two login steps: first Cloudflare
@@ -983,10 +1009,16 @@ Access (if you set the email policy on kb.yourdomain.com), then the KB's own
 login form using your KB_PASSWORD. After that, paste your Shopee affiliate link
 (the money link). If you also have the normal full product page, paste it into
 `Full Shopee product URL` — it is optional and used only to help enrichment find
-the item ID. Then either drop 1–4 images OR write a description of at least 80
+the item ID. Then either drop 1–4 JPG/PNG images OR write a description of at least 80
 characters (or both). The form tells you which mode you are in as you type.
 
-> **Affiliate link alone is rejected.** With no photo and no words, the AI has
+Backend/API note: `POST /api/products` accepts JPG/PNG/WebP images and MP4/MOV videos under the
+same multipart field name (`images`) with a 20-file server limit. The browser page does **not**
+currently expose video selection, and the current `wf3_publish.json` does **not** yet publish
+`VIDEO` or `MIXED_CAROUSEL` safely. Avoid video uploads for live products until that workflow has
+a video branch and container status polling.
+
+> **Affiliate link alone is rejected.** With no media and no words, the AI has
 > nothing real to write from. You will see a message explaining what to add.
 
 The Knowledge Base at the same domain is optional. It already ships with **60

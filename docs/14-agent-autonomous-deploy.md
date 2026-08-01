@@ -1,11 +1,14 @@
 # Can an agent with MCP skills deploy this by itself?
 
-**Short answer: no — not one-click, and the MCP skill list is not the reason.**
+**Short answer: no — not zero-credential one-click, and the MCP skill list is not the reason.**
+
+For the full zero-credential sourcing table and agent preflight gate, see [`docs/guide/README.md`](guide/README.md).
 
 An agent already on the VPS with `run_commands` can do ~85% of the deploy without
-any MCP servers at all, because this repo is shell scripts + Docker Compose. What
-blocks full autonomy is four credentials that are gated behind human identity
-checks and browser consent screens. No MCP server can click those.
+any MCP servers at all, because this repo is shell scripts + Docker Compose. What blocks full autonomy is not shell access; it is the set of accounts and credentials behind
+human identity, consent, DNS, or billing gates: VPS/domain ownership, Cloudflare bootstrap, LLM
+provider key (unless you use a no-auth endpoint), Meta/Threads OAuth, and optional Shopee or
+Perplexity API access. No MCP server can turn those into legitimate credentials from nothing.
 
 This document is the honest accounting: what is automated now, what is not, and
 why.
@@ -198,8 +201,9 @@ reads separately — easy to miss by hand.
 # 1. Agent, unattended (~10 min)
 curl -sSL .../scripts/setup_new_vps.sh | sudo bash
 
-# 2. Human, once: paste 4 values into infra/.env
-#    CF_TUNNEL_TOKEN, S3_KEY, S3_SECRET, LLM_API_KEY
+# 2. Human, once: paste externally sourced values into infra/.env
+#    domain-derived hostnames, CF_TUNNEL_TOKEN, R2 S3_ENDPOINT/S3_KEY/S3_SECRET,
+#    PUBLIC_IMAGE_BASE, PUBLIC_REDIRECT_BASE, and an LLM key if your endpoint requires one
 cd infra && docker compose up -d
 
 # 3. Human, once: the Meta OAuth dance, then hand the result to the agent
@@ -232,8 +236,11 @@ The skills in your table mostly do not change the answer:
   defeating an identity check, and it is the single fastest way to lose the
   account this system exists to grow.
 
-The bottleneck was never tool access. It was four bugs in the setup path and one
-irreducible human identity check.
+The bottleneck was never tool access. It was setup correctness plus irreducible human identity,
+consent, DNS, and billing gates. Current audit note: the data model includes `VIDEO` and
+`MIXED_CAROUSEL`, but `wf3_publish.json` still lacks video/mixed publish routes and async
+container polling; an autonomous agent should not enable those live levers until the workflow is
+extended.
 
 ---
 

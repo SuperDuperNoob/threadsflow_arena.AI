@@ -34,7 +34,7 @@ A sensible first-deployment sequence:
 | Steady state | `queued` | Yes | `DEBUG_MODE=false`, `LOG_LEVEL=info` |
 
 Before the canary counts as "live", the prerequisites from the runbook must be real:
-Threads token in `settings.threads_creds`, Cloudflare Tunnel hostnames, image hosting
+Threads token in `settings.threads_creds`, Cloudflare Tunnel hostnames, media hosting
 (R2), a reachable LLM endpoint, at least one product added via the KB, and the workflows
 toggled active in n8n. The canary is precisely what tells you within hours if any of
 those are misconfigured, instead of a week later.
