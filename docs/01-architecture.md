@@ -276,7 +276,7 @@ Cron */3 days
 
 | Key | Current reader/writer | Reload behavior |
 |---|---|---|
-| `llm` | `services/kb/lib/llm.js`, `wf2_generate`, `wf6_persona`; edited by `/settings.html` via `GET/PUT /api/config/llm` and `scripts/configure_llm.sh` | KB caches for ~5 seconds; n8n reads at workflow execution time. |
+| `llm` | `services/kb/lib/llm.js`, `wf2_generate`, `wf6_persona`; edited by `/settings.html` (LLM tab) via `GET/PUT /api/config/llm` and `scripts/configure_llm.sh` | KB caches for ~5 seconds; n8n reads at workflow execution time. |
 | `qa` | `wf2_generate`, `wf6_persona`, `n8n/code/qa.js`, `n8n/code/qa_persona.js` | Read at workflow execution time. |
 | `posting` | `wf2_generate`, `wf4_evaluate`, seed defaults | Read at workflow execution time. |
 | `bandit` | `wf2_generate`, `wf4_evaluate`, `wf6_persona` | Read at workflow execution time. |
@@ -288,9 +288,15 @@ Cron */3 days
 | `text_variation` | Seeded by migration 015 and used by `n8n/code/text_variation.js` only if a workflow node is added | Not wired into current workflow JSONs. |
 | `locale`, `redirect_base_url`, `shopee_app_id`, `shopee_app_secret` | Seed/config support keys; Shopee code reads `shopee_app_id` / `shopee_app_secret` after env vars | Mixed; service-level code reads on demand. |
 
-**Not present in current code:** there is no `PUT /api/config/system/:key` endpoint and no five-tab
-System Settings Control Board. `/settings.html` currently edits only `settings.llm` through
-`/api/config/llm`.
+**Now live:** `/settings.html` is a tabbed System Settings Control Board. Besides the LLM tab
+(`/api/config/llm`), the Posting Schedule, Bandit / Scoring, Content / QA, Auto-Reply Loop, and
+Warmup tabs read/write via the generic `GET /api/config/system/:key` and `PUT /api/config/system/:key`
+routes (`services/kb/server.js:275-300`). Both routes 404 on any key outside the allowlist
+`{posting, bandit, qa, l4_reply, warmup, scoring}` (`services/kb/server.js:238`), so secret-bearing
+keys such as `threads_creds` can never be read or written through this surface. `PUT` does an atomic
+read-modify-write merge and runs key-specific range validation (`validateSystemSetting`,
+`services/kb/server.js:240-273`) — e.g. `skip_probability`/`epsilon`/`max_similarity` must be 0–1,
+`jitter_minutes` ≥ 0 — before the merged JSON is upserted into the `settings` row.
 
 ---
 

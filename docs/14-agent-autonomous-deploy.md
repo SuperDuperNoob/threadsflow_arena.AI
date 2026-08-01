@@ -190,8 +190,8 @@ jsonb_set(...)` **silently does nothing when the row does not exist** (verified:
 row, preserves sibling keys on rotation, and passes values as query parameters
 so tokens containing quotes or backslashes cannot break or inject.
 
-It writes both `threads_creds` and `l4_config.threads_token`, which `wf7_l4_reply`
-reads separately — easy to miss by hand.
+It writes both `threads_creds` and `l4_reply.threads_token` — the same key `wf7_l4_reply`
+reads from — in one pass, so there is no separate manual sync step.
 
 ---
 
