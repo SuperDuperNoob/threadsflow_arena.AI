@@ -82,12 +82,12 @@ if $SHOW; then
            CASE
              WHEN key = 'threads_creds' THEN
                COALESCE('token ' || left(value->>'token', 8) || '… / user_id ' || (value->>'user_id'), 'unset')
-             WHEN key = 'shopee' THEN
-               COALESCE('app_id ' || (value->>'app_id'), 'unset')
+             WHEN key IN ('shopee_app_id','shopee_app_secret') THEN
+               COALESCE(key || ' ' || left(value::text,20), 'unset')
              ELSE left(value::text, 40)
            END AS summary
       FROM settings
-     WHERE key IN ('threads_creds','shopee','llm','l4_config')
+     WHERE key IN ('threads_creds','shopee_app_id','shopee_app_secret','llm','l4_config','l4_reply')
      ORDER BY key;"
   exit 0
 fi
@@ -132,9 +132,9 @@ ON CONFLICT (key) DO UPDATE
               || jsonb_build_object('token', :'tok', 'user_id', :'uid',
                                     'expires_at', (now() + interval '60 days')::text);
 
--- wf7_l4_reply reads the token from l4_config, so keep the two in sync.
+-- wf7_l4_reply reads the token from l4_reply (settings.l4_reply.threads_token)
 INSERT INTO settings (key, value)
-VALUES ('l4_config', jsonb_build_object('threads_token', :'tok'))
+VALUES ('l4_reply', jsonb_build_object('threads_token', :'tok', 'enabled', false))
 ON CONFLICT (key) DO UPDATE
   SET value = settings.value || jsonb_build_object('threads_token', :'tok');
 SQL
@@ -149,7 +149,7 @@ if [[ -n "$SHOPEE_APP_ID" || -n "$SHOPEE_SECRET" ]]; then
   fi
   psql_run -v aid="$SHOPEE_APP_ID" -v sec="$SHOPEE_SECRET" <<'SQL'
 INSERT INTO settings (key, value)
-VALUES ('shopee', jsonb_build_object('app_id', :'aid', 'app_secret', :'sec'))
+VALUES ('shopee_app_id', to_jsonb(:'aid'::text))
 ON CONFLICT (key) DO UPDATE
   SET value = settings.value || jsonb_build_object('app_id', :'aid', 'app_secret', :'sec');
 SQL
