@@ -34,6 +34,14 @@ CREATE TABLE products (
   created_at     TIMESTAMPTZ DEFAULT now()
 );
 
+-- A strict shared cap for optional Apify enrichment. The client atomically reserves a run
+-- before calling the paid service, keeping a deployment inside its configured monthly budget.
+CREATE TABLE apify_monthly_usage (
+  month        DATE PRIMARY KEY,
+  runs         INTEGER NOT NULL DEFAULT 0 CHECK (runs >= 0),
+  updated_at   TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
 CREATE TABLE product_images (
   id           BIGSERIAL PRIMARY KEY,
   product_id   BIGINT REFERENCES products(id) ON DELETE CASCADE,

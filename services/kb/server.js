@@ -15,7 +15,9 @@ import pg from 'pg';
 import { sha256 } from './lib/pdf.js';
 import { startWorker } from './lib/worker.js';
 import { putImage, enrich, describeImage, shortId, getMediaKind, getExtension } from './lib/products.js';
-import { registerShopeePool, isConfigured } from './lib/shopee.js';
+import { registerShopeePool, getShopeeAvailability } from './lib/shopee.js';
+import { registerApifyPool, getApifyAvailability } from './lib/apify_shopee.js';
+import { searchTrendingProducts } from './lib/apify_discovery.js';
 import { upsertConversionRows } from './lib/shopee_conversions.js';
 import { clearLlmConfigCache, getLlmConfig, normalizeLlmConfig, registerLlmPool } from './lib/llm.js';
 import { createLogger, hostOnly } from './lib/logger.js';
@@ -39,6 +41,7 @@ if (!KB_PASSWORD && KB_ALLOW_NO_PASSWORD !== 'true') {
 const pool = new pg.Pool({ connectionString: DATABASE_URL, max: 6 });
 // Let the Shopee and LLM clients read shared config from the `settings` table (repo convention).
 registerShopeePool(pool);
+registerApifyPool(pool);
 registerLlmPool(pool);
 const app = express();
 app.use(express.json({ limit: '1mb' }));
@@ -622,8 +625,47 @@ app.get('/api/products', requireAuth, async (_, res) => {
 // path for when you would rather POST a normalized CSV.
 
 app.get('/api/shopee/status', requireAuth, async (_req, res) => {
-  res.json({ configured: await isConfigured() });
+  // `missing` is intentionally non-sensitive; it makes the no-credential fallback visible
+  // without ever returning the App ID or API secret.
+  res.json(await getShopeeAvailability());
 });
+
+app.get('/api/apify/status', requireAuth, async (_req, res) => {
+  res.json(await getApifyAvailability());
+});
+
+// Tokens are write-only: list/edit/delete operations reveal labels and state, never token bytes.
+app.get('/api/apify/keys', requireAuth, async (_req, res) => {
+  const { rows } = await pool.query(`SELECT k.id,k.label,k.active,k.priority,k.disabled_until,k.created_at,
+    COALESCE(u.runs,0)::int AS runs_this_month FROM apify_api_keys k
+    LEFT JOIN apify_key_monthly_usage u ON u.key_id=k.id AND u.month=date_trunc('month',now())::date
+    ORDER BY k.priority,k.id`);
+  res.json(rows);
+});
+app.post('/api/apify/keys', requireAuth, async (req, res) => {
+  const label=String(req.body?.label??'').trim(), token=String(req.body?.token??'').trim();
+  if (!label || label.length>80 || !token || token.length>1000) return res.status(400).json({error:'label and token are required'});
+  try { const {rows:[key]}=await pool.query(`INSERT INTO apify_api_keys(label,token,priority) VALUES($1,$2,$3) RETURNING id,label,active,priority,created_at`,[label,token,Number(req.body?.priority)||100]); res.status(201).json(key); } catch(e) { res.status(400).json({error:'key label already exists'}); }
+});
+app.put('/api/apify/keys/:id', requireAuth, async (req,res) => {
+  const id=Number(req.params.id); if (!Number.isInteger(id)) return res.status(400).json({error:'invalid key id'});
+  const label=String(req.body?.label??'').trim(); if (!label || label.length>80) return res.status(400).json({error:'label is required'});
+  const token=typeof req.body?.token==='string'&&req.body.token.trim()?req.body.token.trim():null;
+  const {rows:[key]}=await pool.query(`UPDATE apify_api_keys SET label=$2,priority=$3,active=$4,token=COALESCE($5,token),disabled_until=CASE WHEN $4 THEN NULL ELSE disabled_until END,updated_at=now() WHERE id=$1 RETURNING id,label,active,priority,disabled_until`,[id,label,Number(req.body?.priority)||100,req.body?.active!==false,token]);
+  if(!key)return res.status(404).json({error:'key not found'}); res.json(key);
+});
+app.delete('/api/apify/keys/:id', requireAuth, async (req,res) => { const r=await pool.query('DELETE FROM apify_api_keys WHERE id=$1',[req.params.id]); if(!r.rowCount)return res.status(404).json({error:'key not found'}); res.json({ok:true}); });
+
+app.post('/api/research/shopee', requireAuth, async (req,res) => {
+  const keyword=String(req.body?.keyword??'').trim(), sort=req.body?.sort??'sales', maxProducts=Math.max(1,Math.min(20,Number(req.body?.max_products)||20));
+  const {rows:[run]}=await pool.query(`INSERT INTO product_research_runs(keyword,sort,max_products,status) VALUES($1,$2,$3,'running') RETURNING id`,[keyword,sort,maxProducts]);
+  const out=await searchTrendingProducts({keyword,sort,maxProducts});
+  if(!out.ok){await pool.query(`UPDATE product_research_runs SET status=$2,error_code=$3,completed_at=now() WHERE id=$1`,[run.id,out.reason==='key_monthly_limit_reached'?'budget_blocked':'failed',out.reason]);return res.status(out.reason==='invalid_keyword'||out.reason==='invalid_sort'?400:200).json({ok:false,run_id:run.id,reason:out.reason});}
+  for(const c of out.candidates){await pool.query(`INSERT INTO product_research_candidates(run_id,shop_id,item_id,product_url,title,image_url,currency,price,original_price,discount_pct,rating,rating_count,sold_count,location,is_mall,opportunity_score) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)`,[run.id,c.shop_id,c.item_id,c.product_url,c.title,c.image_url,c.currency,c.price,c.original_price,c.discount_pct,c.rating,c.rating_count,c.sold_count,c.location,c.is_mall,c.opportunity_score]);await pool.query(`INSERT INTO product_research_snapshots(shop_id,item_id,price,rating,rating_count,sold_count) VALUES($1,$2,$3,$4,$5,$6)`,[c.shop_id,c.item_id,c.price,c.rating,c.rating_count,c.sold_count]);}
+  await pool.query(`UPDATE product_research_runs SET status='succeeded',candidate_count=$2,completed_at=now() WHERE id=$1`,[run.id,out.candidates.length]);res.json({ok:true,run_id:run.id,candidates:out.candidates});
+});
+app.get('/api/research/shopee/runs', requireAuth, async (_req,res)=>{const {rows}=await pool.query('SELECT * FROM product_research_runs ORDER BY created_at DESC LIMIT 30');res.json(rows);});
+app.get('/api/research/shopee/runs/:id/candidates', requireAuth, async (req,res)=>{const {rows}=await pool.query('SELECT * FROM product_research_candidates WHERE run_id=$1 ORDER BY opportunity_score DESC',[req.params.id]);res.json(rows);});
 
 app.post('/api/import/conversions', requireAuth, async (req, res) => {
   const rows = req.body?.rows;

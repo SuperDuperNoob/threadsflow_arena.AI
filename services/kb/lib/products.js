@@ -12,6 +12,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { complete } from './llm.js';
 import { enrichProductFromShopee } from './shopee.js';
+import { enrichProductFromApify } from './apify_shopee.js';
 
 const {
   IMAGE_BACKEND = 'local',            // 'local' | 's3'
@@ -127,8 +128,8 @@ export const putImage = (buf, key, ct) =>
  * `productUrl`, when supplied, is the plain Shopee product URL used only to identify/enrich the
  * product (short affiliate links often hide the item id). When Shopee Open API keys are
  * configured, price + commission come from productOfferV2 (authoritative, no scraper, no cost).
- * Otherwise — or if the API call fails — it falls back to OpenGraph tags. Either way it must
- * never block the user.
+ * Otherwise — or if the API call fails — the optional, budget-capped Charted Sea Apify lookup is
+ * tried before OpenGraph tags. Either way it must never block the user.
  */
 export async function enrich({ affiliateUrl, productUrl = '', name, priceIdr, notes, description = '', mediaMode = 'images' }) {
   const lookupUrl = productUrl || affiliateUrl;
@@ -137,9 +138,17 @@ export async function enrich({ affiliateUrl, productUrl = '', name, priceIdr, no
   // full product URL first because it exposes `/product/<shop>/<item>` or `/i.<shop>.<item>`;
   // the affiliate short URL should remain untouched for buyer redirects and commission tracking.
   let shopee = null;
+  let apify = null;
   try {
     shopee = await enrichProductFromShopee(lookupUrl, { name });
-  } catch { /* enrichment is optional — fall through to scraping/fallback */ }
+  } catch { /* enrichment is optional — fall through to the paid fallback */ }
+
+  // Apify is strictly second priority: never spend a run when the official Affiliate API gave
+  // us an offer. Its own client enforces the shared monthly cap before making a network call.
+  if (!shopee?.ok) {
+    try { apify = await enrichProductFromApify(lookupUrl); } catch { /* continue to free OG */ }
+  }
+  const productData = shopee?.ok ? shopee : (apify?.ok ? apify : null);
 
   let og = {};
   const ogUrls = [...new Set([productUrl, affiliateUrl].filter(Boolean))];
@@ -158,20 +167,30 @@ export async function enrich({ affiliateUrl, productUrl = '', name, priceIdr, no
   }
 
   const base = {
-    name: name || shopee?.name || og.title || null,
-    price_myr: priceIdr ? Number(priceIdr) : (shopee?.price_min ?? null),
+    name: name || productData?.name || og.title || null,
+    price_myr: priceIdr ? Number(priceIdr) : (productData?.price_min ?? null),
     og_description: og.description ?? null,
     media_mode: mediaMode,
     product_url: productUrl || null,
     enrichment_url: lookupUrl,
-    // Shopee Open API enrichment fields (null unless the API is configured and matched)
-    shopee_source: shopee?.ok ? 'shopee_openapi' : (og.title || og.description ? 'og' : 'none'),
-    shopee_item_id: shopee?.item_id ?? null,
+    // Affiliate-only values remain null for scraped Apify data. `top_reviews` is intentionally
+    // a short, de-identified sample and is treated as copy context rather than product fact.
+    shopee_source: shopee?.ok ? 'shopee_openapi' : (apify?.ok ? 'apify_chartedsea' : (og.title || og.description ? 'og' : 'none')),
+    shopee_item_id: productData?.item_id ?? null,
+    shopee_shop_id: apify?.shop_id ?? null,
     shopee_commission_rate: shopee?.commission_rate ?? null,
     shopee_commission: shopee?.commission ?? null,
-    shopee_sales: shopee?.sales ?? null,
-    shopee_rating: shopee?.rating ?? null,
+    shopee_sales: productData?.sales ?? null,
+    shopee_rating: productData?.rating ?? null,
     shopee_offer_link: shopee?.offer_link ?? null,
+    apify_images: apify?.images ?? [],
+    apify_categories: apify?.categories ?? [],
+    apify_variants: apify?.variants ?? [],
+    apify_seller: apify?.seller ?? null,
+    enrichment_attempts: [
+      { source: 'shopee_openapi', result: shopee?.ok ? 'ok' : (shopee?.reason ?? 'failed') },
+      ...(shopee?.ok ? [] : [{ source: 'apify_chartedsea', result: apify?.ok ? 'ok' : (apify?.reason ?? 'not_attempted') }]),
+    ],
   };
 
   // With no images there is no vision pass, so concrete_details is the ONLY specificity the
@@ -205,10 +224,14 @@ ${textOnly
       JSON.stringify({ affiliate_url: affiliateUrl, product_url: productUrl || null,
                        enrichment_url: lookupUrl, og, user_name: name, user_price: priceIdr,
                        user_notes: notes, user_description: description,
-                       shopee: shopee?.ok ? {
-                         price_min: shopee.price_min, price_max: shopee.price_max,
-                         commission_rate: shopee.commission_rate, sales: shopee.sales,
-                         rating: shopee.rating,
+                       shopee: productData?.ok ? {
+                         source: productData.source,
+                         price_min: productData.price_min, price_max: productData.price_max,
+                         commission_rate: shopee?.commission_rate ?? null, sales: productData.sales,
+                         rating: productData.rating, description: apify?.description ?? null,
+                         categories: apify?.categories ?? [], variants: apify?.variants ?? [],
+                         // De-identified snippets only. The prompt already forbids invented reviews.
+                         top_reviews: apify?.top_reviews ?? [],
                        } : null }),
       { temperature: 0.2 });
     return { ...base, ...out, enriched: true };

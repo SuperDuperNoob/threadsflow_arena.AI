@@ -9,10 +9,15 @@ import {
   conversionReportQuery,
   callShopee,
   configureShopee,
+  getShopeeAvailability,
+  searchProductOffers,
+  generateShortLink,
+  getConversions,
+  getValidatedReport,
   ShopeeApiError,
   ShopeeNotConfigured,
 } from './shopee.js';
-import { mapConversionNodes, upsertConversionRows } from './shopee_conversions.js';
+import { mapConversionNodes, upsertConversionRows, pullConversions } from './shopee_conversions.js';
 
 const APP_ID = '123456';
 const SECRET = 'secret_key';
@@ -118,9 +123,34 @@ test('callShopee rejects non-2xx HTTP responses without GraphQL errors', async (
   }
 });
 
-test('callShopee throws ShopeeNotConfigured when no credentials', async () => {
-  configureShopee({ appId: '', secret: '' });
+test('missing or whitespace credentials are reported without exposing values', async () => {
+  configureShopee({ appId: '   ', secret: '' });
+  assert.deepEqual(await getShopeeAvailability(), { configured: false, missing: ['app_id', 'secret'] });
   await assert.rejects(() => callShopee('{ x }'), ShopeeNotConfigured);
+});
+
+test('optional Shopee wrappers use local fallbacks and never call fetch without credentials', async () => {
+  configureShopee({ appId: '', secret: '' });
+  const realFetch = global.fetch;
+  global.fetch = async () => { throw new Error('fetch must not be called without credentials'); };
+  try {
+    assert.deepEqual(await searchProductOffers({ keyword: 'phone' }), []);
+    assert.equal(await generateShortLink({ originUrl: 'https://s.shopee.com.my/example' }), null);
+    assert.deepEqual(await getConversions(), { nodes: [], pageInfo: {} });
+    assert.deepEqual(await getValidatedReport(), { nodes: [], pageInfo: {} });
+  } finally {
+    global.fetch = realFetch;
+  }
+});
+
+test('conversion sync is skipped without credentials and does not query the database', async () => {
+  let queryCount = 0;
+  const pool = { query: async () => { queryCount++; } };
+  assert.deepEqual(
+    await pullConversions({ pool }),
+    { fetched: 0, rows: 0, inserted: 0, updated: 0, skipped: 'not_configured' },
+  );
+  assert.equal(queryCount, 0);
 });
 
 test('mapConversionNodes maps utmContent (sub_id) -> post_uid and one row per order', () => {
