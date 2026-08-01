@@ -597,6 +597,8 @@ app.post('/api/products', requireAuth, mediaUpload.array('images', 20), async (r
 
     res.json({ ok: true, product_uid: p.uid, product_id: p.id,
                images: files.length, media_mode: mediaMode,
+               image_count: files.filter(f => getMediaKind(f.mimetype) === 'IMAGE').length,
+               video_count: files.filter(f => getMediaKind(f.mimetype) === 'VIDEO').length,
                product_url: productUrl || null });
   } catch (e) {
     await client.query('ROLLBACK').catch(() => {});
