@@ -8,11 +8,14 @@ This folder contains the persisted outputs from the Documentation & Architecture
 2. [`01-credential-sourcing.md`](01-credential-sourcing.md) — code-derived credential/account inventory, Tier A/B/C classification, and zero-to-credential sourcing table.
 3. [`02-preflight-checklist.md`](02-preflight-checklist.md) — ordered first-time-user checklist from no accounts/secrets to agent-ready deployment.
 4. [`03-agent-readiness-gate.md`](03-agent-readiness-gate.md) — copy-paste preflight gate that verifies required `.env` and DB-held secrets before deployment/activation.
+5. [`04-refresh-prompt.md`](04-refresh-prompt.md) — this refresh workflow prompt (versioned artifact, evolves with repo per §5).
 
 ## Open Questions / Code Mismatches Found
 
 Re-verified 2026-08-01 against current `main` (after commits `46ae8d1` and `464300e`). **Re-verified 2026-08-01 (second pass) against commits `cbc05da`, `b315e49`, `f448cda`, `e4e7b53`, `2bef5af`, `1d796b4`, `460c5df`, `b8be4f9`.** These were
 not guessed around; they are documented as current live-code mismatches:
+
+**Re-verified 2026-08-01 (second pass, against `main` at `5f94ba2`, no new commits).** All 5 open items persist; guide files updated for resolved L4/Shopee mismatches and Control Board status; Apify credential added to inventory.
 
 1. **~~System Settings Control Board not present~~ — RESOLVED.** `/settings.html` is now a 6-tab
    board. The LLM tab still uses `/api/config/llm`; the other five (`posting`, `bandit`, `qa`,

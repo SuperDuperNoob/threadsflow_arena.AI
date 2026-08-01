@@ -46,12 +46,7 @@ Follow this top to bottom before handing the VPS/repo to an agent for deployment
    ```bash
    ./scripts/set_secrets.sh --threads-token 'TOKEN' --threads-user-id 'NUMERIC_ID'
    ```
-   Because of the current L4 mismatch, also add the token to `settings.l4_reply` before activating `wf7_l4_reply`:
-   ```sql
-   UPDATE settings
-   SET value = value || jsonb_build_object('threads_token', 'TOKEN')
-   WHERE key='l4_reply';
-   ```
+   This single command now populates both `settings.threads_creds` and `settings.l4_reply.threads_token` (`scripts/set_secrets.sh:135-141`), so no separate SQL patch is needed.
 
 7. **Optional: create Shopee Affiliate Open API credentials** — see [Shopee Affiliate Open API App ID/API Secret](01-credential-sourcing.md#cred-shopee). Place if/when approved:
    ```env

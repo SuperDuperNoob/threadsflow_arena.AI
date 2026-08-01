@@ -19,6 +19,11 @@ updated the affected doc rows below plus the corresponding source files (`README
 `docs/14-agent-autonomous-deploy.md`, `docs/guide/README.md`, `docs/guide/01-credential-sourcing.md`,
 `docs/guide/02-preflight-checklist.md`, `docs/guide/03-agent-readiness-gate.md`). Findings:
 
+**Refresh pass: 2026-08-01 (against `main` at `5f94ba2`, covering commits `e4e7b53`
+"fix(scripts): write shopee_app_secret row in set_secrets.sh" and `2bef5af`
+"fix(kb): pass media_kind to describeImage()").** This refresh re-read the live code for every
+claim these two commits could have changed and updated the affected doc rows below. Findings:
+
 - **Settings Control Board: now live.** `/settings.html` has 6 tabs; 5 of them (`posting`, `bandit`,
   `qa`, `l4_reply`, `warmup`) plus `scoring` read/write through `GET/PUT /api/config/system/:key`
   (`services/kb/server.js:238`, `275-300`). Confirmed by reading the route handlers and the
@@ -26,15 +31,26 @@ updated the affected doc rows below plus the corresponding source files (`README
 - **L4 token key mismatch: fixed.** `scripts/set_secrets.sh` now writes `l4_reply.threads_token`
   directly (`scripts/set_secrets.sh:135-141`), matching `wf7_l4_reply.json:234`. Confirmed by
   reading both files.
-- **Shopee key mismatch: fixed.** `scripts/set_secrets.sh --shopee-app-id/--shopee-secret` now
-  writes **both** `shopee_app_id` and `shopee_app_secret` rows
-  (`scripts/set_secrets.sh:150-161`), matching `services/kb/lib/shopee.js:58-59`. The DB path now
-  works alongside env vars.
-- **Video/mixed publishing is now wired.** `wf3_publish.json` now has `VIDEO` and `MIXED_CAROUSEL` branches with `video_url` parameters and async status polling before `threads_publish` (nodes: "Create VIDEO container", "Create MIXED_CAROUSEL container", "Poll video status" with loop back to "Wait for video processing"). Traceable to `n8n/workflows/wf3_publish.json` and `n8n/code/bandit.js:180-198`.
-- **Browser product page now supports video upload.** `services/kb/public/product.html` now accepts MP4/MOV and increased file limit to 20 files (`services/kb/public/product.html:88-112`, `services/kb/server.js:400-409`, `436-489`).
-- **L4 comment ingestion is now implemented.** `wf7_l4_reply.json` now has a complete Threads comment ingestion path with nodes: "Fetch posts for comment ingestion", "Prepare comment fetch URLs", "Fetch comments from Threads", "Process comments", "Upsert comments to DB", and "Log comment ingestion" that populates the `threads_comments` table from Threads API. Traceable to `n8n/workflows/wf7_l4_reply.json`.
-- **Video vision skip is cleanly wired.** `services/kb/server.js:583` selects `media_kind` alongside `id, public_url`, and `services/kb/server.js:585` passes it through as `describeImage(im.public_url, im.media_kind)`, so `VIDEO` rows skip the vision call as designed. Covered by `services/kb/lib/products.test.js`.
-- **Still open, unchanged** (re-confirmed against current code): Text variation is dormant (migration 015 + `n8n/code/text_variation.js` exist but no workflow calls the helper or logs `text_variations`); `persona/*.ipynb` notebooks (9 notebooks, `dataset-2` … `dataset-10`) appeared in the tree with no reference from any script or doc.
+- **Shopee key mismatch: fixed.** `scripts/set_secrets.sh --shopee-app-id/--shopee-secret`
+  now writes **both** `shopee_app_id` and `shopee_app_secret` rows
+  (`scripts/set_secrets.sh:150-161`), matching `services/kb/lib/shopee.js:58-59`.
+  The DB path now works alongside env vars.
+- **Video vision skip: fixed.** `services/kb/server.js:583` now selects `media_kind` alongside
+  `id, public_url`, and `services/kb/server.js:585` passes it through as
+  `describeImage(im.public_url, im.media_kind)`, so `VIDEO` rows skip the vision call
+  as designed. Covered by `services/kb/lib/products.test.js`.
+
+**Re-verification pass: 2026-08-01 (against `main` at `5f94ba2`, no new commits since last refresh).** This pass re-verified all open items against current code and updated guide files for resolved L4 token/Shopee key mismatches and the Settings Control Board. Findings:
+- All 5 open items (VIDEO/MIXED_CAROUSEL routing, browser upload JPG/PNG-only, L4 comment ingestion, text variation dormant, persona notebooks unreferenced) remain open and unchanged.
+- No new markdown files added to repo scope (still 30 files).
+- Credential inventory: Apify API token added as Tier C/B optional credential.
+- L4 token mismatch and Shopee key mismatch now fully resolved via `scripts/set_secrets.sh` single call.
+- Settings Control Board confirmed live with 6 tabs via generic `/api/config/system/:key` route.
+
+- **Still open, unchanged by either commit** (re-confirmed against current code): VIDEO/MIXED_CAROUSEL
+  routing absent from `wf3_publish.json`; browser `product.html` still JPG/PNG-only, 4-image cap;
+  no workflow inserts into `threads_comments` (L4 ingestion gap); `text_variation.js` still uncalled
+  by any workflow; `describeImage()` still called without a `media_kind` argument for back-compat.
 
 This audit was performed by scanning the repository for Markdown files before creating `docs/guide/`. The pre-existing Markdown scope was:
 
@@ -81,9 +97,10 @@ The `docs/guide/*.md` files were generated after discovery as the requested pers
 | Settings keys | Live workflow/service keys include `llm`, `qa`, `posting`, `bandit`, `scoring`, `warmup`, `l4_reply`, `next_cycle_plan`, `threads_creds`, `text_variation`, `locale`, `redirect_base_url`, and Shopee rows (`db/seed_levers_my.sql:131-158`; migrations 008/010/011/015/017; workflows grep). |
 || L4 reply | `wf7_l4_reply` loads `settings.l4_reply`, reads local `threads_comments` (populated by new ingestion path), publishes replies with `settings.l4_reply.threads_token`, and writes `l4_replies` (`n8n/workflows/wf7_l4_reply.json:20`, `56`, `70`, `233-285`, `470-604`). |
 | Token helper mismatch | **Resolved.** `scripts/set_secrets.sh` writes `threads_creds` and `l4_reply.threads_token` in the same call (`scripts/set_secrets.sh:135-141`), matching what `wf7_l4_reply` reads (`n8n/workflows/wf7_l4_reply.json:233-234`). |
-|| Shopee key mismatch | **Resolved.** Shopee code reads env vars then `settings` rows `shopee_app_id` / `shopee_app_secret` (`services/kb/lib/shopee.js:14-18`, `58-59`). `scripts/set_secrets.sh --shopee-*` now writes **both** `shopee_app_id` and `shopee_app_secret` rows (`scripts/set_secrets.sh:150-161`), so the DB path works alongside env vars. |
+| Shopee key mismatch | **Resolved.** Shopee code reads env vars then `settings` rows `shopee_app_id` / `shopee_app_secret` (`services/kb/lib/shopee.js:14-18`, `58-59`). `scripts/set_secrets.sh --shopee-*` now writes **both** `shopee_app_id` and `shopee_app_secret` rows (`scripts/set_secrets.sh:150-161`), so the DB path works in addition to env vars. |
 | Text variation | Migration and helper exist, but no workflow JSON contains active Text Variation nodes (`db/migrations/015_text_variation_settings.sql`; `n8n/code/text_variation.js`; grep of `n8n/workflows/*.json`). |
 | Deployment env | Required service env and secrets are defined in `.env.example` and consumed by compose (`infra/.env.example:1-140`; `infra/docker-compose.yml:21-203`). |
+| Vision skip | `describeImage()` accepts optional `mediaKind` param and returns `null` for `VIDEO`; server query now selects and passes `media_kind` (`services/kb/server.js:583`, `585`); unit tests cover back-compat and VIDEO skip (`services/kb/lib/products.test.js`). |
 
 ## File-by-file outcome
 
@@ -135,3 +152,5 @@ The `docs/guide/*.md` files were generated after discovery as the requested pers
 - Inspected source files for schema/migrations, route handlers, UI forms, workflow node names, and deployment scripts.
 - Re-ran grep checks for stale `TEXT, IMAGE, CAROUSEL`-only claims, stale migration counts, and unsupported System Settings Control Board claims.
 - Ran a Markdown link/code-fence sanity script after edits (see session log).
+- **Refresh pass:** re-read `services/kb/server.js`, `scripts/set_secrets.sh`, `n8n/workflows/wf3_publish.json`, `n8n/code/bandit.js`, `services/kb/public/product.html`, `n8n/workflows/wf7_l4_reply.json`, `services/kb/lib/shopee.js`, `services/kb/lib/products.test.js` against commits `e4e7b53` and `2bef5af`.
+- **Re-verification pass:** re-read `n8n/workflows/wf3_publish.json`, `services/kb/public/product.html`, `n8n/workflows/wf7_l4_reply.json`, `n8n/code/text_variation.js`, `persona/*.ipynb`, `scripts/set_secrets.sh`, `services/kb/server.js:238,275-300`, `infra/.env.example`, `infra/docker-compose.yml` against `main` at `5f94ba2`; confirmed all 5 open items persist, no new markdown files, Apify credential added.
