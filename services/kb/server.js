@@ -624,6 +624,47 @@ app.get('/api/products', requireAuth, async (_, res) => {
   res.json(rows);
 });
 
+app.get('/api/products/:id', requireAuth, async (req, res) => {
+  const idParam = req.params.id;
+  const isNumeric = /^\d+$/.test(idParam);
+  const whereClause = isNumeric ? 'p.id = $1' : 'p.uid = $1';
+  try {
+    const { rows: [product] } = await pool.query(`
+      SELECT p.id, p.uid, p.name, p.affiliate_url, p.product_url, p.description, p.notes,
+             p.media_mode, p.status, p.rest_until, p.enrichment, p.created_at
+      FROM products p WHERE ${whereClause}`, [idParam]);
+    if (!product) return res.status(404).json({ error: 'product not found' });
+
+    const { rows: images } = await pool.query(`
+      SELECT id, public_url, media_kind, vision_desc, width, height, bytes, created_at
+      FROM product_images WHERE product_id = $1 ORDER BY created_at ASC`, [product.id]);
+
+    const { rows: [{ count: posts_count }] } = await pool.query(`
+      SELECT count(*) FROM posts WHERE product_id = $1`, [product.id]);
+
+    res.json({ ...product, images, posts_count: Number(posts_count) });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+app.get('/api/products/stats', requireAuth, async (_req, res) => {
+  try {
+    const { rows: [stats] } = await pool.query(`
+      SELECT
+        count(*)::int AS total,
+        count(*) FILTER (WHERE status = 'active')::int AS active,
+        count(*) FILTER (WHERE status = 'archived')::int AS archived,
+        count(*) FILTER (WHERE status = 'resting')::int AS resting,
+        count(*) FILTER (WHERE media_mode = 'images')::int AS with_media,
+        count(*) FILTER (WHERE media_mode = 'text')::int AS text_only
+      FROM products`);
+    res.json(stats);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 // ─────────────────────────────────────────── Shopee Open API status + conversion import
 // Lets the UI/runbook show whether keys are present, and lets n8n (or a manual CSV upload)
 // push conversion rows in. The wf5 learning loop normally pulls these straight from the
