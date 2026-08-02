@@ -39,6 +39,9 @@ if (!KB_PASSWORD && KB_ALLOW_NO_PASSWORD !== 'true') {
 }
 
 const pool = new pg.Pool({ connectionString: DATABASE_URL, max: 6 });
+pool.on('error', (err) => {
+  log.error('pg_pool_idle_client_error', { reason: err.message, code: err.code });
+});
 // Let the Shopee and LLM clients read shared config from the `settings` table (repo convention).
 registerShopeePool(pool);
 registerApifyPool(pool);
