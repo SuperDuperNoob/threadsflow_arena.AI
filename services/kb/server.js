@@ -538,8 +538,8 @@ app.post('/api/products', requireAuth, mediaUpload.array('images', 20), async (r
     });
   }
 
-  const client = await pool.connect();
   try {
+    const client = await pool.connect();
     await client.query('BEGIN');
     const uid = shortId(6);
     const { rows: [p] } = await client.query(
@@ -845,6 +845,21 @@ app.use('/img', express.static(IMAGE_DIR, {
 }));
 
 app.use(express.static('public'));
+
+// Global error-handling middleware — always JSON, never HTML
+app.use((err, _req, res, _next) => {
+  if (err instanceof multer.MulterError) {
+    if (err.code === 'LIMIT_FILE_SIZE') {
+      return res.status(413).json({ error: 'File too large' });
+    }
+    if (err.code === 'LIMIT_FILE_COUNT') {
+      return res.status(413).json({ error: 'Too many files' });
+    }
+    return res.status(400).json({ error: err.message });
+  }
+  res.status(500).json({ error: err.message });
+});
+
 app.listen(PORT, '0.0.0.0', async () => {
   console.log(`KB on :${PORT}`);
   // Startup config summary — booleans/hosts only, no secret values.
