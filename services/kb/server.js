@@ -538,8 +538,9 @@ app.post('/api/products', requireAuth, mediaUpload.array('images', 20), async (r
     });
   }
 
+  let client;
   try {
-    const client = await pool.connect();
+    client = await pool.connect();
     await client.query('BEGIN');
     const uid = shortId(6);
     const { rows: [p] } = await client.query(
@@ -601,10 +602,10 @@ app.post('/api/products', requireAuth, mediaUpload.array('images', 20), async (r
                video_count: files.filter(f => getMediaKind(f.mimetype) === 'VIDEO').length,
                product_url: productUrl || null });
   } catch (e) {
-    await client.query('ROLLBACK').catch(() => {});
+    if (client) await client.query('ROLLBACK').catch(() => {});
     res.status(500).json({ error: e.message });
   } finally {
-    client.release();
+    if (client) client.release();
   }
 });
 
