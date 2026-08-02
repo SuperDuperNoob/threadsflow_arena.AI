@@ -14,7 +14,7 @@ import crypto from 'node:crypto';
 import pg from 'pg';
 import { sha256 } from './lib/pdf.js';
 import { startWorker } from './lib/worker.js';
-import { putImage, enrich, describeImage, shortId, getMediaKind, getExtension } from './lib/products.js';
+import { putImage, enrich, describeImage, shortId, getMediaKind, getExtension, deleteImage } from './lib/products.js';
 import { registerShopeePool, getShopeeAvailability } from './lib/shopee.js';
 import { registerApifyPool, getApifyAvailability } from './lib/apify_shopee.js';
 import { searchTrendingProducts } from './lib/apify_discovery.js';
@@ -663,6 +663,214 @@ app.get('/api/products/:id', requireAuth, async (req, res) => {
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
+});
+
+// ─── helper: find product by id or uid, returns product row or null
+async function findProductByIdOrUid(idParam) {
+  const isNumeric = /^\d+$/.test(idParam);
+  const whereClause = isNumeric ? 'p.id = $1' : 'p.uid = $1';
+  const { rows: [product] } = await pool.query(`
+    SELECT p.id, p.uid, p.name, p.affiliate_url, p.product_url, p.description, p.notes,
+           p.media_mode, p.status, p.rest_until, p.enrichment, p.created_at
+    FROM products p WHERE ${whereClause}`, [idParam]);
+  return product;
+}
+
+// ─── helper: return full product detail (used by GET :id and PATCH :id)
+async function getProductDetail(productId) {
+  const { rows: images } = await pool.query(`
+    SELECT id, public_url, media_kind, vision_desc, width, height, bytes, created_at
+    FROM product_images WHERE product_id = $1 ORDER BY created_at ASC`, [productId]);
+  const { rows: [{ count: posts_count }] } = await pool.query(`
+    SELECT count(*) FROM posts WHERE product_id = $1`, [productId]);
+  const { rows: [product] } = await pool.query(`
+    SELECT p.id, p.uid, p.name, p.affiliate_url, p.product_url, p.description, p.notes,
+           p.media_mode, p.status, p.rest_until, p.enrichment, p.created_at
+    FROM products p WHERE p.id = $1`, [productId]);
+  return { ...product, images, posts_count: Number(posts_count) };
+}
+
+// PATCH /api/products/:id — partial update of name, affiliate_url, product_url, description, notes
+app.patch('/api/products/:id', requireAuth, async (req, res) => {
+  const idParam = req.params.id;
+  const product = await findProductByIdOrUid(idParam);
+  if (!product) return res.status(404).json({ error: 'product not found' });
+
+  const {
+    affiliate_url,
+    product_url,
+    name,
+    description,
+    notes,
+  } = req.body ?? {};
+
+  // Merge: use new value if provided, else keep existing
+  const mergedAffiliateUrl = affiliate_url !== undefined ? cleanHttpUrl(affiliate_url) : product.affiliate_url;
+  const mergedProductUrl = product_url !== undefined ? cleanHttpUrl(product_url) : product.product_url;
+  const mergedName = name !== undefined ? (name || null) : product.name;
+  const mergedDescription = description !== undefined ? (description ?? '').trim() : product.description;
+  const mergedNotes = notes !== undefined ? (notes || null) : product.notes;
+
+  // Validate merged affiliate_url
+  if (!mergedAffiliateUrl) {
+    return res.status(400).json({ error: 'A valid Shopee affiliate link is required.' });
+  }
+  // Validate merged product_url (if non-empty)
+  if (mergedProductUrl !== '' && mergedProductUrl !== null && mergedProductUrl === null) {
+    return res.status(400).json({ error: 'Product URL must be a valid http(s) URL, or blank.' });
+  }
+  // Check image count for text-only requirement
+  const { rows: [{ cnt: imgCount }] } = await pool.query(
+    `SELECT count(*)::int AS cnt FROM product_images WHERE product_id = $1`, [product.id]);
+  if (imgCount === 0 && mergedDescription && mergedDescription.length < 80) {
+    return res.status(400).json({
+      error: `No images on this product, so description must be at least 80 characters (currently ${mergedDescription.length}).`
+    });
+  }
+  if (imgCount === 0 && (!mergedDescription || mergedDescription.length < 80)) {
+    return res.status(400).json({
+      error: `No images on this product, so a description of at least 80 characters is required (you gave ${mergedDescription?.length ?? 0}).`
+    });
+  }
+
+  try {
+    await pool.query(`
+      UPDATE products
+      SET affiliate_url = $2, product_url = $3, name = $4, description = $5, notes = $6
+      WHERE id = $1`,
+      [product.id, mergedAffiliateUrl, mergedProductUrl, mergedName, mergedDescription, mergedNotes]);
+
+    const detail = await getProductDetail(product.id);
+    res.json(detail);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// POST /api/products/:id/archive — set status = 'archived'
+app.post('/api/products/:id/archive', requireAuth, async (req, res) => {
+  const idParam = req.params.id;
+  const product = await findProductByIdOrUid(idParam);
+  if (!product) return res.status(404).json({ error: 'product not found' });
+
+  try {
+    await pool.query(`UPDATE products SET status = 'archived' WHERE id = $1`, [product.id]);
+    const { rows: [updated] } = await pool.query(`SELECT id, uid, status FROM products WHERE id = $1`, [product.id]);
+    res.json(updated);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// POST /api/products/:id/restore — set status = 'active'
+app.post('/api/products/:id/restore', requireAuth, async (req, res) => {
+  const idParam = req.params.id;
+  const product = await findProductByIdOrUid(idParam);
+  if (!product) return res.status(404).json({ error: 'product not found' });
+
+  try {
+    await pool.query(`UPDATE products SET status = 'active' WHERE id = $1`, [product.id]);
+    const { rows: [updated] } = await pool.query(`SELECT id, uid, status FROM products WHERE id = $1`, [product.id]);
+    res.json(updated);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// POST /api/products/:id/images — add more images/videos
+app.post('/api/products/:id/images', requireAuth, mediaUpload.array('images', 20), async (req, res) => {
+  const idParam = req.params.id;
+  const product = await findProductByIdOrUid(idParam);
+  if (!product) return res.status(404).json({ error: 'product not found' });
+
+  const files = req.files ?? [];
+  if (!files.length) return res.status(400).json({ error: 'no images received' });
+
+  const { rows: [{ cnt: existingCount }] } = await pool.query(
+    `SELECT count(*)::int AS cnt FROM product_images WHERE product_id = $1`, [product.id]);
+  if (existingCount + files.length > 20) {
+    return res.status(400).json({ error: 'A product can have at most 20 images/videos total.' });
+  }
+
+  const inserted = [];
+  for (let i = 0; i < files.length; i++) {
+    const f = files[i];
+    const mediaKind = getMediaKind(f.mimetype);
+    const ext = getExtension(f.mimetype);
+    const key = `${product.uid}/${Date.now()}-${i}-${sha256(f.buffer).slice(0, 8)}.${ext}`;
+    const url = await putImage(f.buffer, key, f.mimetype);
+    const { rows: [img] } = await pool.query(
+      `INSERT INTO product_images (product_id, public_url, bytes, media_kind) VALUES ($1,$2,$3,$4) RETURNING id, public_url, media_kind, created_at`,
+      [product.id, url, f.size, mediaKind]);
+    inserted.push(img);
+  }
+
+  // Recompute media_mode: if product now has any images, set to 'images'
+  if (existingCount === 0 && inserted.length > 0) {
+    await pool.query(`UPDATE products SET media_mode = 'images' WHERE id = $1`, [product.id]);
+  }
+
+  res.json({ ok: true, added: inserted.length, images: inserted });
+});
+
+// DELETE /api/products/:id/images/:imageId — delete an image/video
+app.delete('/api/products/:id/images/:imageId', requireAuth, async (req, res) => {
+  const idParam = req.params.id;
+  const imageId = Number(req.params.imageId);
+  if (!Number.isInteger(imageId)) return res.status(400).json({ error: 'invalid image id' });
+
+  const product = await findProductByIdOrUid(idParam);
+  if (!product) return res.status(404).json({ error: 'product not found' });
+
+  // Look up image by id AND product_id (ownership check)
+  const { rows: [image] } = await pool.query(
+    `SELECT id, public_url FROM product_images WHERE id = $1 AND product_id = $2`,
+    [imageId, product.id]);
+  if (!image) return res.status(404).json({ error: 'image not found on this product' });
+
+  // Check if used by any queued/publishing post
+  const { rows: usingPosts } = await pool.query(
+    `SELECT id FROM posts WHERE $1 = ANY(image_ids) AND status IN ('queued','publishing')`,
+    [imageId]);
+  if (usingPosts.length > 0) {
+    return res.status(409).json({
+      error: `This image is used by ${usingPosts.length} scheduled post(s). Wait for them to publish or be skipped before deleting it.`
+    });
+  }
+
+  // Count total images on this product
+  const { rows: [{ cnt: totalImages }] } = await pool.query(
+    `SELECT count(*)::int AS cnt FROM product_images WHERE product_id = $1`, [product.id]);
+
+  // If last image and description < 80 chars, block
+  if (totalImages === 1) {
+    const desc = product.description ?? '';
+    if (desc.length < 80) {
+      return res.status(409).json({
+        error: `This is the product's only image/video and its description is under 80 characters. Lengthen the description before removing the last media file.`
+      });
+    }
+  }
+
+  // Best-effort delete from storage
+  try {
+    await deleteImage(image.public_url);
+  } catch (e) {
+    log.warn('delete_image_storage_failed', { image_id: imageId, product_id: product.id, reason: e.message });
+  }
+
+  // Delete DB row
+  await pool.query(`DELETE FROM product_images WHERE id = $1`, [imageId]);
+
+  // Recompute media_mode
+  const { rows: [{ cnt: remaining }] } = await pool.query(
+    `SELECT count(*)::int AS cnt FROM product_images WHERE product_id = $1`, [product.id]);
+  const newMediaMode = remaining === 0 ? 'text' : 'images';
+  if (newMediaMode !== product.media_mode) {
+    await pool.query(`UPDATE products SET media_mode = $2 WHERE id = $1`, [product.id, newMediaMode]);
+  }
+
+  res.json({ ok: true, media_mode: newMediaMode });
 });
 
 // ─────────────────────────────────────────── Shopee Open API status + conversion import

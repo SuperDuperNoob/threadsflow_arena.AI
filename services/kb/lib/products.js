@@ -121,6 +121,69 @@ async function putS3(buf, key, contentType) {
 export const putImage = (buf, key, ct) =>
   IMAGE_BACKEND === 's3' ? putS3(buf, key, ct) : putLocal(buf, key);
 
+// ─────────────────────────────────────────── image/video deletion
+
+function extractKeyFromPublicUrl(publicUrl) {
+  const base = PUBLIC_IMAGE_BASE.replace(/\/$/, '');
+  if (!publicUrl.startsWith(base + '/')) {
+    throw new Error(`publicUrl ${publicUrl} does not match PUBLIC_IMAGE_BASE ${base}`);
+  }
+  return publicUrl.slice(base.length + 1);
+}
+
+async function deleteLocal(publicUrl) {
+  const key = extractKeyFromPublicUrl(publicUrl);
+  const full = path.join(IMAGE_DIR, key);
+  try {
+    await fs.rm(full);
+  } catch (e) {
+    if (e.code !== 'ENOENT') throw e;
+  }
+}
+
+async function deleteS3(publicUrl) {
+  const key = extractKeyFromPublicUrl(publicUrl);
+  const encodedKey = key.split('/').map(encodeURIComponent).join('/');
+  const endpoint = S3_ENDPOINT.replace(/\/$/, '');
+  const pathStr = `/${S3_BUCKET}/${encodedKey}`;
+  const url = new URL(`${endpoint}${pathStr}`);
+  const now = new Date();
+  const amzDate = now.toISOString().replace(/[:-]|\.\d{3}/g, '');
+  const dateStamp = amzDate.slice(0, 8);
+  const payloadHash = crypto.createHash('sha256').update('').digest('hex');
+
+  const canonicalHeaders =
+    `host:${url.host}\nx-amz-content-sha256:${payloadHash}\nx-amz-date:${amzDate}\n`;
+  const signedHeaders = 'host;x-amz-content-sha256;x-amz-date';
+  const canonicalRequest = [
+    'DELETE', pathStr, '', canonicalHeaders, signedHeaders, payloadHash,
+  ].join('\n');
+
+  const scope = `${dateStamp}/${S3_REGION}/s3/aws4_request`;
+  const stringToSign = ['AWS4-HMAC-SHA256', amzDate, scope,
+    crypto.createHash('sha256').update(canonicalRequest).digest('hex')].join('\n');
+
+  const hmac = (k, d) => crypto.createHmac('sha256', k).update(d).digest();
+  const signing = hmac(hmac(hmac(hmac(`AWS4${S3_SECRET}`, dateStamp), S3_REGION), 's3'), 'aws4_request');
+  const signature = crypto.createHmac('sha256', signing).update(stringToSign).digest('hex');
+
+  const res = await fetch(url, {
+    method: 'DELETE',
+    headers: {
+      'x-amz-content-sha256': payloadHash,
+      'x-amz-date': amzDate,
+      authorization: `AWS4-HMAC-SHA256 Credential=${S3_KEY}/${scope}, ` +
+                     `SignedHeaders=${signedHeaders}, Signature=${signature}`,
+    },
+  });
+  if (!res.ok && res.status !== 404) {
+    throw new Error(`S3 delete ${res.status}: ${(await res.text()).slice(0, 200)}`);
+  }
+}
+
+export const deleteImage = (publicUrl) =>
+  IMAGE_BACKEND === 's3' ? deleteS3(publicUrl) : deleteLocal(publicUrl);
+
 // ─────────────────────────────────────────── enrichment
 
 /**
