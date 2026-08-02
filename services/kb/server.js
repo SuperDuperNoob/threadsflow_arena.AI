@@ -716,7 +716,7 @@ app.patch('/api/products/:id', requireAuth, async (req, res) => {
     return res.status(400).json({ error: 'A valid Shopee affiliate link is required.' });
   }
   // Validate merged product_url (if non-empty)
-  if (mergedProductUrl !== '' && mergedProductUrl !== null && mergedProductUrl === null) {
+  if (mergedProductUrl === null) {
     return res.status(400).json({ error: 'Product URL must be a valid http(s) URL, or blank.' });
   }
   // Check image count for text-only requirement
