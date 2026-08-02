@@ -215,6 +215,8 @@ log "  Running database migrations..."
 for m in db/migrations/*.sql; do
   log "    $(basename "$m")"
   docker compose -f infra/docker-compose.yml exec -T postgres psql -v ON_ERROR_STOP=1 -U threadsflow -d threadsflow < "$m"
+  # Record migration in tracking table
+  docker compose -f infra/docker-compose.yml exec -T postgres psql -U threadsflow -d threadsflow -c "INSERT INTO schema_migrations (filename) VALUES ('$(basename "$m")') ON CONFLICT (filename) DO NOTHING;"
 done
 
 # Additional seeds

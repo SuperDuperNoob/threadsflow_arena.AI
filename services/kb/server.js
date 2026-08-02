@@ -638,16 +638,26 @@ app.get('/api/apify/status', requireAuth, async (_req, res) => {
 
 // Tokens are write-only: list/edit/delete operations reveal labels and state, never token bytes.
 app.get('/api/apify/keys', requireAuth, async (_req, res) => {
-  const { rows } = await pool.query(`SELECT k.id,k.label,k.active,k.priority,k.disabled_until,k.created_at,
-    COALESCE(u.runs,0)::int AS runs_this_month FROM apify_api_keys k
-    LEFT JOIN apify_key_monthly_usage u ON u.key_id=k.id AND u.month=date_trunc('month',now())::date
-    ORDER BY k.priority,k.id`);
-  res.json(rows);
+  try {
+    const { rows } = await pool.query(`SELECT k.id,k.label,k.active,k.priority,k.disabled_until,k.created_at,
+      COALESCE(u.runs,0)::int AS runs_this_month FROM apify_api_keys k
+      LEFT JOIN apify_key_monthly_usage u ON u.key_id=k.id AND u.month=date_trunc('month',now())::date
+      ORDER BY k.priority,k.id`);
+    res.json(rows);
+  } catch (e) {
+    console.error('apify keys list failed', e.message);
+    return res.status(500).json({error:'list failed — check server logs'});
+  }
 });
 app.post('/api/apify/keys', requireAuth, async (req, res) => {
   const label=String(req.body?.label??'').trim(), token=String(req.body?.token??'').trim();
   if (!label || label.length>80 || !token || token.length>1000) return res.status(400).json({error:'label and token are required'});
-  try { const {rows:[key]}=await pool.query(`INSERT INTO apify_api_keys(label,token,priority) VALUES($1,$2,$3) RETURNING id,label,active,priority,created_at`,[label,token,Number(req.body?.priority)||100]); res.status(201).json(key); } catch(e) { res.status(400).json({error:'key label already exists'}); }
+  try { const {rows:[key]}=await pool.query(`INSERT INTO apify_api_keys(label,token,priority) VALUES($1,$2,$3) RETURNING id,label,active,priority,created_at`,[label,token,Number(req.body?.priority)||100]); res.status(201).json(key); }
+  catch(e) {
+    if (e.code === '23505') return res.status(400).json({error:'key label already exists'});
+    console.error('apify key insert failed', e.message);
+    return res.status(500).json({error:'insert failed — check server logs'});
+  }
 });
 app.put('/api/apify/keys/:id', requireAuth, async (req,res) => {
   const id=Number(req.params.id); if (!Number.isInteger(id)) return res.status(400).json({error:'invalid key id'});

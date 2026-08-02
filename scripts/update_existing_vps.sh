@@ -2,18 +2,12 @@
 # ThreadsFlow — One-Click Update for Existing VPS
 #
 # This script updates an already-running ThreadsFlow installation to the latest version.
-# It pulls the latest code, runs new migrations, seeds new data, and restarts services.
+# It pulls the latest code, runs new migrations (tracked in schema_migrations table),
+# seeds new data, and restarts services.
 #
 # Usage:
 #   cd /path/to/threadsflow_arena.AI
 #   ./scripts/update_existing_vps.sh
-#
-# What this script does:
-#   1. Pulls latest code from Git
-#   2. Runs any new migrations (011, 012, 013 if not already applied)
-#   3. Seeds new techniques (psychology, Malaysian snippets)
-#   4. Restarts Docker services
-#   5. Provides instructions for importing new workflows
 
 set -euo pipefail
 
@@ -52,7 +46,7 @@ log "Step 1/5: Pulling latest code..."
 if git rev-parse --git-dir > /dev/null 2>&1; then
   CURRENT_BRANCH=$(git branch --show-current)
   log "  Current branch: $CURRENT_BRANCH"
-  
+
   git fetch origin
   git pull origin "$CURRENT_BRANCH" || {
     warn "Git pull failed. You may have local changes."
@@ -64,7 +58,7 @@ else
 fi
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Step 2: Check and run new migrations
+# Step 2: Check and run new migrations (using schema_migrations tracking table)
 # ─────────────────────────────────────────────────────────────────────────────
 
 log "Step 2/5: Running new migrations..."
@@ -76,30 +70,18 @@ if ! docker compose -f infra/docker-compose.yml exec -T postgres pg_isready -U t
   exit 1
 fi
 
-# Check which migrations have been applied
+# Get list of already applied migrations from tracking table
 log "  Checking applied migrations..."
+APPLIED_MIGRATIONS=$(docker compose -f infra/docker-compose.yml exec -T postgres psql -U threadsflow -d threadsflow -t -c "SELECT filename FROM schema_migrations ORDER BY filename" | sed 's/^[[:space:]]*//; /^$/d')
 
+# Find migrations that haven't been applied yet
 MIGRATIONS_TO_RUN=()
-
-# Check for migration 011 (L4 improvements)
-if ! docker compose -f infra/docker-compose.yml exec -T postgres psql -U threadsflow -d threadsflow -t -c "SELECT 1 FROM information_schema.tables WHERE table_name='l4_replies'" | grep -q 1; then
-  MIGRATIONS_TO_RUN+=("011_persona_l4_improvements.sql")
-fi
-
-# Check for migration 012 (Malaysian snippets)
-if ! docker compose -f infra/docker-compose.yml exec -T postgres psql -U threadsflow -d threadsflow -t -c "SELECT 1 FROM persona_sources WHERE slug='seed-facebook-casual'" | grep -q 1; then
-  MIGRATIONS_TO_RUN+=("012_persona_malaysian_snippets.sql")
-fi
-
-# Check for migration 013 (threads_comments)
-if ! docker compose -f infra/docker-compose.yml exec -T postgres psql -U threadsflow -d threadsflow -t -c "SELECT 1 FROM information_schema.tables WHERE table_name='threads_comments'" | grep -q 1; then
-  MIGRATIONS_TO_RUN+=("013_threads_comments.sql")
-fi
-
-# Check for migration 017 (Human-in-the-loop review layer)
-if ! docker compose -f infra/docker-compose.yml exec -T postgres psql -U threadsflow -d threadsflow -t -c "SELECT 1 FROM information_schema.tables WHERE table_name='post_review'" | grep -q 1; then
-  MIGRATIONS_TO_RUN+=("017_post_review_full.sql")
-fi
+for m in db/migrations/*.sql; do
+  BASENAME=$(basename "$m")
+  if ! echo "$APPLIED_MIGRATIONS" | grep -q "^${BASENAME}$"; then
+    MIGRATIONS_TO_RUN+=("$BASENAME")
+  fi
+done
 
 if [ ${#MIGRATIONS_TO_RUN[@]} -eq 0 ]; then
   success "All migrations already applied"
@@ -108,6 +90,8 @@ else
   for m in "${MIGRATIONS_TO_RUN[@]}"; do
     log "    $m"
     docker compose -f infra/docker-compose.yml exec -T postgres psql -v ON_ERROR_STOP=1 -U threadsflow -d threadsflow < "db/migrations/$m"
+    # Record the migration in tracking table
+    docker compose -f infra/docker-compose.yml exec -T postgres psql -U threadsflow -d threadsflow -c "INSERT INTO schema_migrations (filename) VALUES ('$m') ON CONFLICT (filename) DO NOTHING;"
   done
   success "Migrations complete"
 fi
@@ -137,7 +121,7 @@ else
 fi
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Step 4: Restart services
+# Step 4: Restart services (rebuild to pick up code changes)
 # ─────────────────────────────────────────────────────────────────────────────
 
 log "Step 4/5: Restarting Docker services..."
@@ -159,35 +143,45 @@ success "═══════════════════════�
 echo ""
 log "New features available:"
 echo ""
+
 echo "  ✓ Human-in-the-Loop Review Queue"
 echo "    Approve, reject, or edit generated posts before publication"
 echo "    URL: https://kb.<your-domain>/queue.html"
 echo ""
+
 echo "  ✓ Psychology techniques (17 new)"
 echo "    Cialdini, Voss, Dhawan, Handley, Carnegie, Bacon"
 echo ""
+
 echo "  ✓ Malaysian persona snippets (177 new)"
 echo "    Facebook, IIUM, Amanz, Twitter, Lowyat, Mamak, Parenting, Commute, Work"
 echo ""
+
 echo "  ✓ Time-of-day topic affinity"
 echo "    Morning→commute, Afternoon→petua, Evening→food/family"
 echo ""
+
 log "Next steps:"
 echo ""
+
 echo "  1. Import new workflows into n8n:"
 echo "     - wf7_l4_reply.json (L4 reply loop)"
 echo "     - wf6_persona.json (updated with psychology + time-of-day)"
 echo ""
+
 echo "  2. Activate wf7_l4_reply in n8n:"
 echo "     - Assign 'Postgres threadsflow' credential to all Postgres nodes"
 echo "     - Activate the workflow"
 echo ""
+
 echo "  3. (Optional) Import more Malaysian datasets:"
 echo "     ./scripts/import_malaysian_datasets.sh"
 echo ""
+
 echo "  4. Monitor logs:"
 echo "     docker compose -f infra/docker-compose.yml logs -f n8n"
 echo ""
+
 log "Documentation: docs/11-quick-start.md"
 echo ""
 success "Update complete! 🚀"

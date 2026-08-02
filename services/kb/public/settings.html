@@ -181,7 +181,7 @@ async function boot() {
       } catch {}
     }
     show('app');
-  } catch (e) { if (e.message !== 'auth') console.error(e); }
+  } catch (e) { if (e.message !== 'auth') console.error(e); show('login'); }
 }
 
 async function saveLlm() {
@@ -216,7 +216,7 @@ async function testCfg() { /* unchanged from original */ }
 
 function clearKey() { /* unchanged */ }
 
-boot();
+(async () => { try { await boot(); } catch { show('login'); } })();
 </script>
 </body>
 </html>

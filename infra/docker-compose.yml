@@ -109,7 +109,7 @@ services:
     depends_on:
       postgres: { condition: service_healthy }
     environment:
-      DATABASE_URL: postgres://threadsflow:${PG_PASSWORD}@postgres:5432/threadsflow
+      DATABASE_URL: ${DATABASE_URL}
       IP_SALT: ${IP_SALT}
       FALLBACK_URL: https://shopee.com.my
       PORT: "8081"
@@ -128,7 +128,7 @@ services:
     depends_on:
       postgres: { condition: service_healthy }
     environment:
-      DATABASE_URL: postgres://threadsflow:${PG_PASSWORD}@postgres:5432/threadsflow
+      DATABASE_URL: ${DATABASE_URL}
       PORT: "8082"
       KB_PASSWORD: ${KB_PASSWORD}
       STORAGE_DIR: /data/pdfs
@@ -180,7 +180,7 @@ services:
       postgres: { condition: service_healthy }
     command: ["node", "bin/shopee.mjs", "cron"]
     environment:
-      DATABASE_URL: postgres://threadsflow:${PG_PASSWORD}@postgres:5432/threadsflow
+      DATABASE_URL: ${DATABASE_URL}
       SHOPEE_API_APP_ID: ${SHOPEE_API_APP_ID:-}
       SHOPEE_API_SECRET: ${SHOPEE_API_SECRET:-}
       SHOPEE_OPENAPI_URL: ${SHOPEE_OPENAPI_URL:-https://open-api.affiliate.shopee.com.my/graphql}
