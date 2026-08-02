@@ -624,6 +624,23 @@ app.get('/api/products', requireAuth, async (_, res) => {
   res.json(rows);
 });
 
+app.get('/api/products/stats', requireAuth, async (_req, res) => {
+  try {
+    const { rows: [stats] } = await pool.query(`
+      SELECT
+        count(*)::int AS total,
+        count(*) FILTER (WHERE status = 'active')::int AS active,
+        count(*) FILTER (WHERE status = 'archived')::int AS archived,
+        count(*) FILTER (WHERE status = 'resting')::int AS resting,
+        count(*) FILTER (WHERE media_mode = 'images')::int AS with_media,
+        count(*) FILTER (WHERE media_mode = 'text')::int AS text_only
+      FROM products`);
+    res.json(stats);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 app.get('/api/products/:id', requireAuth, async (req, res) => {
   const idParam = req.params.id;
   const isNumeric = /^\d+$/.test(idParam);
@@ -643,23 +660,6 @@ app.get('/api/products/:id', requireAuth, async (req, res) => {
       SELECT count(*) FROM posts WHERE product_id = $1`, [product.id]);
 
     res.json({ ...product, images, posts_count: Number(posts_count) });
-  } catch (e) {
-    res.status(500).json({ error: e.message });
-  }
-});
-
-app.get('/api/products/stats', requireAuth, async (_req, res) => {
-  try {
-    const { rows: [stats] } = await pool.query(`
-      SELECT
-        count(*)::int AS total,
-        count(*) FILTER (WHERE status = 'active')::int AS active,
-        count(*) FILTER (WHERE status = 'archived')::int AS archived,
-        count(*) FILTER (WHERE status = 'resting')::int AS resting,
-        count(*) FILTER (WHERE media_mode = 'images')::int AS with_media,
-        count(*) FILTER (WHERE media_mode = 'text')::int AS text_only
-      FROM products`);
-    res.json(stats);
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
