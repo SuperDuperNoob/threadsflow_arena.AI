@@ -1,0 +1,340 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>ThreadsFlow — Edit Product</title>
+<style>
+  :root{--bg:#0d0f12;--panel:#15181d;--panel2:#1c2027;--line:#252a33;--txt:#e6e9ef;
+        --dim:#8b93a1;--acc:#4c9aff;--ok:#3fb950;--bad:#f85149}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--txt);
+       font:14px/1.55 ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+  header{padding:18px 24px;border-bottom:1px solid var(--line);display:flex;gap:18px;align-items:baseline;flex-wrap:wrap}
+  h1{font-size:17px;margin:0;font-weight:600}
+  a{color:var(--acc);text-decoration:none;font-size:13px}
+  main{max-width:760px;margin:0 auto;padding:24px}
+  label{display:block;font-size:12px;color:var(--dim);margin:14px 0 5px}
+  input[type=text],input[type=url],textarea{width:100%;background:var(--panel2);color:var(--txt);
+    border:1px solid var(--line);border-radius:7px;padding:9px 11px;font-size:14px;font-family:inherit}
+  textarea{min-height:70px;resize:vertical}
+  #imgdrop{border:2px dashed var(--line);border-radius:10px;padding:26px;text-align:center;
+    background:var(--panel);cursor:pointer;margin-top:5px}
+  #imgdrop.over{border-color:var(--acc);background:#161d29}
+  #thumbs{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
+  .th{position:relative;width:88px;height:88px;border-radius:7px;overflow:hidden;border:1px solid var(--line)}
+  .th img,.th video{width:100%;height:100%;object-fit:cover}
+  .th b{position:absolute;top:2px;right:4px;background:#000a;border-radius:4px;padding:0 5px;
+        cursor:pointer;font-size:13px}
+  button{background:var(--acc);color:#04101f;border:0;border-radius:7px;padding:11px 20px;
+         font-weight:600;cursor:pointer;font-size:14px;margin-top:18px}
+  button:disabled{opacity:.5;cursor:default}
+  button.secondary{background:var(--panel2);color:var(--txt);border:1px solid var(--line);margin-right:8px}
+  button.danger{background:#2b1416;color:var(--bad);border:1px solid var(--bad);margin-right:8px}
+  button.danger:hover{background:#3a1a1d}
+  .hint{color:var(--dim);font-size:12px;margin-top:4px}
+  .box{background:var(--panel);border:1px solid var(--line);border-radius:9px;padding:16px;margin-top:18px}
+  .ok{border-color:var(--ok)} .bad{border-color:var(--bad)} .warn{border-color:#d29922}
+  .row{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+  code{background:var(--panel2);padding:1px 5px;border-radius:4px;font-size:12px}
+  .err{background:#2b1416;border:1px solid var(--bad);color:var(--bad);border-radius:7px;padding:12px 14px;margin-bottom:14px}
+  .okbox{background:#12261a;border:1px solid var(--ok);color:var(--ok);border-radius:7px;padding:12px 14px;margin-bottom:14px}
+  .danger-zone{border-color:var(--bad);background:#1a0f11}
+</style>
+</head>
+<body>
+<header>
+  <h1>Edit Product</h1>
+  <a href="/">← Knowledge Base</a>
+  <a href="/products.html">Products</a>
+  <a href="/product.html">Add Product</a>
+  <a href="/settings.html">LLM Settings</a>
+</header>
+<main>
+  <div id="err" class="err" style="display:none"></div>
+  <div id="ok" class="okbox" style="display:none"></div>
+
+  <div class="box" id="mode" style="margin-top:0">
+    <b id="modeTitle">Loading…</b>
+    <div class="hint" id="modeHint"></div>
+  </div>
+
+  <label>Shopee affiliate URL * <span class="hint" style="display:inline">(buyer/money link)</span></label>
+  <input type="url" id="url" placeholder="https://s.shopee.com.my/...">
+
+  <label>Full Shopee product URL <span class="hint" style="display:inline">(optional — enrichment only)</span></label>
+  <input type="url" id="productUrl" placeholder="https://shopee.com.my/product/43768/18938427295">
+
+  <div class="row">
+    <div>
+      <label>Product name (optional)</label>
+      <input type="text" id="name" placeholder="auto-filled if blank">
+    </div>
+    <div>
+      <label>Price in RM (optional)</label>
+      <input type="text" id="price" placeholder="39.90">
+    </div>
+  </div>
+
+  <label>Product description <span id="descReq" class="hint" style="display:inline"></span></label>
+  <textarea id="description" placeholder="Spatula silikon tahan panas sehingga 230°C. Pemegang stainless 11cm. Anti melekat, selamat untuk non-stick. Boleh masuk dishwasher."></textarea>
+  <div class="hint">Required only if you upload no images. Without a photo this is the only raw material the writer has, so include real specifics: sizes, materials, temperatures, what it fits.</div>
+
+  <label>Your notes — the single biggest quality lever</label>
+  <textarea id="notes" placeholder="Untuk yang dapur sempit. Pemegang 11cm, pendek sikit. Saya guna sejak Mac. Free shipping."></textarea>
+  <div class="hint">Write concrete facts a machine cannot know: real measurements, how long you've used it, who it's for, what's genuinely wrong with it. Generic notes produce generic copy.</div>
+
+  <label>Images & videos (optional, up to 20 total)</label>
+  <div id="imgdrop">Drop images/videos or click &middot; JPG/PNG/WebP/MP4/MOV &middot; max 8&nbsp;MB each &middot; or skip entirely
+    <input type="file" id="imgs" accept="image/jpeg,image/png,image/webp,video/mp4,video/quicktime" multiple hidden></div>
+  <div id="thumbs"></div>
+
+  <button id="save" disabled>Save changes</button>
+  <button id="cancel" class="secondary" onclick="location.href='/products.html'">Cancel</button>
+
+  <div class="box danger-zone" style="margin-top:28px">
+    <h2 style="margin:0 0 10px;color:var(--bad);font-size:14px">Danger Zone</h2>
+    <div id="dangerText" class="hint" style="margin-bottom:12px">Loading…</div>
+    <button id="archiveBtn" class="danger" style="margin-top:0">Archive this product</button>
+  </div>
+</main>
+
+<script>
+const $ = s => document.querySelector(s);
+const esc = s => (s ?? '').replace(/[<>&]/g, c => ({ '<':'<','>':'>','&':'&' }[c]));
+
+const params = new URLSearchParams(location.search);
+const pid = params.get('id');
+if (!pid) {
+  $('#err').textContent = 'Missing product ID. Open this page from the Products dashboard.';
+  $('#err').style.display = 'block';
+  $('#save').style.display = 'none';
+  $('#cancel').style.display = 'none';
+  $('#archiveBtn').style.display = 'none';
+  throw new Error('no id');
+}
+
+let product = null;
+let existingImages = [];
+let newFiles = [];
+
+async function api(path, opts = {}) {
+  const r = await fetch('/api' + path, opts);
+  if (r.status === 401) { window.location.href = '/'; throw new Error('auth'); }
+  const ct = r.headers.get('content-type') || '';
+  if (!ct.includes('application/json')) {
+    const t = await r.text().catch(() => '');
+    throw new Error('Unexpected response: ' + t.slice(0, 200));
+  }
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(j.error || 'request failed');
+  return j;
+}
+
+function httpUrlOk(s) {
+  if (!s) return false;
+  try { const u = new URL(s); return u.protocol === 'http:' || u.protocol === 'https:'; } catch { return false; }
+}
+
+const MIN_DESC = 80;
+
+function updateMode() {
+  const hasUrl = httpUrlOk($('#url').value.trim());
+  const productUrl = $('#productUrl').value.trim();
+  const productUrlOk = !productUrl || httpUrlOk(productUrl);
+  const desc = $('#description').value.trim();
+  const totalMedia = existingImages.length + newFiles.length;
+  const nImages = [...existingImages, ...newFiles].filter(f => f.type?.startsWith('image/') || f.mime?.startsWith('image/')).length;
+  const nVideos = totalMedia - nImages;
+
+  let title, hint, ok = false;
+  if (!hasUrl) {
+    title = 'Choose your input'; hint = 'Paste the Shopee affiliate link to begin.';
+  } else if (!productUrlOk) {
+    title = 'Check product URL'; hint = 'The optional full product URL must start with http:// or https://, or be blank.';
+  } else if (totalMedia === 0 && desc.length < MIN_DESC) {
+    title = 'Text-only post — description needed';
+    hint = `No media, so a description of at least ${MIN_DESC} characters is required ` +
+           `(${desc.length}/${MIN_DESC}). Include sizes, materials, price, who it is for.`;
+  } else if (totalMedia === 0) {
+    title = 'Link + description';
+    hint = 'Text-only posts. Threads is a text-first feed — these often out-reach image posts.';
+    ok = true;
+  } else if (desc.length > 0) {
+    let mediaDesc = '';
+    if (nImages && nVideos) mediaDesc = `${nImages} image${nImages>1?'s':''} + ${nVideos} video${nVideos>1?'s':''}`;
+    else if (nImages) mediaDesc = `${nImages} image${nImages>1?'s':''}`;
+    else mediaDesc = `${nVideos} video${nVideos>1?'s':''}`;
+    title = `Link + ${mediaDesc} + description`;
+    hint = 'Richest input. The system will mix text-only, image, video, and mixed posts and learn which earns more.';
+    ok = true;
+  } else {
+    let mediaDesc = '';
+    if (nImages && nVideos) mediaDesc = `${nImages} image${nImages>1?'s':''} + ${nVideos} video${nVideos>1?'s':''}`;
+    else if (nImages) mediaDesc = `${nImages} image${nImages>1?'s':''}`;
+    else mediaDesc = `${nVideos} video${nVideos>1?'s':''}`;
+    title = `Link + ${mediaDesc}`;
+    hint = 'Will test text-only, image, video, and mixed carousel variants.';
+    ok = true;
+  }
+  $('#modeTitle').textContent = title;
+  $('#modeHint').textContent = hint;
+  $('#mode').className = 'box' + (ok ? ' ok' : '');
+  $('#descReq').textContent = totalMedia === 0 ? '(required — no media)' : '(optional)';
+  $('#save').disabled = !ok;
+}
+
+function renderThumbs() {
+  const wrap = $('#thumbs');
+  wrap.innerHTML = '';
+  [...existingImages, ...newFiles].forEach((img, idx) => {
+    const d = document.createElement('div');
+    d.className = 'th';
+    const isVideo = img.type?.startsWith('video/') || img.mime?.startsWith('video/') || (img.url && img.url.startsWith('data:video'));
+    if (isVideo) {
+      const vid = document.createElement('video');
+      vid.src = img.url || URL.createObjectURL(img);
+      vid.controls = true;
+      vid.muted = true;
+      vid.style.width = '100%';
+      vid.style.height = '100%';
+      d.append(vid);
+    } else {
+      const im = document.createElement('img');
+      im.src = img.url || URL.createObjectURL(img);
+      d.append(im);
+    }
+    const x = document.createElement('b');
+    x.textContent = '×';
+    const isExisting = idx < existingImages.length;
+    const imageId = isExisting ? existingImages[idx].id : null;
+    x.onclick = () => {
+      if (isExisting) {
+        deleteImage(imageId, idx);
+      } else {
+        newFiles.splice(idx - existingImages.length, 1);
+        renderThumbs();
+        updateMode();
+      }
+    };
+    d.append(x);
+    wrap.append(d);
+  });
+}
+
+async function deleteImage(imageId, idx) {
+  try {
+    await api('/products/' + pid + '/images/' + imageId, { method: 'DELETE' });
+    existingImages.splice(idx, 1);
+    renderThumbs();
+    updateMode();
+    showOk('Image deleted.');
+  } catch (e) {
+    alert(e.message);
+  }
+}
+
+const drop = $('#imgdrop'), input = $('#imgs');
+drop.onclick = () => input.click();
+drop.ondragover = e => { e.preventDefault(); drop.classList.add('over'); };
+drop.ondragleave = () => drop.classList.remove('over');
+drop.ondrop = e => { e.preventDefault(); drop.classList.remove('over'); addFiles(e.dataTransfer.files); };
+input.onchange = () => addFiles(input.files);
+
+function addFiles(list) {
+  for (const f of list) {
+    if (!/^image\/(jpeg|png|webp)$/.test(f.type) && !/^video\/(mp4|quicktime)$/.test(f.type)) continue;
+    if (f.size > 8 * 1024 * 1024) { alert(f.name + ' is over 8 MB — Threads will reject it'); continue; }
+    if (existingImages.length + newFiles.length >= 20) { alert('Maximum 20 files'); break; }
+    newFiles.push(f);
+  }
+  renderThumbs();
+  updateMode();
+}
+
+function showErr(msg) {
+  const el = $('#err');
+  el.textContent = msg;
+  el.style.display = 'block';
+  $('#ok').style.display = 'none';
+}
+function showOk(msg) {
+  const el = $('#ok');
+  el.textContent = msg;
+  el.style.display = 'block';
+  $('#err').style.display = 'none';
+  setTimeout(() => { el.style.display = 'none'; }, 3000);
+}
+
+async function loadProduct() {
+  try {
+    product = await api('/products/' + pid);
+    existingImages = product.images || [];
+    $('#url').value = product.affiliate_url || '';
+    $('#productUrl').value = product.product_url || '';
+    $('#name').value = product.name || '';
+    $('#price').value = product.price_myr ?? '';
+    $('#description').value = product.description || '';
+    $('#notes').value = product.notes || '';
+    $('#dangerText').textContent = 'This product has been used in ' + (product.posts_count ?? 0) + ' post(s).';
+    renderThumbs();
+    updateMode();
+    ['url','productUrl','description','name','price','notes'].forEach(id => $('#'+id).oninput = updateMode);
+  } catch (e) {
+    if (e.message.includes('404') || e.message.includes('not found')) {
+      $('#err').textContent = 'Product not found.';
+      $('#err').style.display = 'block';
+      $('#save').style.display = 'none';
+      $('#cancel').style.display = 'none';
+      $('#archiveBtn').style.display = 'none';
+    } else {
+      showErr(e.message);
+    }
+  }
+}
+
+$('#save').onclick = async () => {
+  $('#save').disabled = true;
+  $('#save').textContent = 'Saving…';
+  try {
+    const body = {
+      affiliate_url: $('#url').value.trim(),
+      product_url: $('#productUrl').value.trim(),
+      name: $('#name').value.trim(),
+      price_myr: $('#price').value.replace(/[^\d.]/g, ''),
+      description: $('#description').value.trim(),
+      notes: $('#notes').value.trim()
+    };
+    const r = await api('/products/' + pid, {
+      method: 'PATCH',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(body)
+    });
+    if (newFiles.length) {
+      const fd = new FormData();
+      newFiles.forEach(f => fd.append('images', f));
+      await api('/products/' + pid + '/images', { method: 'POST', body: fd });
+    }
+    showOk('Saved.');
+    setTimeout(() => { location.href = '/products.html'; }, 800);
+  } catch (e) {
+    showErr(e.message);
+  }
+  $('#save').textContent = 'Save changes';
+  updateMode();
+};
+
+$('#archiveBtn').onclick = async () => {
+  if (!confirm('Archive this product? It will stop being picked for new posts. You can restore it later.')) return;
+  try {
+    await api('/products/' + pid + '/archive', { method: 'POST' });
+    location.href = '/products.html';
+  } catch (e) {
+    alert(e.message);
+  }
+};
+
+loadProduct();
+</script>
+</body>
+</html>

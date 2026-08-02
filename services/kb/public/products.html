@@ -1,0 +1,216 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>ThreadsFlow — Products Dashboard</title>
+<style>
+  :root{--bg:#0d0f12;--panel:#15181d;--panel2:#1c2027;--line:#252a33;--txt:#e6e9ef;
+        --dim:#8b93a1;--acc:#4c9aff;--ok:#3fb950;--bad:#f85149}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--txt);
+       font:14px/1.55 ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+  header{padding:18px 24px;border-bottom:1px solid var(--line);display:flex;gap:18px;align-items:baseline;flex-wrap:wrap}
+  h1{font-size:17px;margin:0;font-weight:600}
+  a{color:var(--acc);text-decoration:none;font-size:13px}
+  main{max-width:900px;margin:0 auto;padding:24px}
+  .box{background:var(--panel);border:1px solid var(--line);border-radius:9px;padding:16px;margin-top:18px}
+  .stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:10px;margin-bottom:18px}
+  .stat{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:12px 14px}
+  .stat b{display:block;font-size:22px;font-weight:600;line-height:1.2}
+  .stat span{color:var(--dim);font-size:12px}
+  .filters{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:14px;align-items:center}
+  .filters input[type=text], .filters select{background:var(--panel2);color:var(--txt);border:1px solid var(--line);border-radius:7px;padding:9px 11px;font-size:14px;font-family:inherit}
+  .filters input[type=text]{flex:1;min-width:200px}
+  table{width:100%;border-collapse:collapse;font-size:13px}
+  th{text-align:left;color:var(--dim);font-weight:500;padding:8px 10px;border-bottom:1px solid var(--line);font-size:12px}
+  td{padding:9px 10px;border-bottom:1px solid var(--line);vertical-align:top}
+  tr:hover td{background:var(--panel)}
+  .pill{display:inline-block;padding:1px 8px;border-radius:20px;font-size:11px;font-weight:500}
+  .s-active{background:#12261a;color:var(--ok)}
+  .s-resting{background:#1b2436;color:var(--acc)}
+  .s-archived{background:#2b1416;color:var(--bad)}
+  button{background:var(--panel2);color:var(--txt);border:1px solid var(--line);border-radius:6px;padding:5px 11px;cursor:pointer;font-size:12px}
+  button:hover{border-color:var(--acc)}
+  button.d{color:var(--bad);border-color:var(--bad)}
+  button.d:hover{background:#2b1416}
+  .mono{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px}
+  .muted{color:var(--dim)}
+  .empty{text-align:center;padding:40px;color:var(--dim)}
+  .err{background:#2b1416;border:1px solid var(--bad);color:var(--bad);border-radius:7px;padding:12px 14px;margin-bottom:14px}
+</style>
+</head>
+<body>
+<header>
+  <h1>Products Dashboard</h1>
+  <a href="/">← Knowledge Base</a>
+  <a href="/product.html">Add Product</a>
+  <a href="/research.html">Product Research</a>
+  <a href="/settings.html">LLM Settings</a>
+</header>
+<main>
+  <div class="stats" id="stats"></div>
+
+  <div class="box" style="margin-top:0">
+    <div class="filters">
+      <input type="text" id="search" placeholder="Search name or host…">
+      <select id="statusFilter">
+        <option value="">All statuses</option>
+        <option value="active">Active</option>
+        <option value="resting">Resting</option>
+        <option value="archived">Archived</option>
+      </select>
+    </div>
+    <div id="tableWrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Name</th>
+            <th>Host</th>
+            <th>Status</th>
+            <th>Media</th>
+            <th>Images</th>
+            <th>Posted</th>
+            <th>Created</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody id="tbody"></tbody>
+      </table>
+    </div>
+    <div id="empty" class="empty" style="display:none">No products found.</div>
+  </div>
+
+  <div id="err" class="err" style="display:none"></div>
+</main>
+
+<script>
+const $ = s => document.querySelector(s);
+const esc = s => (s ?? '').replace(/[<>&]/g, c => ({ '<':'<','>':'>','&':'&' }[c]));
+
+let allProducts = [];
+
+async function api(path, opts = {}) {
+  const r = await fetch('/api' + path, opts);
+  if (r.status === 401) { window.location.href = '/'; throw new Error('auth'); }
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(j.error || 'request failed');
+  return j;
+}
+
+function hostFromUrl(url) {
+  if (!url) return '—';
+  try { return new URL(url).hostname.replace(/^www\./, ''); } catch { return '—'; }
+}
+
+function fmtDate(iso) {
+  if (!iso) return '—';
+  const d = new Date(iso);
+  return d.toLocaleDateString('en-GB', { day:'2-digit', month:'short', year:'numeric' });
+}
+
+function statusPill(status) {
+  const cls = status === 'active' ? 's-active' : status === 'resting' ? 's-resting' : 's-archived';
+  return `<span class="pill ${cls}">${esc(status)}</span>`;
+}
+
+function mediaLabel(mode) {
+  return mode === 'text' ? 'text' : esc(mode);
+}
+
+function renderStats(s) {
+  $('#stats').innerHTML = [
+    ['Total', s.total, 'all products'],
+    ['Active', s.active, 'picked for new posts'],
+    ['Resting', s.resting, 'paused by bandit'],
+    ['Archived', s.archived, 'hidden from bandit'],
+  ].map(([l, v, sub]) => `<div class="stat"><b>${v}</b><span>${l}</span><span class="muted" style="font-size:11px">${sub}</span></div>`).join('');
+}
+
+function renderTable(list) {
+  const tb = $('#tbody');
+  if (!list.length) {
+    tb.innerHTML = '';
+    $('#empty').style.display = 'block';
+    return;
+  }
+  $('#empty').style.display = 'none';
+  tb.innerHTML = list.map(p => {
+    const name = esc(p.name || 'untitled');
+    const host = esc(hostFromUrl(p.affiliate_url));
+    const statusHtml = statusPill(p.status);
+    const mediaHtml = mediaLabel(p.media_mode);
+    const imagesCount = p.images?.length ?? 0;
+    const posted = p.posts_count ?? 0;
+    const created = fmtDate(p.created_at);
+    const editLink = `<a href="/product-edit.html?id=${esc(p.id)}">Edit</a>`;
+    const actionBtn = p.status === 'archived'
+      ? `<button class="d" onclick="restore('${esc(p.id)}')">Restore</button>`
+      : `<button class="d" onclick="archive('${esc(p.id)}')">Archive</button>`;
+    return `<tr>
+      <td><b>${name}</b></td>
+      <td class="mono">${host}</td>
+      <td>${statusHtml}</td>
+      <td>${mediaHtml}</td>
+      <td class="mono">${imagesCount}</td>
+      <td class="mono">${posted}</td>
+      <td class="mono">${created}</td>
+      <td style="white-space:nowrap">${editLink} ${actionBtn}</td>
+    </tr>`;
+  }).join('');
+}
+
+function applyFilters() {
+  const q = $('#search').value.trim().toLowerCase();
+  const status = $('#statusFilter').value;
+  const filtered = allProducts.filter(p => {
+    if (status && p.status !== status) return false;
+    if (!q) return true;
+    const name = (p.name || '').toLowerCase();
+    const host = hostFromUrl(p.affiliate_url).toLowerCase();
+    return name.includes(q) || host.includes(q);
+  });
+  renderTable(filtered);
+}
+
+async function archive(id) {
+  if (!confirm('Archive this product? It will stop being picked for new posts. You can restore it later.')) return;
+  try {
+    await api('/products/' + id + '/archive', { method: 'POST' });
+    refresh();
+  } catch (e) { showErr(e.message); }
+}
+
+async function restore(id) {
+  try {
+    await api('/products/' + id + '/restore', { method: 'POST' });
+    refresh();
+  } catch (e) { showErr(e.message); }
+}
+
+function showErr(msg) {
+  const el = $('#err');
+  el.textContent = msg;
+  el.style.display = 'block';
+  setTimeout(() => { el.style.display = 'none'; }, 5000);
+}
+
+async function refresh() {
+  try {
+    const [stats, products] = await Promise.all([
+      api('/products/stats'),
+      api('/products')
+    ]);
+    allProducts = products;
+    renderStats(stats);
+    applyFilters();
+  } catch (e) { showErr(e.message); }
+}
+
+$('#search').oninput = applyFilters;
+$('#statusFilter').onchange = applyFilters;
+
+refresh();
+</script>
+</body>
+</html>
