@@ -269,7 +269,11 @@ function showOk(msg) {
 async function loadProduct() {
   try {
     product = await api('/products/' + pid);
-    existingImages = product.images || [];
+    existingImages = (product.images || []).map(img => ({
+      ...img,
+      url: img.public_url,
+      type: img.media_kind === 'VIDEO' ? 'video/mp4' : 'image/jpeg',
+    }));
     $('#url').value = product.affiliate_url || '';
     $('#productUrl').value = product.product_url || '';
     $('#name').value = product.name || '';
