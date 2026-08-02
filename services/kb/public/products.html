@@ -140,8 +140,8 @@ function renderTable(list) {
     const host = esc(hostFromUrl(p.affiliate_url));
     const statusHtml = statusPill(p.status);
     const mediaHtml = mediaLabel(p.media_mode);
-    const imagesCount = p.images?.length ?? 0;
-    const posted = p.posts_count ?? 0;
+    const imagesCount = p.images ?? 0;
+    const posted = p.posted ?? 0;
     const created = fmtDate(p.created_at);
     const editLink = `<a href="/product-edit.html?id=${esc(p.id)}">Edit</a>`;
     const actionBtn = p.status === 'archived'
