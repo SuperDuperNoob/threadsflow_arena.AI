@@ -1,0 +1,102 @@
+# ThreadsFlow — n8n v2.x migration staging stack
+# Disposable copy for dry-run only. Does NOT affect production.
+# Bring up: docker compose -f infra/docker-compose.staging.yml up -d
+# Tear down: docker compose -f infra/docker-compose.staging.yml down -v
+
+name: threadsflow-staging
+
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "5"
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: threadsflow
+      POSTGRES_PASSWORD: ${PG_PASSWORD}
+      POSTGRES_DB: threadsflow
+    volumes:
+      - pgdata_staging:/var/lib/postgresql/data
+    command: >
+      postgres -c shared_buffers=192MB -c effective_cache_size=512MB
+               -c work_mem=8MB -c maintenance_work_mem=64MB
+               -c max_connections=40
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U threadsflow"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    deploy:
+      resources:
+        limits: { memory: 512M }
+
+  n8n:
+    image: docker.n8n.io/n8nio/n8n:2.33.3
+    restart: unless-stopped
+    logging: *default-logging
+    depends_on:
+      postgres: { condition: service_healthy }
+    environment:
+      DB_TYPE: postgresdb
+      DB_POSTGRESDB_HOST: postgres
+      DB_POSTGRESDB_DATABASE: threadsflow
+      DB_POSTGRESDB_USER: threadsflow
+      DB_POSTGRESDB_PASSWORD: ${PG_PASSWORD}
+      DB_POSTGRESDB_SCHEMA: n8n
+      N8N_HOST: localhost
+      N8N_PROTOCOL: http
+      WEBHOOK_URL: http://localhost:5678/
+      N8N_EDITOR_BASE_URL: http://localhost:5678/
+      GENERIC_TIMEZONE: Asia/Kuala_Lumpur
+      TZ: Asia/Kuala_Lumpur
+      N8N_ENCRYPTION_KEY: ${N8N_ENCRYPTION_KEY}
+      # n8n v2: runners are external, no longer bundled
+      N8N_RUNNERS_MODE: external
+      N8N_RUNNERS_BROKER_LISTEN_ADDRESS: 0.0.0.0
+      N8N_RUNNERS_AUTH_TOKEN: ${STAGING_RUNNERS_TOKEN}
+      # Memory discipline (same as production)
+      EXECUTIONS_DATA_PRUNE: "true"
+      EXECUTIONS_DATA_MAX_AGE: "168"
+      EXECUTIONS_DATA_SAVE_ON_SUCCESS: none
+      EXECUTIONS_DATA_SAVE_ON_ERROR: all
+      EXECUTIONS_DATA_SAVE_ON_PROGRESS: "false"
+      N8N_PAYLOAD_SIZE_MAX: "32"
+      NODE_OPTIONS: --max-old-space-size=1024
+      N8N_DIAGNOSTICS_ENABLED: "false"
+      # LLM settings (from production .env)
+      LLM_BASE_URL: ${LLM_BASE_URL:-https://9router.archxry.space/v1}
+      LLM_API_KEY: ${LLM_API_KEY:-}
+      LLM_MODEL_WRITE: ${LLM_MODEL_WRITE:-gemini-2.5-flash}
+      LLM_MODEL_EDIT: ${LLM_MODEL_EDIT:-gpt-4.1-mini}
+      LLM_MODEL_MINE: ${LLM_MODEL_MINE:-gemini-2.5-pro}
+      LLM_MODEL_EMBED: ${LLM_MODEL_EMBED:-text-embedding-3-small}
+      PUBLIC_REDIRECT_BASE: ${PUBLIC_REDIRECT_BASE:-https://r.yourdomain.com}
+    ports:
+      - "127.0.0.1:15678:5678"
+      - "127.0.0.1:15679:5679"
+    volumes:
+      - n8ndata_staging:/home/node/.n8n
+    deploy:
+      resources:
+        limits: { memory: 1400M }
+
+  task-runners:
+    image: n8nio/runners:2.33.3
+    restart: unless-stopped
+    logging: *default-logging
+    depends_on:
+      - n8n
+    environment:
+      N8N_RUNNERS_TASK_BROKER_URI: http://n8n:5679
+      N8N_RUNNERS_AUTH_TOKEN: ${STAGING_RUNNERS_TOKEN}
+    deploy:
+      resources:
+        limits: { memory: 512M }
+
+volumes:
+  pgdata_staging:
+  n8ndata_staging:
