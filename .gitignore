@@ -10,3 +10,6 @@ logs/
 # working files do not.
 Books/*.txt
 Books/*.json
+
+# Backup directory for n8n migration
+infra/backups/
