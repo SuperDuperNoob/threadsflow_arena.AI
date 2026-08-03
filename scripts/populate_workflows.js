@@ -33,6 +33,15 @@ const mappings = [
       // 'Persona QA gate' pulls qa_persona.js; we inject it here so edits to qa_persona.js are picked up.
       { nodeName: 'Persona QA gate', sourceFile: 'qa_persona.js' },
     ]
+  },
+  {
+    file: 'wf7_l4_reply.json',
+    replacements: [
+      { nodeName: 'Plan replies', sourceFile: 'l4_reply_plan.js' },
+      { nodeName: 'Classify intent', sourceFile: 'l4_classify_intent.js' },
+      { nodeName: 'Draft reply prompt', sourceFile: 'l4_draft_reply.js' },
+      { nodeName: 'QA gate', sourceFile: 'l4_qa_reply.js' },
+    ]
   }
 ];
 
