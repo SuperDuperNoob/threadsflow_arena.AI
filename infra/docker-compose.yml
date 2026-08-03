@@ -41,13 +41,15 @@ services:
         limits: { memory: 512M }
 
   n8n:
-    # Pinned deliberately. `:latest` now resolves to n8n v2.x, whose breaking
-    # changes (workflow publish/unpublish replacing the active flag, task
-    # runners, blocked env access in Code nodes) can take a working deployment
-    # down on an unrelated `docker compose up -d`. This repo's workflows and
-    # tooling target the 1.x line. Bump on purpose, after reading:
-    #   https://docs.n8n.io/changelog/v20-breaking-changes
-    image: docker.n8n.io/n8nio/n8n:${N8N_VERSION:-1.123.67}
+    # Pinned deliberately, same reasoning as before — bump on purpose, not by
+    # `:latest` drifting. Migrated to v2 on 2026-08-03: validated in a
+    # staging dry-run (infra/docker-compose.staging.yml, commit ef5eaba)
+    # before this cutover. All 6 workflows remain INACTIVE post-migration —
+    # known workflow errors are fixed later via n8n's MCP server, not by this
+    # version bump. Runners are external now (see task-runners service
+    # below) — do not remove that service or this image will fail on any
+    # Code node execution.
+    image: docker.n8n.io/n8nio/n8n:${N8N_VERSION:-2.33.3}
     restart: unless-stopped
     logging: *default-logging
     depends_on:
@@ -80,7 +82,9 @@ services:
       N8N_PAYLOAD_SIZE_MAX: "32"
       NODE_OPTIONS: --max-old-space-size=1024
       N8N_DIAGNOSTICS_ENABLED: "false"
-      N8N_RUNNERS_ENABLED: "true"
+      N8N_RUNNERS_MODE: external
+      N8N_RUNNERS_BROKER_LISTEN_ADDRESS: 0.0.0.0
+      N8N_RUNNERS_AUTH_TOKEN: ${N8N_RUNNERS_AUTH_TOKEN}
       # Exposed for expressions/manual testing; imported workflows primarily read settings.llm.
       LLM_BASE_URL: ${LLM_BASE_URL:-https://9router.archxry.space/v1}
       LLM_API_KEY: ${LLM_API_KEY:-}
@@ -204,6 +208,19 @@ services:
     deploy:
       resources:
         limits: { memory: 96M }
+
+  task-runners:
+    image: n8nio/runners:${N8N_VERSION:-2.33.3}
+    restart: unless-stopped
+    logging: *default-logging
+    depends_on:
+      - n8n
+    environment:
+      N8N_RUNNERS_TASK_BROKER_URI: http://n8n:5679
+      N8N_RUNNERS_AUTH_TOKEN: ${N8N_RUNNERS_AUTH_TOKEN}
+    deploy:
+      resources:
+        limits: { memory: 512M }
 
 volumes:
   pgdata:
