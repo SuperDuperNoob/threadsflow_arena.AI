@@ -1,4 +1,6 @@
 {
+  "id": "WlooiBt0m07YxbZ6",
+  "id": "WlooiBt0m07YxbZ6",
   "name": "wf0_token_refresh",
   "nodes": [
     { "parameters": { "rule": { "interval": [{ "field": "cronExpression", "expression": "0 4 */25 * *" }] } },
