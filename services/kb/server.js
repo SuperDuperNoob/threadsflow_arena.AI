@@ -181,7 +181,7 @@ const LLM_PRESETS = [
   {
     id: '9router_on_vps_host',
     name: '9router on this VPS host',
-    base_url: 'http://host.docker.internal:9000/v1',
+    base_url: 'http://host.docker.internal:20128/v1',
     note: 'Fastest if 9router runs on the VPS outside Docker. Do not use localhost inside containers.',
   },
   {
