@@ -943,6 +943,29 @@
       "maxTries": 20,
       "waitBetweenTries": 5000,
       "notes": "Polls until status=FINISHED. Loops via connection back to itself (max 20 polls)."
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO run_log (workflow, level, message, meta)\nVALUES ('wf3_publish','debug','DEBUG carousel request',\n  jsonb_build_object('media_type','CAROUSEL','children',$1,'text_len',$2::int,'user_id',$3::text));",
+        "options": {
+          "queryReplacement": "={{ $('Create carousel items').all().map(i=>i.json.id).filter(Boolean).join(',') }},={{ $('Quota guard').first().json.body.length }},={{ $('Quota guard').first().json.user_id }}"
+        }
+      },
+      "id": "debug_carousel_req",
+      "name": "DEBUG carousel request",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        700,
+        900
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "PG",
+          "name": "Postgres threadsflow"
+        }
+      }
     }
   ],
   "connections": {
@@ -1177,6 +1200,11 @@
         [
           {
             "node": "Create CAROUSEL container",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "DEBUG carousel request",
             "type": "main",
             "index": 0
           }
