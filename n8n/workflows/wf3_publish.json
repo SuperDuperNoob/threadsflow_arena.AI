@@ -126,7 +126,7 @@
     {
       "parameters": {
         "operation": "executeQuery",
-        "query": "WITH locked AS (\n  UPDATE posts SET status = 'publishing' WHERE id = $1 AND status = 'queued' RETURNING id\n), ckpt AS (\n  INSERT INTO run_log (workflow, level, message, meta)\n  SELECT 'wf3_publish','debug','post locked: quota checked', $2::jsonb FROM locked RETURNING 1\n)\nSELECT id FROM locked;",
+        "query": "WITH locked AS (\n  UPDATE posts SET status = 'publishing' WHERE id = $1 AND status IN ('approved','auto_published') RETURNING id\n), ckpt AS (\n  INSERT INTO run_log (workflow, level, message, meta)\n  SELECT 'wf3_publish','debug','post locked: quota checked', $2::jsonb FROM locked RETURNING 1\n)\nSELECT id FROM locked;",
         "options": {
           "queryReplacement": "={{ $json.id }},={{ JSON.stringify({uid: $json.uid, quota: $json.quota, media_type: $json.media_type, abort: $json.abort === true}) }}"
         }
@@ -385,7 +385,7 @@
     {
       "parameters": {
         "operation": "executeQuery",
-        "query": "UPDATE posts SET threads_reply_id = $2 WHERE id = $1;\nUPDATE product_images SET use_count = use_count + 1, last_used_at = now()\n WHERE id = ANY((SELECT COALESCE(image_ids,'{}') FROM posts WHERE id = $1));\nINSERT INTO run_log (workflow, level, message, meta)\nVALUES ('wf3_publish','info','CTA reply published', jsonb_build_object('uid', $3::text));",
+        "query": "UPDATE posts SET threads_reply_id = $2 WHERE id = $1;\nUPDATE product_images SET use_count = use_count + 1, last_used_at = now()\n WHERE id = ANY((SELECT unnest(COALESCE(image_ids,'{}')) FROM posts WHERE id = $1));\nINSERT INTO run_log (workflow, level, message, meta)\nVALUES ('wf3_publish','info','CTA reply published', jsonb_build_object('uid', $3::text));",
         "options": {
           "queryReplacement": "={{ $('Quota guard').first().json.id }},={{ $json.id }},={{ $('Mark published').first().json.uid }}"
         }
