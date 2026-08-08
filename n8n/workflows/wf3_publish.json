@@ -612,7 +612,8 @@
       "retryOnFail": true,
       "maxTries": 3,
       "onError": "continueErrorOutput",
-      "notes": "Runs once per image (fed by Split Out). Collect ids, then build the CAROUSEL container."
+      "notes": "Runs once per image (fed by Split Out). Collect ids, then build the CAROUSEL container.",
+      "waitBetweenTries": 4000
     },
     {
       "parameters": {
@@ -650,8 +651,9 @@
         380
       ],
       "retryOnFail": true,
-      "maxTries": 3,
-      "onError": "continueErrorOutput"
+      "maxTries": 4,
+      "onError": "continueErrorOutput",
+      "waitBetweenTries": 6000
     },
     {
       "parameters": {
@@ -850,8 +852,8 @@
         540
       ],
       "retryOnFail": true,
-      "maxTries": 3,
-      "waitBetweenTries": 8000,
+      "maxTries": 4,
+      "waitBetweenTries": 6000,
       "onError": "continueErrorOutput"
     },
     {
