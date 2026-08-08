@@ -945,9 +945,9 @@
     {
       "parameters": {
         "operation": "executeQuery",
-        "query": "INSERT INTO run_log (workflow, level, message, meta)\nVALUES ('wf3_publish','debug','DEBUG carousel request',\n  jsonb_build_object('media_type','CAROUSEL','children',$1,'text_len',$2::int,'user_id',$3::text));",
+        "query": "INSERT INTO run_log (workflow, level, message, meta)\nVALUES ('wf3_publish','debug','DEBUG carousel request',\n  jsonb_build_object('media_type','CAROUSEL','children', replace($1,'|',','),\n    'text_len',$2::int,'user_id',$3::text));",
         "options": {
-          "queryReplacement": "={{ $('Create carousel items').all().map(i=>i.json.id).filter(Boolean).join(',') }},={{ $('Quota guard').first().json.body.length }},={{ $('Quota guard').first().json.user_id }}"
+          "queryReplacement": "={{ $('Create carousel items').all().map(i=>i.json.id).filter(Boolean).join('|') }},={{ $('Quota guard').first().json.body.length }},={{ $('Quota guard').first().json.user_id }}"
         }
       },
       "id": "debug_carousel_req",
