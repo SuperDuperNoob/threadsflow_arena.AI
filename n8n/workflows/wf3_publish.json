@@ -650,10 +650,8 @@
         820,
         380
       ],
-      "retryOnFail": true,
-      "maxTries": 4,
-      "onError": "continueErrorOutput",
-      "waitBetweenTries": 6000
+      "retryOnFail": false,
+      "onError": "continueErrorOutput"
     },
     {
       "parameters": {
@@ -966,6 +964,51 @@
           "name": "Postgres threadsflow"
         }
       }
+    },
+    {
+      "parameters": {
+        "jsCode": "const state = $getWorkflowStaticData('reset');\nstate.carouselAttempt = (state.carouselAttempt || 0) + 1;\nreturn [{ json: { carouselAttempt: state.carouselAttempt } }];"
+      },
+      "id": "carousel_retry_counter",
+      "name": "Carousel retry counter",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1500,
+        700
+      ],
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "version": 2
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.carouselAttempt }}",
+              "rightValue": "3",
+              "operator": {
+                "type": "number",
+                "operation": "lt",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "carousel_retry_check",
+      "name": "Carousel retry?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1640,
+        700
+      ]
     }
   ],
   "connections": {
@@ -1229,7 +1272,7 @@
         ],
         [
           {
-            "node": "Record failure",
+            "node": "Carousel retry counter",
             "type": "main",
             "index": 0
           }
@@ -1399,6 +1442,35 @@
             "node": "Merge container id",
             "type": "main",
             "index": 3
+          }
+        ]
+      ]
+    },
+    "Carousel retry counter": {
+      "main": [
+        [
+          {
+            "node": "Carousel retry?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Carousel retry?": {
+      "main": [
+        [
+          {
+            "node": "Split images",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Record failure",
+            "type": "main",
+            "index": 0
           }
         ]
       ]
